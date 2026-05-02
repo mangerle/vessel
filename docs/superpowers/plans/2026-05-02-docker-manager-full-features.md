@@ -97,7 +97,7 @@
 
 ---
 
-### Task 5: Compose、网络与卷管理 (Modules 2, 5, 6)
+### Task 5: Compose、网络与卷管理 (Modules 2, 5, 6) [DONE]
 
 **Files:**
 - Modify: `src-tauri/src/docker.rs`
@@ -105,13 +105,13 @@
 - Modify: `src/views/Networks.vue`
 - Modify: `src/views/Volumes.vue`
 
-- [ ] **Step 1: 实现 Compose 探测逻辑**
+- [x] **Step 1: 实现 Compose 探测逻辑**
 后端通过容器 Label 自动归类 Compose 项目。
 
-- [ ] **Step 2: 实现网络与卷的 CRUD**
+- [x] **Step 2: 实现网络与卷的 CRUD**
 基础列表显示与删除功能，网络 Prune 功能。
 
-- [ ] **Step 3: 编写对应 UI 页面**
+- [x] **Step 3: 编写对应 UI 页面**
 保持与容器列表一致的交互风格。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
