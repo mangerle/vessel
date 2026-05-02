@@ -25,9 +25,23 @@
 
 ## 4. 架构设计
 
-### 4.1 后端模块
-- **Connection Manager**: 管理 Docker 上下文。负责 SSH 隧道维护、凭据加密存储及连接健康检查。
-- **Docker Engine Bridge**: 统一的 Docker 指令封装，将前端指令转换为具体的 API 调用。
+### 4.1 多驱动连接层 (Docker Connection Drivers)
+为了支持不同环境，系统采用驱动抽象层：
+- **`NativePipe`**: 连接 Windows 默认管道 (`//./pipe/docker_engine`)。
+- **`WslBridge`**: 通过 `wsl docker system dial-stdio` 桥接 WSL 内部 Docker。
+- **`UnixSocket`**: 连接 Linux/macOS 默认 Socket (`/var/run/docker.sock`)。
+- **`Tcp`**: 连接远程或本地 TCP 端口 (2375)。
+- **`Ssh`**: 通过 SSH 隧道执行远程 `dial-stdio`。
+
+### 4.2 自动探测逻辑 (Auto-Discovery)
+应用启动时按以下优先级探测：
+1. **Windows**: `NativePipe` -> `WslBridge`。
+2. **Linux/macOS**: `UnixSocket`。
+探测成功的连接将标记为“Auto-detected”并作为默认连接。
+
+### 4.3 后端模块
+- **Connection Manager**: 管理 Docker 上下文。负责驱动切换、SSH 隧道维护、凭据加密存储及连接健康检查。
+- **Docker Engine Bridge**: 统一的 Docker 指令封装，基于当前的活动驱动 (Active Driver) 进行 API 调用。
 - **Compose Service**: 处理 `docker-compose` 指令封装，解析项目依赖及标签映射。
 - **Stream Dispatcher**: 负责将容器日志流和性能采样数据通过 Tauri Event 广播至前端。
 

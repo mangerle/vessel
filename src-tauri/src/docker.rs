@@ -1,4 +1,4 @@
-use bollard::Docker;
+use crate::connection::get_docker_client;
 use bollard::container::ListContainersOptions;
 use serde::Serialize;
 
@@ -18,9 +18,8 @@ pub struct ContainerInfo {
 /// 获取本地 Docker 容器列表的命令
 #[tauri::command]
 pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
-    // 使用本地默认配置连接 Docker (Windows 上通常是命名管道，Linux 上是 Unix Socket)
-    let docker = Docker::connect_with_local_defaults()
-        .map_err(|e| format!("无法连接到 Docker: {}", e))?;
+    // 使用自动探测的驱动连接 Docker
+    let docker = get_docker_client().await?;
 
     // 列出所有容器 (包括未运行的)
     let containers = docker.list_containers(Some(ListContainersOptions::<String> {

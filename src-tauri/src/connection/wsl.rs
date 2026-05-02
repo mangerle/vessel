@@ -1,0 +1,82 @@
+use bollard::{Docker, API_DEFAULT_VERSION};
+use std::process::Stdio;
+use tokio::net::TcpListener;
+use tokio::process::Command;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use once_cell::sync::Lazy;
+
+/// WSL 桥接驱动
+pub struct WslBridge;
+
+/// 存储代理端口，避免重复启动代理服务器
+static PROXY_PORT: Lazy<Arc<Mutex<Option<u16>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+
+impl WslBridge {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub async fn connect(&self) -> Result<Docker, String> {
+        // 1. 确保代理服务器已启动
+        let port = self.ensure_proxy().await?;
+
+        // 2. 通过 TCP 代理连接到 WSL Docker
+        let url = format!("http://127.0.0.1:{}", port);
+        let docker = Docker::connect_with_http(&url, 120, &API_DEFAULT_VERSION)
+            .map_err(|e| format!("创建 Docker 客户端失败: {}", e))?;
+
+        // 3. 验证连接
+        docker.ping().await.map_err(|e| format!("WSL Docker 未响应 (请确保 WSL 中已安装 Docker 且 wsl 命令可用): {}", e))?;
+
+        Ok(docker)
+    }
+
+    /// 确保 TCP 代理服务器正在运行
+    async fn ensure_proxy(&self) -> Result<u16, String> {
+        let mut port_lock = PROXY_PORT.lock().await;
+        
+        if let Some(port) = *port_lock {
+            return Ok(port);
+        }
+
+        // 绑定到随机可用端口
+        let listener = TcpListener::bind("127.0.0.1:0").await
+            .map_err(|e| format!("无法绑定代理端口: {}", e))?;
+        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+
+        // 在后台运行代理逻辑
+        tokio::spawn(async move {
+            while let Ok((mut client_socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    // 为每个连接启动一个 wsl 进程
+                    let child = Command::new("wsl")
+                        .args(["docker", "system", "dial-stdio"])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::null())
+                        .spawn();
+
+                    if let Ok(mut child) = child {
+                        let mut stdin = child.stdin.take().unwrap();
+                        let mut stdout = child.stdout.take().unwrap();
+
+                        let (mut client_reader, mut client_writer) = client_socket.split();
+
+                        // 双向转发流
+                        let _ = tokio::join!(
+                            tokio::io::copy(&mut client_reader, &mut stdin),
+                            tokio::io::copy(&mut stdout, &mut client_writer)
+                        );
+                        
+                        // 确保进程结束
+                        let _ = child.kill().await;
+                    }
+                });
+            }
+        });
+
+        *port_lock = Some(port);
+        Ok(port)
+    }
+}

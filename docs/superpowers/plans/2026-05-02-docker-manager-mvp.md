@@ -109,13 +109,13 @@ pub fn get_pool() -> &'static Pool<Sqlite> {
 
 ---
 
-### Task 3: 本地 Docker API 桥接实现
+### Task 3: 本地 Docker API 桥接实现 [DONE]
 
 **Files:**
 - Create: `src-tauri/src/docker.rs`
 - Modify: `src-tauri/src/main.rs`
 
-- [ ] **Step 1: 实现获取本地容器列表的 Command**
+- [x] **Step 1: 实现获取本地容器列表的 Command**
 
 ```rust
 // src-tauri/src/docker.rs
@@ -149,28 +149,52 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
 }
 ```
 
-- [ ] **Step 2: 注册 Command**
+- [x] **Step 2: 注册 Command**
 
-- [ ] **Step 3: 运行并验证 (确保本地 Docker 已启动)**
+- [x] **Step 3: 运行并验证 (确保本地 Docker 已启动)**
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ---
 
-### Task 4: 前端基础 UI 搭建 (容器列表)
+### Task 3.1: 多驱动 Docker 连接与 WSL 桥接实现 [RECOVERY]
+
+**Files:**
+- Modify: `src-tauri/src/docker.rs`
+- Modify: `src-tauri/src/lib.rs`
+- Create: `src-tauri/src/connection/mod.rs`
+- Create: `src-tauri/src/connection/wsl.rs`
+
+- [ ] **Step 1: 抽象连接驱动接口**
+定义驱动类型和统一的获取 Docker 客户端的方法。
+
+- [ ] **Step 2: 实现 WSL 桥接驱动**
+使用 `wsl docker system dial-stdio` 建立 Stdio 桥接，并使用 `bollard` 的自定义传输层接入。
+
+- [ ] **Step 3: 实现自动探测逻辑**
+按照 `NamedPipe` -> `WslBridge` 的优先级自动选择可用的连接。
+
+- [ ] **Step 4: 修复并验证连接**
+确保在用户的 WSL 环境下能够成功获取容器列表。
+
+- [ ] **Step 5: 提交**
+
+---
+
+### Task 4: 前端基础 UI 搭建 (容器列表) [DONE]
 
 **Files:**
 - Create: `src/views/ContainerList.vue`
 - Modify: `src/App.vue`
 
-- [ ] **Step 1: 安装 Naive UI**
+- [x] **Step 1: 安装 Naive UI**
 
 Run: `npm install naive-ui vfonts`
 
-- [ ] **Step 2: 编写容器列表页面**
+- [x] **Step 2: 编写容器列表页面**
 
 使用 `invoke('list_local_containers')` 获取数据并渲染表格。
 
-- [ ] **Step 3: 验证 UI 显示**
+- [x] **Step 3: 验证 UI 显示**
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
