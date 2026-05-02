@@ -157,7 +157,7 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
 
 ---
 
-### Task 3.1: 多驱动 Docker 连接与 WSL 桥接实现 [RECOVERY]
+### Task 3.1: 多驱动 Docker 连接与 WSL 桥接实现 [DONE]
 
 **Files:**
 - Modify: `src-tauri/src/docker.rs`
@@ -165,19 +165,19 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
 - Create: `src-tauri/src/connection/mod.rs`
 - Create: `src-tauri/src/connection/wsl.rs`
 
-- [ ] **Step 1: 抽象连接驱动接口**
+- [x] **Step 1: 抽象连接驱动接口**
 定义驱动类型和统一的获取 Docker 客户端的方法。
 
-- [ ] **Step 2: 实现 WSL 桥接驱动**
-使用 `wsl docker system dial-stdio` 建立 Stdio 桥接，并使用 `bollard` 的自定义传输层接入。
+- [x] **Step 2: 实现 WSL 桥接驱动**
+使用 `wsl docker system dial-stdio` 建立 Stdio 桥接，并使用 TCP 代理模式接入。
 
-- [ ] **Step 3: 实现自动探测逻辑**
+- [x] **Step 3: 实现自动探测逻辑**
 按照 `NamedPipe` -> `WslBridge` 的优先级自动选择可用的连接。
 
-- [ ] **Step 4: 修复并验证连接**
+- [x] **Step 4: 修复并验证连接**
 确保在用户的 WSL 环境下能够成功获取容器列表。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ---
 
