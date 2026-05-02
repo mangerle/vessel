@@ -249,3 +249,63 @@ pub async fn list_compose_projects() -> Result<Vec<ComposeProject>, String> {
 
     Ok(projects)
 }
+
+/// 获取网络列表
+#[tauri::command]
+pub async fn list_networks() -> Result<Vec<NetworkInfo>, String> {
+    let docker = get_docker_client().await?;
+    let networks = docker.list_networks::<String>(None).await.map_err(|e| format!("无法获取网络列表: {}", e))?;
+
+    Ok(networks.into_iter().map(|n| NetworkInfo {
+        id: n.id.unwrap_or_default(),
+        name: n.name.unwrap_or_default(),
+        driver: n.driver.unwrap_or_default(),
+        scope: n.scope.unwrap_or_default(),
+        created: n.created.unwrap_or_default(),
+    }).collect())
+}
+
+/// 删除网络
+#[tauri::command]
+pub async fn remove_network(id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.remove_network(&id).await.map_err(|e| format!("删除网络失败: {}", e))
+}
+
+/// 清理未使用的网络
+#[tauri::command]
+pub async fn prune_networks() -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.prune_networks::<String>(None).await.map_err(|e| format!("清理网络失败: {}", e))?;
+    Ok(())
+}
+
+/// 获取卷列表
+#[tauri::command]
+pub async fn list_volumes() -> Result<Vec<VolumeInfo>, String> {
+    let docker = get_docker_client().await?;
+    let response = docker.list_volumes::<String>(None).await.map_err(|e| format!("无法获取卷列表: {}", e))?;
+
+    let volumes = response.volumes.unwrap_or_default();
+    Ok(volumes.into_iter().map(|v| VolumeInfo {
+        name: v.name,
+        driver: v.driver,
+        mountpoint: v.mountpoint,
+        created: v.created_at.unwrap_or_default(),
+    }).collect())
+}
+
+/// 删除卷
+#[tauri::command]
+pub async fn remove_volume(name: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.remove_volume(&name, None).await.map_err(|e| format!("删除卷失败: {}", e))
+}
+
+/// 清理未使用的卷
+#[tauri::command]
+pub async fn prune_volumes() -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.prune_volumes::<String>(None).await.map_err(|e| format!("清理卷失败: {}", e))?;
+    Ok(())
+}

@@ -2,7 +2,7 @@
 import { onMounted, h, computed } from 'vue'
 import { useNetworkStore } from '../store/network'
 import { 
-  NDataTable, NTag, NSpace, NButton, NCard, 
+  NDataTable, NSpace, NButton, NCard, 
   NText, NPopconfirm, NTooltip, NIcon, NStatistic, NGrid, NGi
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'

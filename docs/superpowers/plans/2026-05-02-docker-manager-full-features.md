@@ -78,22 +78,22 @@
 
 ---
 
-### Task 4: 镜像管理与拉取逻辑 (Module 4)
+### Task 4: 镜像管理与拉取逻辑 (Module 4) [DONE]
 
 **Files:**
 - Modify: `src-tauri/src/docker.rs`
 - Modify: `src/views/Images.vue`
 
-- [ ] **Step 1: 实现镜像操作 API**
-支持获取本地镜像列表、删除镜像。
+- [x] **Step 1: 实现镜像操作 API**
+后端增加 `list_images`, `remove_image(id)` 命令。
 
-- [ ] **Step 2: 实现镜像拉取 (Pull) 功能**
-后端处理拉取流，通过 Tauri Event 反馈进度条。
+- [x] **Step 2: 实现镜像拉取 (Pull) 功能**
+后端实现 `pull_image(name, app)`，通过 `bollard::image::CreateImageOptions` 采样流，并使用 `app.emit("image-pull-progress", data)` 反馈给前端。
 
-- [ ] **Step 3: 编写镜像管理 UI**
+- [x] **Step 3: 编写镜像管理 UI**
 支持关键词搜索、显示镜像层信息。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ---
 
