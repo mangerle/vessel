@@ -1,4 +1,5 @@
 pub mod db;
+pub mod docker;
 
 // 了解有关 Tauri 命令的更多信息，请访问 https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -30,7 +31,10 @@ pub fn run() {
             })?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            docker::list_local_containers
+        ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用程序时出错");
 }
