@@ -34,7 +34,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
-            docker::list_local_containers
+            docker::list_local_containers,
+            connection::cmd_add_connection,
+            connection::cmd_get_connections,
+            connection::cmd_delete_connection,
+            connection::cmd_switch_connection,
+            connection::cmd_get_active_connection_id,
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用程序时出错");

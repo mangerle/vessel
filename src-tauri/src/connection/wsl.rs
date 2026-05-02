@@ -7,14 +7,17 @@ use tokio::sync::Mutex;
 use once_cell::sync::Lazy;
 
 /// WSL 桥接驱动
-pub struct WslBridge;
+#[derive(Default)]
+pub struct WslBridge {
+    pub distro: Option<String>,
+}
 
 /// 存储代理端口，避免重复启动代理服务器
 static PROXY_PORT: Lazy<Arc<Mutex<Option<u16>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
 impl WslBridge {
-    pub fn new() -> Self {
-        Self
+    pub fn new(distro: Option<String>) -> Self {
+        Self { distro }
     }
 
     pub async fn connect(&self) -> Result<Docker, String> {
@@ -23,7 +26,7 @@ impl WslBridge {
 
         // 2. 通过 TCP 代理连接到 WSL Docker
         let url = format!("http://127.0.0.1:{}", port);
-        let docker = Docker::connect_with_http(&url, 120, &API_DEFAULT_VERSION)
+        let docker = Docker::connect_with_http(&url, 120, API_DEFAULT_VERSION)
             .map_err(|e| format!("创建 Docker 客户端失败: {}", e))?;
 
         // 3. 验证连接
@@ -45,17 +48,26 @@ impl WslBridge {
             .map_err(|e| format!("无法绑定代理端口: {}", e))?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
+        let distro = self.distro.clone();
+
         // 在后台运行代理逻辑
         tokio::spawn(async move {
             while let Ok((mut client_socket, _)) = listener.accept().await {
+                let distro_clone = distro.clone();
                 tokio::spawn(async move {
                     // 为每个连接启动一个 wsl 进程
-                    let child = Command::new("wsl")
-                        .args(["docker", "system", "dial-stdio"])
+                    let mut cmd = Command::new("wsl");
+                    if let Some(d) = distro_clone {
+                        if !d.is_empty() && !d.contains("发行版名称") {
+                            cmd.args(["-d", &d]);
+                        }
+                    }
+                    cmd.args(["docker", "system", "dial-stdio"])
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
-                        .stderr(Stdio::null())
-                        .spawn();
+                        .stderr(Stdio::null());
+
+                    let child = cmd.spawn();
 
                     if let Ok(mut child) = child {
                         let mut stdin = child.stdin.take().unwrap();

@@ -11,7 +11,7 @@
 
 ---
 
-### Task 1: 侧边栏布局与多页面路由重构
+### Task 1: 侧边栏布局与多页面路由重构 [DONE]
 
 **Files:**
 - Modify: `src/App.vue`
@@ -24,16 +24,16 @@
 - Create: `src/views/Networks.vue`
 - Create: `src/views/Volumes.vue`
 
-- [ ] **Step 1: 更新路由定义**
+- [x] **Step 1: 更新路由定义**
 配置 6 个主模块的路由路径。
 
-- [ ] **Step 2: 创建 MainLayout 组件**
+- [x] **Step 2: 创建 MainLayout 组件**
 实现带有侧边栏 (NLayoutSider) 和主内容区 (NLayoutContent) 的基础布局。
 
-- [ ] **Step 3: 重写 App.vue**
+- [x] **Step 3: 重写 App.vue**
 集成路由视图和全局 Naive UI 配置。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ---
 
