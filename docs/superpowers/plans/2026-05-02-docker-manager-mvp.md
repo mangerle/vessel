@@ -51,14 +51,14 @@ git commit -m "chore: initialize tauri project with dependencies"
 
 ---
 
-### Task 2: 数据库设计与集成
+### Task 2: 数据库设计与集成 [DONE]
 
 **Files:**
 - Create: `src-tauri/src/db.rs`
 - Modify: `src-tauri/src/main.rs`
 - Create: `migrations/202605020000_init.sql`
 
-- [ ] **Step 1: 编写数据库初始化脚本**
+- [x] **Step 1: 编写数据库初始化脚本**
 
 ```sql
 -- migrations/202605020000_init.sql
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS compose_projects (
 );
 ```
 
-- [ ] **Step 2: 实现 Rust 数据库连接单例**
+- [x] **Step 2: 实现 Rust 数据库连接单例**
 
 ```rust
 // src-tauri/src/db.rs
@@ -101,11 +101,11 @@ pub fn get_pool() -> &'static Pool<Sqlite> {
 }
 ```
 
-- [ ] **Step 3: 在 main.rs 中初始化数据库**
+- [x] **Step 3: 在 main.rs 中初始化数据库**
 
-- [ ] **Step 4: 编写测试验证数据库连接**
+- [x] **Step 4: 编写测试验证数据库连接**
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ---
 
