@@ -43,6 +43,7 @@ pub fn run() {
             docker::list_images,
             docker::remove_image,
             docker::pull_image,
+            docker::list_compose_projects,
             connection::cmd_add_connection,
             connection::cmd_get_connections,
             connection::cmd_delete_connection,

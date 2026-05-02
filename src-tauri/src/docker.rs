@@ -31,6 +31,34 @@ pub struct ImageInfo {
     pub created: i64,
 }
 
+/// 网络信息结构体
+#[derive(Serialize)]
+pub struct NetworkInfo {
+    pub id: String,
+    pub name: String,
+    pub driver: String,
+    pub scope: String,
+    pub created: String,
+}
+
+/// 卷信息结构体
+#[derive(Serialize)]
+pub struct VolumeInfo {
+    pub name: String,
+    pub driver: String,
+    pub mountpoint: String,
+    pub created: String,
+}
+
+/// Compose 项目结构体
+#[derive(Serialize)]
+pub struct ComposeProject {
+    pub name: String,
+    pub container_count: usize,
+    pub running_count: usize,
+    pub status: String,
+}
+
 /// 获取本地 Docker 容器列表的命令
 #[tauri::command]
 pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
@@ -187,4 +215,37 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> Result<(), St
     });
 
     Ok(())
+}
+
+/// 获取 Compose 项目列表
+#[tauri::command]
+pub async fn list_compose_projects() -> Result<Vec<ComposeProject>, String> {
+    let docker = get_docker_client().await?;
+    let containers = docker.list_containers(Some(ListContainersOptions::<String> {
+        all: true,
+        ..Default::default()
+    })).await.map_err(|e| format!("无法获取容器列表: {}", e))?;
+
+    let mut projects_map: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
+
+    for container in containers {
+        if let Some(labels) = container.labels {
+            if let Some(project_name) = labels.get("com.docker.compose.project") {
+                let counts = projects_map.entry(project_name.clone()).or_insert((0, 0));
+                counts.0 += 1; // 总数
+                if container.state.as_deref() == Some("running") {
+                    counts.1 += 1; // 运行中
+                }
+            }
+        }
+    }
+
+    let projects = projects_map.into_iter().map(|(name, (total, running))| ComposeProject {
+        name,
+        container_count: total,
+        running_count: running,
+        status: if running > 0 { "running".to_string() } else { "exited".to_string() },
+    }).collect();
+
+    Ok(projects)
 }
