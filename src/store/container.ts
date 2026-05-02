@@ -6,6 +6,7 @@ interface ContainerInfo {
   name: string
   state: string
   image: string
+  compose_project?: string
 }
 
 export const useContainerStore = defineStore('container', {

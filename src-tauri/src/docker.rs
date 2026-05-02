@@ -23,6 +23,8 @@ pub struct ContainerInfo {
     pub state: String,
     /// 镜像名称
     pub image: String,
+    /// 归属的 Compose 项目名
+    pub compose_project: Option<String>,
 }
 
 /// 镜像信息结构体
@@ -112,15 +114,19 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
     })).await.map_err(|e| format!("无法获取容器列表: {}", e))?;
     
     // 转换为前端友好的格式
-    Ok(containers.into_iter().map(|c| ContainerInfo {
-        id: c.id.unwrap_or_default(),
-        // c.names 通常以 ["/container_name"] 格式返回，所以我们取第一个并去掉开头的斜杠
-        name: c.names.as_ref()
-            .and_then(|names| names.first())
-            .map(|name| name.trim_start_matches('/').to_string())
-            .unwrap_or_else(|| "未知".to_string()),
-        state: c.state.unwrap_or_default(),
-        image: c.image.unwrap_or_default(),
+    Ok(containers.into_iter().map(|c| {
+        let compose_project = c.labels.as_ref().and_then(|labels| labels.get("com.docker.compose.project").cloned());
+        ContainerInfo {
+            id: c.id.unwrap_or_default(),
+            // c.names 通常以 ["/container_name"] 格式返回，所以我们取第一个并去掉开头的斜杠
+            name: c.names.as_ref()
+                .and_then(|names| names.first())
+                .map(|name| name.trim_start_matches('/').to_string())
+                .unwrap_or_else(|| "未知".to_string()),
+            state: c.state.unwrap_or_default(),
+            image: c.image.unwrap_or_default(),
+            compose_project,
+        }
     }).collect())
 }
 
