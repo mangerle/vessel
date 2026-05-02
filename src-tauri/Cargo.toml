@@ -35,4 +35,5 @@ hyper-util = { version = "0.1", features = ["full"] }
 tower-service = "0.3"
 pin-project = "1.1"
 http-body-util = "0.1"
+futures-util = "0.3"
 

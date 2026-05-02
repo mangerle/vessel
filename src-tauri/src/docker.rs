@@ -1,6 +1,8 @@
 use crate::connection::get_docker_client;
-use bollard::container::ListContainersOptions;
+use bollard::container::{ListContainersOptions, StatsOptions};
 use serde::Serialize;
+use futures_util::stream::StreamExt;
+use tauri::{AppHandle, Emitter};
 
 /// 容器信息结构体
 #[derive(Serialize)]
@@ -38,4 +40,71 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
         state: c.state.unwrap_or_default(),
         image: c.image.unwrap_or_default(),
     }).collect())
+}
+
+/// 启动容器
+#[tauri::command]
+pub async fn start_container(id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.start_container::<String>(&id, None)
+        .await
+        .map_err(|e| format!("启动容器失败: {}", e))
+}
+
+/// 停止容器
+#[tauri::command]
+pub async fn stop_container(id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.stop_container(&id, None)
+        .await
+        .map_err(|e| format!("停止容器失败: {}", e))
+}
+
+/// 重启容器
+#[tauri::command]
+pub async fn restart_container(id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.restart_container(&id, None)
+        .await
+        .map_err(|e| format!("重启容器失败: {}", e))
+}
+
+/// 删除容器
+#[tauri::command]
+pub async fn remove_container(id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.remove_container(&id, None)
+        .await
+        .map_err(|e| format!("删除容器失败: {}", e))
+}
+
+/// 实时流式传输容器统计信息
+#[tauri::command]
+pub async fn stream_container_stats(app: AppHandle, id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    let mut stream = docker.stats(&id, Some(StatsOptions {
+        stream: true,
+        one_shot: false,
+    }));
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(msg) = stream.next().await {
+            match msg {
+                Ok(stats) => {
+                    // 发送事件到前端，事件名为 container-stats-<id>
+                    let event_name = format!("container-stats-{}", id);
+                    if let Err(e) = app.emit(&event_name, stats) {
+                        eprintln!("发送统计事件失败: {}", e);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("获取统计数据失败: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok(())
 }

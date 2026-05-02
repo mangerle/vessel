@@ -37,7 +37,7 @@
 
 ---
 
-### Task 2: Docker 连接管理 (Module 1)
+### Task 2: Docker 连接管理 (Module 1) [DONE]
 
 **Files:**
 - Create: `src-tauri/src/connection/manager.rs`
@@ -45,16 +45,16 @@
 - Modify: `src/views/Connections.vue`
 - Modify: `src/store/connection.ts`
 
-- [ ] **Step 1: 实现后端连接 CRUD Command**
+- [x] **Step 1: 实现后端连接 CRUD Command**
 支持从数据库读取、添加、删除自定义连接（SSH/TCP/Local）。
 
-- [ ] **Step 2: 实现活动连接切换逻辑**
+- [x] **Step 2: 实现活动连接切换逻辑**
 当前端切换连接时，后端更新全局 `DOCKER_CLIENT`。
 
-- [ ] **Step 3: 编写连接管理 UI**
+- [x] **Step 3: 编写连接管理 UI**
 实现连接列表展示及“添加连接”模态框。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ---
 

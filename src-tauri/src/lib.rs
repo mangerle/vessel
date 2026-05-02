@@ -35,6 +35,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             docker::list_local_containers,
+            docker::start_container,
+            docker::stop_container,
+            docker::restart_container,
+            docker::remove_container,
+            docker::stream_container_stats,
             connection::cmd_add_connection,
             connection::cmd_get_connections,
             connection::cmd_delete_connection,
