@@ -10,19 +10,19 @@
 
 ---
 
-### Task 1: 项目初始化与环境搭建
+### Task 1: 项目初始化与环境搭建 [DONE]
 
 **Files:**
 - Create: `package.json`
 - Create: `src-tauri/Cargo.toml`
 - Create: `src-tauri/tauri.conf.json`
 
-- [ ] **Step 1: 使用 Tauri CLI 初始化项目**
+- [x] **Step 1: 使用 Tauri CLI 初始化项目**
 
 Run: `npm create tauri-app@latest -- --template vue-ts --manager npm --yes .`
 Expected: 项目骨架生成成功。
 
-- [ ] **Step 2: 配置后端依赖**
+- [x] **Step 2: 配置后端依赖**
 
 在 `src-tauri/Cargo.toml` 中添加必要依赖：
 ```toml
@@ -37,12 +37,12 @@ sqlx = { version = "0.7", features = ["runtime-tokio", "tls-native-tls", "sqlite
 uuid = { version = "1", features = ["v4", "serde"] }
 ```
 
-- [ ] **Step 3: 运行基础项目验证**
+- [x] **Step 3: 运行基础项目验证**
 
 Run: `npm run tauri dev`
 Expected: 看到 Tauri 默认欢迎界面。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add .

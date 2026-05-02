@@ -881,6 +881,7 @@ dependencies = [
 name = "docker-manager"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bollard",
  "serde",
  "serde_json",
