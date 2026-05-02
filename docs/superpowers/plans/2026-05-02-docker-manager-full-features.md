@@ -58,23 +58,23 @@
 
 ---
 
-### Task 3: 容器管理增强与实时监控 (Module 3)
+### Task 3: 容器管理增强与实时监控 (Module 3) [DONE]
 
 **Files:**
 - Modify: `src-tauri/src/docker.rs`
 - Create: `src/views/ContainerDetail.vue`
 - Modify: `src/views/Containers.vue`
 
-- [ ] **Step 1: 实现容器控制 API**
+- [x] **Step 1: 实现容器控制 API**
 后端增加 `start_container`, `stop_container`, `remove_container` 命令。
 
-- [ ] **Step 2: 实现实时监控数据流**
+- [x] **Step 2: 实现实时监控数据流**
 后端通过 `bollard::container::StatsOptions` 采样数据并推送到前端。
 
-- [ ] **Step 3: 完善容器列表与详情页**
+- [x] **Step 3: 完善容器列表与详情页**
 列表显示“运行/总数”统计，详情页集成 ECharts 展示 CPU/内存曲线。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ---
 

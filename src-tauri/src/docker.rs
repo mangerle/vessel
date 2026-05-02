@@ -1,5 +1,6 @@
 use crate::connection::get_docker_client;
 use bollard::container::{ListContainersOptions, StatsOptions};
+use bollard::image::{ListImagesOptions, CreateImageOptions};
 use serde::Serialize;
 use futures_util::stream::StreamExt;
 use tauri::{AppHandle, Emitter};
@@ -15,6 +16,19 @@ pub struct ContainerInfo {
     pub state: String,
     /// 镜像名称
     pub image: String,
+}
+
+/// 镜像信息结构体
+#[derive(Serialize)]
+pub struct ImageInfo {
+    /// 镜像 ID
+    pub id: String,
+    /// 镜像标签列表
+    pub tags: Vec<String>,
+    /// 镜像大小 (字节)
+    pub size: i64,
+    /// 创建时间 (时间戳)
+    pub created: i64,
 }
 
 /// 获取本地 Docker 容器列表的命令
@@ -40,6 +54,72 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
         state: c.state.unwrap_or_default(),
         image: c.image.unwrap_or_default(),
     }).collect())
+}
+
+/// 获取本地 Docker 镜像列表的命令
+#[tauri::command]
+pub async fn list_images() -> Result<Vec<ImageInfo>, String> {
+    let docker = get_docker_client().await?;
+
+    let images = docker.list_images(Some(ListImagesOptions::<String> {
+        all: false,
+        ..Default::default()
+    })).await.map_err(|e| format!("无法获取镜像列表: {}", e))?;
+
+    Ok(images.into_iter().map(|img| ImageInfo {
+        id: img.id,
+        tags: img.repo_tags,
+        size: img.size,
+        created: img.created,
+    }).collect())
+}
+
+/// 删除镜像
+#[tauri::command]
+pub async fn remove_image(id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker.remove_image(&id, None, None)
+        .await
+        .map_err(|e| format!("删除镜像失败: {}", e))?;
+    Ok(())
+}
+
+/// 拉取镜像
+#[tauri::command]
+pub async fn pull_image(app: AppHandle, image_name: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    
+    let mut stream = docker.create_image(
+        Some(CreateImageOptions {
+            from_image: image_name.clone(),
+            ..Default::default()
+        }),
+        None,
+        None
+    );
+
+    tauri::async_runtime::spawn(async move {
+        while let Some(msg) = stream.next().await {
+            match msg {
+                Ok(info) => {
+                    // 发送拉取进度到前端
+                    if let Err(e) = app.emit("image-pull-progress", info) {
+                        eprintln!("发送拉取进度事件失败: {}", e);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("拉取镜像出错: {}", e);
+                    let _ = app.emit("image-pull-error", e.to_string());
+                    break;
+                }
+            }
+        }
+        // 拉取完成
+        let _ = app.emit("image-pull-finished", image_name);
+    });
+
+    Ok(())
 }
 
 /// 启动容器
