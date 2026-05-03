@@ -8,12 +8,7 @@ const routes = [
     children: [
       {
         path: '',
-        redirect: 'connections'
-      },
-      {
-        path: 'connections',
-        name: 'connections',
-        component: () => import('../views/Connections.vue')
+        redirect: 'compose'
       },
       {
         path: 'compose',

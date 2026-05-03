@@ -487,11 +487,11 @@ onUnmounted(() => {
 .containers-view {
   display: flex;
   gap: 16px;
-  height: calc(100vh - 64px - 32px);
+  height: calc(100vh - 40px);
 }
 
 .list-column {
-  width: 320px;
+  width: 260px;
   flex-shrink: 0;
 }
 
@@ -511,7 +511,7 @@ onUnmounted(() => {
 }
 
 .tab-pane-content {
-  height: calc(100vh - 64px - 32px - 140px);
+  height: calc(100vh - 180px);
 }
 
 .log-window {

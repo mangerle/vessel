@@ -172,11 +172,11 @@ onMounted(() => {
 .volumes-view {
   display: flex;
   gap: 16px;
-  height: calc(100vh - 64px - 32px);
+  height: calc(100vh - 40px);
 }
 
 .list-column {
-  width: 320px;
+  width: 260px;
   flex-shrink: 0;
 }
 

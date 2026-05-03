@@ -44,25 +44,15 @@ mod tests {
             
             let pool = get_pool();
             
-            // 验证 connections 表是否存在
+            // 验证 compose_projects 表是否存在
             let (table_exists,): (bool,) = sqlx::query_as(
-                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='connections')"
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='compose_projects')"
             )
             .fetch_one(pool)
             .await
             .expect("查询表状态失败");
             
-            assert!(table_exists, "connections 表应该已创建");
-
-            // 尝试向 connections 表插入数据以验证其结构
-            sqlx::query("INSERT INTO connections (id, name, driver, host) VALUES (?, ?, ?, ?)")
-                .bind(uuid::Uuid::new_v4().to_string())
-                .bind("Test connection")
-                .bind("local")
-                .bind("localhost")
-                .execute(pool)
-                .await
-                .expect("插入数据失败");
+            assert!(table_exists, "compose_projects 表应该已创建");
         });
     }
 }

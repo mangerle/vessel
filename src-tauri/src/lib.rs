@@ -60,11 +60,6 @@ pub fn run() {
             docker::list_volumes,
             docker::remove_volume,
             docker::prune_volumes,
-            connection::cmd_add_connection,
-            connection::cmd_get_connections,
-            connection::cmd_delete_connection,
-            connection::cmd_switch_connection,
-            connection::cmd_get_active_connection_id,
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用程序时出错");

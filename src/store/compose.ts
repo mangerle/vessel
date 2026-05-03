@@ -11,6 +11,7 @@ export interface ComposeProject {
   running_count: number
   status: string
     working_dir?: string
+    config_file?: string
 }
 
 /**
