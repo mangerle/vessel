@@ -29,7 +29,7 @@
           <!-- 这里以后可以放全局操作或状态 -->
         </n-space>
       </n-layout-header>
-      <n-layout-content content-style="padding: 24px;">
+      <n-layout-content content-style="padding: 16px; background-color: var(--macos-bg-light);">
         <router-view />
       </n-layout-content>
     </n-layout>
