@@ -1,31 +1,64 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
-import { useComposeStore } from '../store/compose'
-import { useContainerStore } from '../store/container'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { 
-  NDescriptions, NDescriptionsItem,
-  useMessage, NModal, NGrid, NGi, NScrollbar, NDropdown
+import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
+import {useComposeStore} from '../store/compose'
+import {useContainerStore} from '../store/container'
+import {invoke} from '@tauri-apps/api/core'
+import {listen} from '@tauri-apps/api/event'
+import {
+  NButton,
+  NButtonGroup,
+  NDescriptions,
+  NDescriptionsItem,
+  NDropdown,
+  NGi,
+  NGrid,
+  NInput,
+  NModal,
+  NScrollbar,
+  NSpace,
+  NTag,
+  NText,
+  useMessage
 } from 'naive-ui'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
+import {Terminal} from '@xterm/xterm'
+import {FitAddon} from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-
-use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
-
+import {use} from 'echarts/core'
+import {LineChart} from 'echarts/charts'
+import {GridComponent, LegendComponent, TooltipComponent} from 'echarts/components'
+import {CanvasRenderer} from 'echarts/renderers'
 import ComposeProjectList from '../components/compose/ComposeProjectList.vue'
 import ContainerDetail from '../components/compose/ContainerDetail.vue'
-import { useContextMenu } from '../hooks/useContextMenu'
+import {useContextMenu} from '../hooks/useContextMenu'
+
+use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const composeStore = useComposeStore()
 const containerStore = useContainerStore()
 const message = useMessage()
+
+// --- Selection State ---
+const selectedId = ref<string | null>(null)
+const selectedType = ref<'project' | 'container' | null>(null)
+const selectedProject = ref<any>(null)
+const containerDetails = ref<any>(null)
+const loadingDetails = ref(false)
+
+const onSelect = async (id: string) => {
+  selectedId.value = id
+  if (id.startsWith('project:')) {
+    selectedType.value = 'project'
+    const projectName = id.split(':')[1]
+    selectedProject.value = composeStore.projects.find(p => p.name === projectName)
+    if (selectedProject.value?.config_file) {
+      await composeStore.fetchComposeFile(selectedProject.value.config_file)
+    }
+  } else {
+    selectedType.value = 'container'
+    await fetchDetails(id)
+  }
+}
 
 // --- Context Menu ---
 const {
@@ -33,39 +66,153 @@ const {
   x,
   y,
   currentOptions: menuOptions,
+  currentTarget,
   handleContextMenu,
   onClickOutside: closeMenu
 } = useContextMenu()
 
 const handleMenuSelect = (key: string) => {
+  const target = currentTarget.value
   closeMenu()
-  if (!selectedContainerId.value) return
 
-  switch (key) {
-    case 'restart':
-      handleRestart()
-      break
-    case 'stop':
-      handleStop()
-      break
-    case 'terminal':
-      handleTerminal()
-      break
-    case 'logs':
-      // Switch to logs tab if possible, or just log for now
-      message.info('查看日志: ' + selectedContainerId.value)
-      break
+  const targetId = target?.id || (selectedType.value === 'container' ? selectedId.value : null)
+
+  if (targetId) {
+    // Handle Container Actions
+    if (key === 'start') handleStart(targetId)
+    else if (key === 'stop') handleStop(targetId)
+    else if (key === 'restart') handleRestart(targetId)
+    else if (key === 'delete') handleDelete(targetId)
+    else if (key === 'terminal' || key === 'terminal_user') openTerminal(targetId)
+    else if (key === 'terminal_root') openTerminal(targetId, 'root')
+    else if (key === 'logs') {
+      selectedId.value = targetId
+      selectedType.value = 'container'
+      fetchDetails(targetId)
+    }
+  }
+
+  if (key === 'up' || key === 'down' || key === 'restart_project' || key === 'edit') {
+    const project = (target && !target.id) ? target : selectedProject.value
+    if (!project) return
+
+    if (key === 'up') handleProjectUp(project)
+    else if (key === 'down') handleProjectDown(project)
+    else if (key === 'restart_project') handleProjectRestart(project)
+    else if (key === 'edit') handleProjectEdit(project)
   }
 }
 
-// --- Selection & Details ---
-const selectedContainerId = ref<string | null>(null)
-const containerDetails = ref<any>(null)
-const loadingDetails = ref(false)
+const handleStart = async (id?: string) => {
+  const targetId = typeof id === 'string' ? id : selectedId.value
+  if (!targetId || (typeof id !== 'string' && selectedType.value !== 'container')) return
+  try {
+    await containerStore.startContainer(targetId)
+    message.success('已启动容器')
+    await composeStore.fetchProjects() // Refresh projects to update counts
+    if (selectedId.value === targetId) await fetchDetails(targetId)
+  } catch (e: any) {
+    message.error('启动失败: ' + e)
+  }
+}
 
-const onSelect = async (id: string) => {
-  selectedContainerId.value = id
-  await fetchDetails(id)
+const handleStop = async (id?: string) => {
+  const targetId = typeof id === 'string' ? id : selectedId.value
+  if (!targetId || (typeof id !== 'string' && selectedType.value !== 'container')) return
+  try {
+    await containerStore.stopContainer(targetId)
+    message.success('已停止容器')
+    await composeStore.fetchProjects()
+    if (selectedId.value === targetId) await fetchDetails(targetId)
+  } catch (e: any) {
+    message.error('停止失败: ' + e)
+  }
+}
+
+const handleRestart = async (id?: string) => {
+  const targetId = typeof id === 'string' ? id : selectedId.value
+  if (!targetId || (typeof id !== 'string' && selectedType.value !== 'container')) return
+  try {
+    await containerStore.restartContainer(targetId)
+    message.success('已重启容器')
+    await composeStore.fetchProjects()
+    if (selectedId.value === targetId) await fetchDetails(targetId)
+  } catch (e: any) {
+    message.error('重启失败: ' + e)
+  }
+}
+
+const handleDelete = async (id?: string) => {
+  const targetId = typeof id === 'string' ? id : selectedId.value
+  if (!targetId || (typeof id !== 'string' && selectedType.value !== 'container')) return
+  try {
+    await containerStore.removeContainer(targetId)
+    message.success('容器已删除')
+    if (selectedId.value === targetId) {
+      selectedId.value = null
+      selectedType.value = null
+    }
+    await composeStore.fetchProjects()
+  } catch (e: any) {
+    message.error('删除失败: ' + e)
+  }
+}
+
+const handleProjectUp = async (project?: any) => {
+  const p = project?.working_dir ? project : selectedProject.value
+  if (!p?.working_dir) return
+  try {
+    await composeStore.runComposeCommand(p.working_dir, ['up', '-d'])
+    message.success('已发送 Compose Up 指令')
+  } catch (e: any) {
+    message.error('操作失败: ' + e)
+  }
+}
+
+const handleProjectDown = async (project?: any) => {
+  const p = project?.working_dir ? project : selectedProject.value
+  if (!p?.working_dir) return
+  try {
+    await composeStore.runComposeCommand(p.working_dir, ['down'])
+    message.success('已发送 Compose Down 指令')
+  } catch (e: any) {
+    message.error('操作失败: ' + e)
+  }
+}
+
+const handleProjectRestart = async (project?: any) => {
+  const p = project?.working_dir ? project : selectedProject.value
+  if (!p?.working_dir) return
+  try {
+    await composeStore.runComposeCommand(p.working_dir, ['restart'])
+    message.success('已发送 Compose Restart 指令')
+  } catch (e: any) {
+    message.error('操作失败: ' + e)
+  }
+}
+
+const handleProjectEdit = async (project?: any) => {
+  const p = project?.config_file ? project : selectedProject.value
+  if (!p?.config_file) {
+    message.warning('无法找到项目的配置文件路径')
+    return
+  }
+  try {
+    await composeStore.fetchComposeFile(p.config_file)
+    message.success('已加载配置文件')
+  } catch (e: any) {
+    message.error('加载失败: ' + e)
+  }
+}
+
+const handleSaveConfig = async () => {
+  if (!selectedProject.value?.config_file) return
+  try {
+    await composeStore.saveComposeFile(selectedProject.value.config_file, composeStore.currentProjectFile)
+    message.success('配置已保存')
+  } catch (e: any) {
+    message.error('保存失败: ' + e)
+  }
 }
 
 const fetchDetails = async (id: string) => {
@@ -81,29 +228,9 @@ const fetchDetails = async (id: string) => {
   }
 }
 
-const handleRestart = async () => {
-  if (!selectedContainerId.value) return
-  try {
-    await containerStore.restartContainer(selectedContainerId.value)
-    message.success('已发送重启指令')
-  } catch (e: any) {
-    message.error('操作失败: ' + e)
-  }
-}
-
-const handleStop = async () => {
-  if (!selectedContainerId.value) return
-  try {
-    await containerStore.stopContainer(selectedContainerId.value)
-    message.success('已发送停止指令')
-  } catch (e: any) {
-    message.error('操作失败: ' + e)
-  }
-}
-
 const handleTerminal = () => {
-  if (selectedContainerId.value) {
-    openTerminal(selectedContainerId.value)
+  if (selectedType.value === 'container' && selectedId.value) {
+    openTerminal(selectedId.value)
   }
 }
 
@@ -327,15 +454,17 @@ onUnmounted(() => {
 <template>
   <div class="compose-view" @contextmenu="handleContextMenu($event, 'global')">
     <div class="list-column floating-card">
-      <ComposeProjectList 
-        :items="containerStore.containers" 
-        :selected-id="selectedContainerId" 
+      <ComposeProjectList
+          :containers="containerStore.containers"
+          :projects="composeStore.projects"
+          :selected-id="selectedId"
         @select="onSelect" 
         @contextmenu="handleContextMenu"
       />
     </div>
     <div class="detail-column floating-card">
-      <ContainerDetail 
+      <ContainerDetail
+          v-if="selectedType === 'container'"
         :container="containerDetails" 
         :loading="loadingDetails"
         @restart="handleRestart"
@@ -386,6 +515,59 @@ onUnmounted(() => {
           </n-scrollbar>
         </template>
       </ContainerDetail>
+
+      <div v-else-if="selectedType === 'project'" class="project-workspace">
+        <div class="workspace-header">
+          <div class="project-info">
+            <h2 class="name">{{ selectedProject?.name }}</h2>
+            <n-space>
+              <n-tag :type="selectedProject?.status === 'running' ? 'success' : 'default'" round size="small">
+                {{ selectedProject?.status === 'running' ? '运行中' : '已停止' }}
+              </n-tag>
+              <span class="stats">{{ selectedProject?.running_count }} / {{
+                  selectedProject?.container_count
+                }} 容器运行中</span>
+            </n-space>
+          </div>
+          <div class="actions">
+            <n-button-group round size="small">
+              <n-button :loading="composeStore.executing" type="primary" @click="handleProjectUp">启动 (Up)</n-button>
+              <n-button :loading="composeStore.executing" @click="handleProjectDown">停止 (Down)</n-button>
+              <n-button :loading="composeStore.executing" @click="handleProjectRestart">重启</n-button>
+              <n-button @click="handleSaveConfig">保存配置</n-button>
+            </n-button-group>
+          </div>
+        </div>
+
+        <div class="workspace-content">
+          <div class="editor-container">
+            <div class="editor-header">
+              <span>docker-compose.yml</span>
+              <span class="path">{{ selectedProject?.config_file }}</span>
+            </div>
+            <n-input
+                v-model:value="composeStore.currentProjectFile"
+                :autosize="{ minRows: 10 }"
+                class="yaml-editor"
+                placeholder="YAML 内容..."
+                type="textarea"
+            />
+          </div>
+          <div class="console-panel">
+            <div class="console-header">执行输出</div>
+            <n-scrollbar class="console-body">
+              <div v-for="(line, idx) in composeStore.commandOutput" :key="idx" class="console-line">
+                {{ line }}
+              </div>
+              <div v-if="composeStore.commandOutput.length === 0" class="empty-console">等待执行命令...</div>
+            </n-scrollbar>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="empty-state">
+        <n-text depth="3">请选择一个项目或容器以查看详情</n-text>
+      </div>
     </div>
   </div>
 
@@ -461,5 +643,106 @@ onUnmounted(() => {
 .chart {
   height: 250px;
   width: 100%;
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Project Workspace Styles */
+.project-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.workspace-header {
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 0.5px solid var(--macos-border-color);
+}
+
+.workspace-header .name {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.workspace-header .stats {
+  font-size: 11px;
+  color: #86868b;
+}
+
+.workspace-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 0.5px solid var(--macos-border-color);
+}
+
+.editor-header {
+  padding: 8px 16px;
+  background: #f8f8f8;
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 0.5px solid var(--macos-border-color);
+}
+
+.editor-header .path {
+  color: #86868b;
+  font-family: monospace;
+}
+
+.yaml-editor {
+  flex: 1;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.console-panel {
+  height: 200px;
+  background: #1e1e1e;
+  display: flex;
+  flex-direction: column;
+}
+
+.console-header {
+  padding: 4px 16px;
+  background: #333;
+  color: #eee;
+  font-size: 11px;
+}
+
+.console-body {
+  flex: 1;
+  padding: 8px 16px;
+}
+
+.console-line {
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  margin-bottom: 2px;
+}
+
+.empty-console {
+  color: #666;
+  font-style: italic;
+  font-size: 12px;
+  margin-top: 10px;
 }
 </style>

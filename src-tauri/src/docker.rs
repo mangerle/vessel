@@ -1,16 +1,17 @@
 use crate::connection::get_docker_client;
-use bollard::container::{ListContainersOptions, StatsOptions, LogsOptions};
-use bollard::exec::{CreateExecOptions, StartExecResults, ResizeExecOptions};
-use bollard::image::{ListImagesOptions, CreateImageOptions};
-use serde::Serialize;
+use bollard::container::{ListContainersOptions, LogsOptions, StatsOptions};
+use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecResults};
+use bollard::image::{CreateImageOptions, ListImagesOptions};
 use futures_util::stream::StreamExt;
-use tauri::{AppHandle, Emitter};
-use std::collections::HashMap;
-use tokio::sync::mpsc;
 use once_cell::sync::Lazy;
+use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tauri::{AppHandle, Emitter};
+use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 
 /// 容器信息结构体
 #[derive(Serialize)]
@@ -66,6 +67,8 @@ pub struct ComposeProject {
     pub container_count: usize,
     pub running_count: usize,
     pub status: String,
+    pub working_dir: Option<String>,
+    pub config_file: Option<String>,
 }
 
 /// 端口映射结构体
@@ -108,26 +111,37 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
     let docker = get_docker_client().await?;
 
     // 列出所有容器 (包括未运行的)
-    let containers = docker.list_containers(Some(ListContainersOptions::<String> {
-        all: true,
-        ..Default::default()
-    })).await.map_err(|e| format!("无法获取容器列表: {}", e))?;
-    
+    let containers = docker
+        .list_containers(Some(ListContainersOptions::<String> {
+            all: true,
+            ..Default::default()
+        }))
+        .await
+        .map_err(|e| format!("无法获取容器列表: {}", e))?;
+
     // 转换为前端友好的格式
-    Ok(containers.into_iter().map(|c| {
-        let compose_project = c.labels.as_ref().and_then(|labels| labels.get("com.docker.compose.project").cloned());
-        ContainerInfo {
-            id: c.id.unwrap_or_default(),
-            // c.names 通常以 ["/container_name"] 格式返回，所以我们取第一个并去掉开头的斜杠
-            name: c.names.as_ref()
-                .and_then(|names| names.first())
-                .map(|name| name.trim_start_matches('/').to_string())
-                .unwrap_or_else(|| "未知".to_string()),
-            state: c.state.unwrap_or_default(),
-            image: c.image.unwrap_or_default(),
-            compose_project,
-        }
-    }).collect())
+    Ok(containers
+        .into_iter()
+        .map(|c| {
+            let compose_project = c
+                .labels
+                .as_ref()
+                .and_then(|labels| labels.get("com.docker.compose.project").cloned());
+            ContainerInfo {
+                id: c.id.unwrap_or_default(),
+                // c.names 通常以 ["/container_name"] 格式返回，所以我们取第一个并去掉开头的斜杠
+                name: c
+                    .names
+                    .as_ref()
+                    .and_then(|names| names.first())
+                    .map(|name| name.trim_start_matches('/').to_string())
+                    .unwrap_or_else(|| "未知".to_string()),
+                state: c.state.unwrap_or_default(),
+                image: c.image.unwrap_or_default(),
+                compose_project,
+            }
+        })
+        .collect())
 }
 
 /// 获取本地 Docker 镜像列表的命令
@@ -135,24 +149,31 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
 pub async fn list_images() -> Result<Vec<ImageInfo>, String> {
     let docker = get_docker_client().await?;
 
-    let images = docker.list_images(Some(ListImagesOptions::<String> {
-        all: false,
-        ..Default::default()
-    })).await.map_err(|e| format!("无法获取镜像列表: {}", e))?;
+    let images = docker
+        .list_images(Some(ListImagesOptions::<String> {
+            all: false,
+            ..Default::default()
+        }))
+        .await
+        .map_err(|e| format!("无法获取镜像列表: {}", e))?;
 
-    Ok(images.into_iter().map(|img| ImageInfo {
-        id: img.id,
-        tags: img.repo_tags,
-        size: img.size,
-        created: img.created,
-    }).collect())
+    Ok(images
+        .into_iter()
+        .map(|img| ImageInfo {
+            id: img.id,
+            tags: img.repo_tags,
+            size: img.size,
+            created: img.created,
+        })
+        .collect())
 }
 
 /// 删除镜像
 #[tauri::command]
 pub async fn remove_image(id: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.remove_image(&id, None, None)
+    docker
+        .remove_image(&id, None, None)
         .await
         .map_err(|e| format!("删除镜像失败: {}", e))?;
     Ok(())
@@ -162,14 +183,14 @@ pub async fn remove_image(id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn pull_image(app: AppHandle, image_name: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    
+
     let mut stream = docker.create_image(
         Some(CreateImageOptions {
             from_image: image_name.clone(),
             ..Default::default()
         }),
         None,
-        None
+        None,
     );
 
     tauri::async_runtime::spawn(async move {
@@ -200,7 +221,8 @@ pub async fn pull_image(app: AppHandle, image_name: String) -> Result<(), String
 #[tauri::command]
 pub async fn start_container(id: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.start_container::<String>(&id, None)
+    docker
+        .start_container::<String>(&id, None)
         .await
         .map_err(|e| format!("启动容器失败: {}", e))
 }
@@ -209,7 +231,8 @@ pub async fn start_container(id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn stop_container(id: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.stop_container(&id, None)
+    docker
+        .stop_container(&id, None)
         .await
         .map_err(|e| format!("停止容器失败: {}", e))
 }
@@ -218,7 +241,8 @@ pub async fn stop_container(id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn restart_container(id: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.restart_container(&id, None)
+    docker
+        .restart_container(&id, None)
         .await
         .map_err(|e| format!("重启容器失败: {}", e))
 }
@@ -227,7 +251,8 @@ pub async fn restart_container(id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn inspect_container(id: String) -> Result<ContainerDetails, String> {
     let docker = get_docker_client().await?;
-    let details = docker.inspect_container(&id, None)
+    let details = docker
+        .inspect_container(&id, None)
         .await
         .map_err(|e| format!("获取容器详情失败: {}", e))?;
 
@@ -244,12 +269,18 @@ pub async fn inspect_container(id: String) -> Result<ContainerDetails, String> {
                     let type_ = parts.get(1).unwrap_or(&"tcp").to_string();
 
                     match v {
-                        Some(bindings) => bindings.iter().map(move |b| PortMapping {
-                            private_port,
-                            public_port: b.host_port.as_ref().and_then(|hp| hp.parse::<u16>().ok()),
-                            type_: type_.clone(),
-                            ip: b.host_ip.clone(),
-                        }).collect::<Vec<_>>(),
+                        Some(bindings) => bindings
+                            .iter()
+                            .map(move |b| PortMapping {
+                                private_port,
+                                public_port: b
+                                    .host_port
+                                    .as_ref()
+                                    .and_then(|hp| hp.parse::<u16>().ok()),
+                                type_: type_.clone(),
+                                ip: b.host_ip.clone(),
+                            })
+                            .collect::<Vec<_>>(),
                         None => vec![PortMapping {
                             private_port,
                             public_port: None,
@@ -262,22 +293,42 @@ pub async fn inspect_container(id: String) -> Result<ContainerDetails, String> {
         })
         .unwrap_or_default();
 
-    let mounts = details.mounts.as_ref().map(|m| {
-        m.iter().map(|mi| MountInfo {
-            source: mi.source.clone().unwrap_or_default(),
-            destination: mi.destination.clone().unwrap_or_default(),
-            mode: mi.mode.clone().unwrap_or_default(),
-            rw: mi.rw.unwrap_or_default(),
-        }).collect()
-    }).unwrap_or_default();
+    let mounts = details
+        .mounts
+        .as_ref()
+        .map(|m| {
+            m.iter()
+                .map(|mi| MountInfo {
+                    source: mi.source.clone().unwrap_or_default(),
+                    destination: mi.destination.clone().unwrap_or_default(),
+                    mode: mi.mode.clone().unwrap_or_default(),
+                    rw: mi.rw.unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     Ok(ContainerDetails {
         id: details.id.unwrap_or_default(),
-        name: details.name.unwrap_or_default().trim_start_matches('/').to_string(),
+        name: details
+            .name
+            .unwrap_or_default()
+            .trim_start_matches('/')
+            .to_string(),
         image: config.and_then(|c| c.image.clone()).unwrap_or_default(),
         image_id: details.image.unwrap_or_default(),
-        state: details.state.as_ref().and_then(|s| s.status).map(|s| format!("{:?}", s)).unwrap_or_default(),
-        status: details.state.as_ref().and_then(|s| s.status).map(|s| format!("{:?}", s)).unwrap_or_default(),
+        state: details
+            .state
+            .as_ref()
+            .and_then(|s| s.status)
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_default(),
+        status: details
+            .state
+            .as_ref()
+            .and_then(|s| s.status)
+            .map(|s| format!("{:?}", s))
+            .unwrap_or_default(),
         created: details.created.unwrap_or_default(),
         env: config.and_then(|c| c.env.clone()).unwrap_or_default(),
         ports,
@@ -289,7 +340,8 @@ pub async fn inspect_container(id: String) -> Result<ContainerDetails, String> {
 #[tauri::command]
 pub async fn remove_container(id: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.remove_container(&id, None)
+    docker
+        .remove_container(&id, None)
         .await
         .map_err(|e| format!("删除容器失败: {}", e))
 }
@@ -298,10 +350,13 @@ pub async fn remove_container(id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn stream_container_stats(app: AppHandle, id: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    let mut stream = docker.stats(&id, Some(StatsOptions {
-        stream: true,
-        one_shot: false,
-    }));
+    let mut stream = docker.stats(
+        &id,
+        Some(StatsOptions {
+            stream: true,
+            one_shot: false,
+        }),
+    );
 
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = stream.next().await {
@@ -329,14 +384,17 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> Result<(), St
 #[tauri::command]
 pub async fn stream_container_logs(app: AppHandle, id: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    let mut stream = docker.logs(&id, Some(LogsOptions {
-        follow: true,
-        stdout: true,
-        stderr: true,
-        tail: "100",
-        timestamps: true,
-        ..Default::default()
-    }));
+    let mut stream = docker.logs(
+        &id,
+        Some(LogsOptions {
+            follow: true,
+            stdout: true,
+            stderr: true,
+            tail: "100",
+            timestamps: true,
+            ..Default::default()
+        }),
+    );
 
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = stream.next().await {
@@ -363,31 +421,63 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> Result<(), Str
 #[tauri::command]
 pub async fn list_compose_projects() -> Result<Vec<ComposeProject>, String> {
     let docker = get_docker_client().await?;
-    let containers = docker.list_containers(Some(ListContainersOptions::<String> {
-        all: true,
-        ..Default::default()
-    })).await.map_err(|e| format!("无法获取容器列表: {}", e))?;
+    let containers = docker
+        .list_containers(Some(ListContainersOptions::<String> {
+            all: true,
+            ..Default::default()
+        }))
+        .await
+        .map_err(|e| format!("无法获取容器列表: {}", e))?;
 
-    let mut projects_map: std::collections::HashMap<String, (usize, usize)> = std::collections::HashMap::new();
+    struct ProjectData {
+        total: usize,
+        running: usize,
+        working_dir: Option<String>,
+        config_file: Option<String>,
+    }
+
+    let mut projects_map: std::collections::HashMap<String, ProjectData> =
+        std::collections::HashMap::new();
 
     for container in containers {
         if let Some(labels) = container.labels {
             if let Some(project_name) = labels.get("com.docker.compose.project") {
-                let counts = projects_map.entry(project_name.clone()).or_insert((0, 0));
-                counts.0 += 1; // 总数
+                let data = projects_map
+                    .entry(project_name.clone())
+                    .or_insert(ProjectData {
+                        total: 0,
+                        running: 0,
+                        working_dir: labels
+                            .get("com.docker.compose.project.working_dir")
+                            .cloned(),
+                        config_file: labels
+                            .get("com.docker.compose.project.config_files")
+                            .cloned(),
+                    });
+
+                data.total += 1;
                 if container.state.as_deref() == Some("running") {
-                    counts.1 += 1; // 运行中
+                    data.running += 1;
                 }
             }
         }
     }
 
-    let projects = projects_map.into_iter().map(|(name, (total, running))| ComposeProject {
-        name,
-        container_count: total,
-        running_count: running,
-        status: if running > 0 { "running".to_string() } else { "exited".to_string() },
-    }).collect();
+    let projects = projects_map
+        .into_iter()
+        .map(|(name, data)| ComposeProject {
+            name,
+            container_count: data.total,
+            running_count: data.running,
+            status: if data.running > 0 {
+                "running".to_string()
+            } else {
+                "exited".to_string()
+            },
+            working_dir: data.working_dir,
+            config_file: data.config_file,
+        })
+        .collect();
 
     Ok(projects)
 }
@@ -396,29 +486,41 @@ pub async fn list_compose_projects() -> Result<Vec<ComposeProject>, String> {
 #[tauri::command]
 pub async fn list_networks() -> Result<Vec<NetworkInfo>, String> {
     let docker = get_docker_client().await?;
-    let networks = docker.list_networks::<String>(None).await.map_err(|e| format!("无法获取网络列表: {}", e))?;
+    let networks = docker
+        .list_networks::<String>(None)
+        .await
+        .map_err(|e| format!("无法获取网络列表: {}", e))?;
 
-    Ok(networks.into_iter().map(|n| NetworkInfo {
-        id: n.id.unwrap_or_default(),
-        name: n.name.unwrap_or_default(),
-        driver: n.driver.unwrap_or_default(),
-        scope: n.scope.unwrap_or_default(),
-        created: n.created.unwrap_or_default(),
-    }).collect())
+    Ok(networks
+        .into_iter()
+        .map(|n| NetworkInfo {
+            id: n.id.unwrap_or_default(),
+            name: n.name.unwrap_or_default(),
+            driver: n.driver.unwrap_or_default(),
+            scope: n.scope.unwrap_or_default(),
+            created: n.created.unwrap_or_default(),
+        })
+        .collect())
 }
 
 /// 删除网络
 #[tauri::command]
 pub async fn remove_network(id: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.remove_network(&id).await.map_err(|e| format!("删除网络失败: {}", e))
+    docker
+        .remove_network(&id)
+        .await
+        .map_err(|e| format!("删除网络失败: {}", e))
 }
 
 /// 清理未使用的网络
 #[tauri::command]
 pub async fn prune_networks() -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.prune_networks::<String>(None).await.map_err(|e| format!("清理网络失败: {}", e))?;
+    docker
+        .prune_networks::<String>(None)
+        .await
+        .map_err(|e| format!("清理网络失败: {}", e))?;
     Ok(())
 }
 
@@ -426,29 +528,41 @@ pub async fn prune_networks() -> Result<(), String> {
 #[tauri::command]
 pub async fn list_volumes() -> Result<Vec<VolumeInfo>, String> {
     let docker = get_docker_client().await?;
-    let response = docker.list_volumes::<String>(None).await.map_err(|e| format!("无法获取卷列表: {}", e))?;
+    let response = docker
+        .list_volumes::<String>(None)
+        .await
+        .map_err(|e| format!("无法获取卷列表: {}", e))?;
 
     let volumes = response.volumes.unwrap_or_default();
-    Ok(volumes.into_iter().map(|v| VolumeInfo {
-        name: v.name,
-        driver: v.driver,
-        mountpoint: v.mountpoint,
-        created: v.created_at.unwrap_or_default(),
-    }).collect())
+    Ok(volumes
+        .into_iter()
+        .map(|v| VolumeInfo {
+            name: v.name,
+            driver: v.driver,
+            mountpoint: v.mountpoint,
+            created: v.created_at.unwrap_or_default(),
+        })
+        .collect())
 }
 
 /// 删除卷
 #[tauri::command]
 pub async fn remove_volume(name: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.remove_volume(&name, None).await.map_err(|e| format!("删除卷失败: {}", e))
+    docker
+        .remove_volume(&name, None)
+        .await
+        .map_err(|e| format!("删除卷失败: {}", e))
 }
 
 /// 清理未使用的卷
 #[tauri::command]
 pub async fn prune_volumes() -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.prune_volumes::<String>(None).await.map_err(|e| format!("清理卷失败: {}", e))?;
+    docker
+        .prune_volumes::<String>(None)
+        .await
+        .map_err(|e| format!("清理卷失败: {}", e))?;
     Ok(())
 }
 
@@ -458,33 +572,50 @@ pub struct TerminalSession {
 }
 
 /// 全局终端会话管理器
-static TERMINAL_SESSIONS: Lazy<Arc<Mutex<HashMap<String, TerminalSession>>>> = 
+static TERMINAL_SESSIONS: Lazy<Arc<Mutex<HashMap<String, TerminalSession>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// 创建容器终端会话
 #[tauri::command]
-pub async fn create_container_terminal(app: AppHandle, id: String, user: Option<String>) -> Result<String, String> {
+pub async fn create_container_terminal(
+    app: AppHandle,
+    id: String,
+    user: Option<String>,
+) -> Result<String, String> {
     let docker = get_docker_client().await?;
-    
+
     // 1. 创建 Exec
-    let exec = docker.create_exec(&id, CreateExecOptions {
-        attach_stdin: Some(true),
-        attach_stdout: Some(true),
-        attach_stderr: Some(true),
-        tty: Some(true),
-        user,
-        cmd: Some(vec!["/bin/sh".to_string()]), // 默认使用 sh，前端可以根据需要修改
-        ..Default::default()
-    }).await.map_err(|e| format!("创建终端失败: {}", e))?;
+    let exec = docker
+        .create_exec(
+            &id,
+            CreateExecOptions {
+                attach_stdin: Some(true),
+                attach_stdout: Some(true),
+                attach_stderr: Some(true),
+                tty: Some(true),
+                user,
+                cmd: Some(vec!["/bin/sh".to_string()]), // 默认使用 sh，前端可以根据需要修改
+                ..Default::default()
+            },
+        )
+        .await
+        .map_err(|e| format!("创建终端失败: {}", e))?;
 
     let exec_id = exec.id;
     let exec_id_clone = exec_id.clone();
     let app_clone = app.clone();
 
     // 2. 启动 Exec
-    let start_result = docker.start_exec(&exec_id, None).await.map_err(|e| format!("启动终端失败: {}", e))?;
+    let start_result = docker
+        .start_exec(&exec_id, None)
+        .await
+        .map_err(|e| format!("启动终端失败: {}", e))?;
 
-    if let StartExecResults::Attached { mut output, mut input } = start_result {
+    if let StartExecResults::Attached {
+        mut output,
+        mut input,
+    } = start_result
+    {
         let (stdin_tx, mut stdin_rx) = mpsc::channel::<Vec<u8>>(100);
 
         // 存储会话
@@ -545,19 +676,83 @@ pub async fn create_container_terminal(app: AppHandle, id: String, user: Option<
 pub async fn write_to_terminal(exec_id: String, data: Vec<u8>) -> Result<(), String> {
     let sessions = TERMINAL_SESSIONS.lock().await;
     if let Some(session) = sessions.get(&exec_id) {
-        session.stdin_tx.send(data).await.map_err(|e| format!("写入终端失败: {}", e))?;
+        session
+            .stdin_tx
+            .send(data)
+            .await
+            .map_err(|e| format!("写入终端失败: {}", e))?;
         Ok(())
     } else {
         Err("会话不存在".to_string())
     }
 }
 
-/// 调整终端大小
+/// 璋冪暣终端澶у皬
 #[tauri::command]
-pub async fn resize_container_terminal(exec_id: String, height: u16, width: u16) -> Result<(), String> {
+pub async fn resize_container_terminal(
+    exec_id: String,
+    height: u16,
+    width: u16,
+) -> Result<(), String> {
     let docker = get_docker_client().await?;
-    docker.resize_exec(&exec_id, ResizeExecOptions {
-        height,
-        width,
-    }).await.map_err(|e| format!("调整终端大小失败: {}", e))
+    docker
+        .resize_exec(&exec_id, ResizeExecOptions { height, width })
+        .await
+        .map_err(|e| format!("璋冪暣终端澶у皬澶辫触: {}", e))
+}
+
+#[tauri::command]
+pub async fn read_compose_file(path: String) -> Result<String, String> {
+    tokio::fs::read_to_string(path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn write_compose_file(path: String, content: String) -> Result<(), String> {
+    tokio::fs::write(path, content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn run_compose_command(
+    app: AppHandle,
+    project_dir: String,
+    args: Vec<String>,
+) -> Result<(), String> {
+    let mut child = tokio::process::Command::new("docker")
+        .arg("compose")
+        .args(args)
+        .current_dir(project_dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start docker compose: {}", e))?;
+
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    let app_clone = app.clone();
+
+    // Handle stdout
+    tauri::async_runtime::spawn(async move {
+        let reader = tokio::io::BufReader::new(stdout);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_clone.emit("compose-cmd-output", line);
+        }
+    });
+
+    let app_clone_err = app.clone();
+    // Handle stderr
+    tauri::async_runtime::spawn(async move {
+        let reader = tokio::io::BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_clone_err.emit("compose-cmd-output", line);
+        }
+    });
+
+    Ok(())
 }

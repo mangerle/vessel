@@ -23,13 +23,14 @@
       />
     </n-layout-sider>
     <n-layout>
-      <n-layout-header bordered style="height: 64px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between;">
-        <n-h3 style="margin: 0">{{ pageTitle }}</n-h3>
+      <n-layout-header
+          style="height: 64px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; background-color: var(--macos-bg-light);">
+        <n-h3 style="margin: 0; font-weight: 700; color: #1d1d1f;">{{ pageTitle }}</n-h3>
         <n-space>
           <!-- 这里以后可以放全局操作或状态 -->
         </n-space>
       </n-layout-header>
-      <n-layout-content content-style="padding: 16px; background-color: var(--macos-bg-light);">
+      <n-layout-content content-style="padding: 0 24px 24px 24px; background-color: var(--macos-bg-light);">
         <router-view />
       </n-layout-content>
     </n-layout>
@@ -37,18 +38,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, Component, computed, watch } from 'vue'
-import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NIcon, NH3, NSpace } from 'naive-ui'
-import type { MenuOption } from 'naive-ui'
-import { useRouter, useRoute } from 'vue-router'
-import {
-  LinkOutline,
-  CubeOutline,
-  LayersOutline,
-  ImagesOutline,
-  GlobeOutline,
-  SaveOutline
-} from '@vicons/ionicons5'
+import {Component, computed, h, ref, watch} from 'vue'
+import type {MenuOption} from 'naive-ui'
+import {NH3, NIcon, NLayout, NLayoutContent, NLayoutHeader, NLayoutSider, NMenu, NSpace} from 'naive-ui'
+import {useRoute, useRouter} from 'vue-router'
+import {CubeOutline, GlobeOutline, ImagesOutline, LayersOutline, LinkOutline, SaveOutline} from '@vicons/ionicons5'
 
 const router = useRouter()
 const route = useRoute()

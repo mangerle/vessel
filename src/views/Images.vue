@@ -1,136 +1,101 @@
 <script setup lang="ts">
-import { onMounted, h, computed, ref, watch } from 'vue'
-import { useImageStore, type ImageInfo } from '../store/image'
-import { 
-  NDataTable, NTag, NSpace, NButton, NCard, 
-  NText, NPopconfirm, NTooltip, NIcon, NStatistic, NGrid, NGi,
-  NInput, NInputGroup, NDrawer, NDrawerContent, NScrollbar, useMessage
+import {computed, h, nextTick, onMounted, ref} from 'vue'
+import {useImageStore} from '../store/image'
+import {
+  NButton,
+  NDescriptions,
+  NDescriptionsItem,
+  NDropdown,
+  NIcon,
+  NInput,
+  NInputGroup,
+  NModal,
+  NScrollbar,
+  NSpace,
+  NTag,
+  useMessage
 } from 'naive-ui'
-import type { DataTableColumns } from 'naive-ui'
-import { 
-  CloudDownloadOutline,
-  TrashOutline,
-  SearchOutline
-} from '@vicons/ionicons5'
+import {CloudDownloadOutline, InformationCircleOutline, SearchOutline, TrashOutline} from '@vicons/ionicons5'
+
+import MacOSList from '../components/common/MacOSList.vue'
+import ResourceDetail from '../components/common/ResourceDetail.vue'
 
 const imageStore = useImageStore()
 const message = useMessage()
+
+const selectedId = ref<string | null>(null)
+const selectedItem = computed(() => imageStore.images.find(img => img.id === selectedId.value))
 const pullImageName = ref('')
 const showPullDrawer = ref(false)
-const scrollbarRef = ref<any>(null)
 
-const totalSize = computed(() => {
-  const bytes = imageStore.images.reduce((sum, img) => sum + img.size, 0)
-  return formatBytes(bytes)
-})
+const onSelect = (id: string) => {
+  selectedId.value = id
+}
 
-const imageCount = computed(() => imageStore.images.length)
-
-function formatBytes(bytes: number, decimals = 2) {
+const formatBytes = (bytes: number, decimals = 2) => {
   if (bytes === 0) return '0 Bytes'
   const k = 1024
   const dm = decimals < 0 ? 0 : decimals
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
 }
 
-function formatDate(timestamp: number) {
+const formatDate = (timestamp: number) => {
   return new Date(timestamp * 1000).toLocaleString()
 }
 
-const columns: DataTableColumns<ImageInfo> = [
-  {
-    title: '镜像 ID',
-    key: 'id',
-    width: 150,
-    render(row) {
-      return row.id.split(':')[1]?.substring(0, 12) || row.id.substring(0, 12)
-    }
-  },
-  {
-    title: '仓库:标签',
-    key: 'tags',
-    minWidth: 250,
-    render(row) {
-      if (!row.tags || row.tags.length === 0) {
-        return h(NTag, { type: 'info', bordered: false }, { default: () => '<none>:<none>' })
-      }
-      return h(NSpace, { size: 'small' }, {
-        default: () => row.tags.map(tag => h(NTag, { type: 'info', bordered: false }, { default: () => tag }))
-      })
-    }
-  },
-  {
-    title: '大小',
-    key: 'size',
-    width: 120,
-    render(row) {
-      return formatBytes(row.size)
-    }
-  },
-  {
-    title: '创建时间',
-    key: 'created',
-    width: 200,
-    render(row) {
-      return formatDate(row.created)
-    }
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 100,
-    render(row) {
-      return h(NPopconfirm, {
-        onPositiveClick: () => handleDelete(row.id)
-      }, {
-        trigger: () => h(NTooltip, {}, {
-          trigger: () => h(NButton, {
-            circle: true,
-            quaternary: true,
-            type: 'error'
-          }, { icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }),
-          default: () => '删除镜像'
-        }),
-        default: () => '确定要删除此镜像吗？'
-      })
-    }
-  }
-]
-
-async function handleDelete(id: string) {
+const handleDelete = async (id: string) => {
   try {
     await imageStore.removeImage(id)
     message.success('镜像已删除')
+    if (selectedId.value === id) selectedId.value = null
   } catch (err) {
     message.error('删除镜像失败: ' + err)
   }
 }
 
-async function handlePull() {
+const handlePull = async () => {
   if (!pullImageName.value) {
     message.warning('请输入镜像名称')
     return
   }
-  
   showPullDrawer.value = true
   try {
     await imageStore.pullImage(pullImageName.value)
     pullImageName.value = ''
   } catch (err) {
-    message.error('启动拉取任务失败: ' + err)
+    message.error('拉取失败: ' + err)
   }
 }
 
-// 自动滚动到日志底部
-watch(() => imageStore.pullLogs.length, () => {
-  if (scrollbarRef.value) {
-    setTimeout(() => {
-      scrollbarRef.value.scrollTo({ position: 'bottom', silent: true })
-    }, 100)
-  }
-})
+const menuOptions = [
+  {label: '详情', key: 'detail', icon: () => h(NIcon, null, {default: () => h(InformationCircleOutline)})},
+  {label: '删除', key: 'delete', icon: () => h(NIcon, null, {default: () => h(TrashOutline)})}
+]
+
+const showMenu = ref(false)
+const x = ref(0)
+const y = ref(0)
+const menuTarget = ref<any>(null)
+
+const handleContextMenu = (e: MouseEvent, type: string, item: any) => {
+  e.preventDefault()
+  showMenu.value = false
+  nextTick(() => {
+    x.value = e.clientX
+    y.value = e.clientY
+    menuTarget.value = item
+    showMenu.value = true
+  })
+}
+
+const handleMenuSelect = (key: string) => {
+  showMenu.value = false
+  if (!menuTarget.value) return
+  if (key === 'delete') handleDelete(menuTarget.value.id)
+  else if (key === 'detail') onSelect(menuTarget.value.id)
+}
 
 onMounted(() => {
   imageStore.fetchImages()
@@ -138,101 +103,140 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="images-list">
-    <n-space vertical size="large">
-      <n-grid :cols="4" :x-gap="12">
-        <n-gi :span="1">
-          <n-card>
-            <n-statistic label="镜像数量" :value="imageCount" />
-          </n-card>
-        </n-gi>
-        <n-gi :span="1">
-          <n-card>
-            <n-statistic label="总占用空间" :value="totalSize" />
-          </n-card>
-        </n-gi>
-        <n-gi :span="2">
-          <n-card>
-            <n-input-group>
-              <n-input v-model:value="pullImageName" placeholder="输入镜像名称 (如: nginx:latest)" @keyup.enter="handlePull">
-                <template #prefix>
-                  <n-icon :component="SearchOutline" />
-                </template>
-              </n-input>
-              <n-button type="primary" @click="handlePull" :loading="imageStore.pulling">
-                <template #icon>
-                  <n-icon :component="CloudDownloadOutline" />
-                </template>
-                拉取镜像
-              </n-button>
-            </n-input-group>
-          </n-card>
-        </n-gi>
-      </n-grid>
+  <div class="images-view">
+    <div class="list-column floating-card">
+      <div class="pull-section">
+        <n-input-group>
+          <n-input v-model:value="pullImageName" placeholder="拉取镜像..." round size="small" @keyup.enter="handlePull">
+            <template #prefix>
+              <n-icon :component="SearchOutline"/>
+            </template>
+          </n-input>
+          <n-button :loading="imageStore.pulling" round size="small" type="primary" @click="handlePull">
+            <template #icon>
+              <n-icon :component="CloudDownloadOutline"/>
+            </template>
+          </n-button>
+        </n-input-group>
+      </div>
+      <MacOSList
+          :items="imageStore.images"
+          :render-name="(item) => item.tags?.[0] || '<none>'"
+          :render-sub="(item) => item.id.split(':')[1]?.substring(0, 12) || item.id.substring(0, 12)"
+          :search-fields="['tags', 'id']"
+          :selected-id="selectedId"
+          id-key="id"
+          placeholder="搜索镜像..."
+          @contextmenu="handleContextMenu"
+          @select="onSelect"
+      />
+    </div>
 
-      <n-card title="本地镜像列表">
-        <template #header-extra>
-          <n-button type="primary" :loading="imageStore.loading" @click="imageStore.fetchImages">
-            刷新
+    <div class="detail-column floating-card">
+      <ResourceDetail
+          :item="selectedItem"
+          :loading="imageStore.loading"
+          :subtitle="selectedItem?.id"
+          :title="selectedItem?.tags?.[0] || '镜像详情'"
+          empty-text="请选择一个镜像以查看详情"
+      >
+        <template #actions>
+          <n-button circle quaternary size="small" type="error" @click="handleDelete(selectedItem.id)">
+            <template #icon>
+              <n-icon>
+                <TrashOutline/>
+              </n-icon>
+            </template>
           </n-button>
         </template>
-        
-        <n-text v-if="imageStore.error" type="error" style="display: block; margin-bottom: 12px;">
-          错误: {{ imageStore.error }}
-        </n-text>
 
-        <n-data-table
-          :columns="columns"
-          :data="imageStore.images"
-          :loading="imageStore.loading"
-          :pagination="{ pageSize: 10 }"
-        />
-      </n-card>
-    </n-space>
-
-    <n-drawer v-model:show="showPullDrawer" :width="600" placement="right">
-      <n-drawer-content title="拉取镜像进度" closable>
-        <n-scrollbar ref="scrollbarRef" style="max-height: 100%">
-          <div class="log-container">
-            <div v-for="(log, index) in imageStore.pullLogs" :key="index" class="log-line">
-              <n-text depth="3" v-if="log.id" style="margin-right: 8px">[{{ log.id }}]</n-text>
-              <n-text>{{ log.status }}</n-text>
-              <n-text depth="3" v-if="log.progress" style="margin-left: 8px">{{ log.progress }}</n-text>
-              <n-text v-if="log.stream">{{ log.stream }}</n-text>
-            </div>
-            <div v-if="!imageStore.pulling && imageStore.pullLogs.length > 0" class="log-finished">
-              <n-text type="success">拉取任务已结束</n-text>
-            </div>
-          </div>
+        <n-scrollbar class="detail-content-scroll">
+          <n-descriptions :column="1" bordered size="small" style="padding: 24px">
+            <n-descriptions-item label="镜像 ID">
+              <code>{{ selectedItem?.id }}</code>
+            </n-descriptions-item>
+            <n-descriptions-item label="标签">
+              <n-space>
+                <n-tag v-for="tag in selectedItem?.tags" :key="tag" bordered="false" size="small" type="info">
+                  {{ tag }}
+                </n-tag>
+                <span v-if="!selectedItem?.tags || selectedItem?.tags.length === 0">无标签</span>
+              </n-space>
+            </n-descriptions-item>
+            <n-descriptions-item label="占用空间">
+              {{ formatBytes(selectedItem?.size || 0) }}
+            </n-descriptions-item>
+            <n-descriptions-item label="创建时间">
+              {{ formatDate(selectedItem?.created || 0) }}
+            </n-descriptions-item>
+          </n-descriptions>
         </n-scrollbar>
-      </n-drawer-content>
-    </n-drawer>
+      </ResourceDetail>
+    </div>
+
+    <!-- Pull Progress Modal -->
+    <n-modal v-model:show="showPullDrawer" preset="card" style="width: 600px" title="拉取进度">
+      <n-scrollbar style="max-height: 400px; background: #1e1e1e; padding: 12px; border-radius: 4px;">
+        <div v-for="(log, idx) in imageStore.pullLogs" :key="idx" class="log-line">
+          <span v-if="log.id" style="color: #888; margin-right: 8px">[{{ log.id }}]</span>
+          <span>{{ log.status }}</span>
+          <span v-if="log.progress" style="color: #aaa; margin-left: 8px">{{ log.progress }}</span>
+        </div>
+      </n-scrollbar>
+    </n-modal>
+
+    <n-dropdown
+        :on-clickoutside="() => showMenu = false"
+        :options="menuOptions"
+        :show="showMenu"
+        :x="x"
+        :y="y"
+        placement="bottom-start"
+        trigger="manual"
+        @select="handleMenuSelect"
+    />
   </div>
 </template>
 
 <style scoped>
-.images-list {
-  padding: 24px;
+.images-view {
+  display: flex;
+  gap: 16px;
+  height: calc(100vh - 64px - 32px);
 }
 
-.log-container {
-  background-color: #1e1e1e;
-  padding: 12px;
-  border-radius: 4px;
-  font-family: monospace;
-  min-height: 100%;
+.list-column {
+  width: 320px;
+  flex-shrink: 0;
 }
 
+.detail-column {
+  flex: 1;
+  min-width: 0;
+}
+
+.floating-card {
+  background-color: var(--macos-card-bg-light);
+  border-radius: var(--macos-radius);
+  border: 1px solid var(--macos-border-color);
+  box-shadow: var(--macos-shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.pull-section {
+  padding: 16px;
+  border-bottom: 0.5px solid var(--macos-border-color);
+}
+
+.detail-content-scroll {
+  flex: 1;
+}
 .log-line {
-  margin-bottom: 4px;
-  word-break: break-all;
   color: #d4d4d4;
-}
-
-.log-finished {
-  margin-top: 12px;
-  border-top: 1px solid #333;
-  padding-top: 8px;
-  text-align: center;
+  font-family: monospace;
+  font-size: 12px;
+  margin-bottom: 2px;
 }
 </style>

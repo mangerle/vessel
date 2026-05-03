@@ -1,13 +1,13 @@
-import { ref, h } from 'vue'
-import { NIcon } from 'naive-ui'
-import { 
-  PlayOutline, 
-  StopOutline, 
-  RefreshOutline, 
-  TerminalOutline, 
+import {h, ref} from 'vue'
+import {NIcon} from 'naive-ui'
+import {
+  CopyOutline,
   DocumentTextOutline,
-  TrashOutline,
-  CopyOutline
+  PlayOutline,
+  RefreshOutline,
+  StopOutline,
+  TerminalOutline,
+  TrashOutline
 } from '@vicons/ionicons5'
 
 export function useContextMenu() {
@@ -51,6 +51,16 @@ export function useContextMenu() {
           { label: '复制 ID', key: 'copy_id', icon: renderIcon(CopyOutline) },
           { label: '删除', key: 'delete', icon: renderIcon(TrashOutline) }
         ]
+      } else if (type === 'project') {
+          currentOptions.value = [
+              {label: '启动 (Up)', key: 'up', icon: renderIcon(PlayOutline)},
+              {label: '停止 (Down)', key: 'down', icon: renderIcon(StopOutline)},
+              {label: '重启', key: 'restart_project', icon: renderIcon(RefreshOutline)},
+              {type: 'divider', key: 'd1'},
+              {label: '编辑配置', key: 'edit', icon: renderIcon(DocumentTextOutline)},
+              {type: 'divider', key: 'd2'},
+              {label: '删除项目', key: 'delete_project', icon: renderIcon(TrashOutline)}
+          ]
       } else if (type === 'global') {
         currentOptions.value = [
           { label: '刷新列表', key: 'refresh', icon: renderIcon(RefreshOutline) }
