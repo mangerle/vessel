@@ -11,6 +11,7 @@
         @expand="collapsed = false"
     >
       <div class="logo">
+        <span v-if="!collapsed">Vessel</span>
       </div>
       <n-menu
           :collapsed="collapsed"

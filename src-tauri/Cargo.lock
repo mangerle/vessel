@@ -892,31 +892,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "docker-manager"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bollard",
- "futures-util",
- "http-body-util",
- "hyper",
- "hyper-util",
- "once_cell",
- "pin-project",
- "serde",
- "serde_json",
- "sqlx",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-shell",
- "tokio",
- "tower-service",
- "uuid",
- "winapi",
-]
-
-[[package]]
 name = "dom_query"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5198,6 +5173,31 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vessel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bollard",
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "once_cell",
+ "pin-project",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tauri-plugin-shell",
+ "tokio",
+ "tower-service",
+ "uuid",
+ "winapi",
+]
 
 [[package]]
 name = "vswhom"
