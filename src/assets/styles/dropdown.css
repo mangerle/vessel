@@ -1,0 +1,30 @@
+.n-dropdown-menu {
+  background-color: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px) !important;
+  border-radius: 10px !important;
+  padding: 4px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
+  border: 0.5px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+.n-dropdown-option {
+  margin: 2px 0 !important;
+}
+
+.n-dropdown-option-body {
+  height: 28px !important;
+  border-radius: 6px !important;
+  padding: 0 8px !important;
+  font-size: 13px !important;
+}
+
+/* 选中态使用 macOS 强调色 */
+.n-dropdown-option-body:hover {
+  background-color: var(--macos-accent-blue) !important;
+  color: white !important;
+}
+
+.n-dropdown-divider {
+  background-color: rgba(0, 0, 0, 0.06) !important;
+  margin: 4px 0 !important;
+}
