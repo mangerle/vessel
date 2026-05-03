@@ -56,7 +56,7 @@ const x = ref(0)
 const y = ref(0)
 const menuTarget = ref<any>(null)
 
-const handleContextMenu = (e: MouseEvent, type: string, item: any) => {
+const handleContextMenu = (e: MouseEvent, _type: string, item: any) => {
   e.preventDefault()
   showMenu.value = false
   nextTick(() => {
@@ -122,12 +122,13 @@ onMounted(() => {
       <ResourceDetail
           :item="selectedItem"
           :loading="volumeStore.loading"
-          :subtitle="selectedItem?.driver"
+          :subtitle="selectedItem?.driver || ''"
           :title="selectedItem?.name || '数据卷详情'"
           empty-text="请选择一个数据卷以查看详情"
       >
         <template #actions>
-          <n-button circle quaternary size="small" type="error" @click="handleDelete(selectedItem.name)">
+          <n-button v-if="selectedItem" circle quaternary size="small" type="error"
+                    @click="handleDelete(selectedItem.name)">
             <template #icon>
               <n-icon>
                 <TrashOutline/>

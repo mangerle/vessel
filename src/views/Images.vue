@@ -79,7 +79,7 @@ const x = ref(0)
 const y = ref(0)
 const menuTarget = ref<any>(null)
 
-const handleContextMenu = (e: MouseEvent, type: string, item: any) => {
+const handleContextMenu = (e: MouseEvent, _type: string, item: any) => {
   e.preventDefault()
   showMenu.value = false
   nextTick(() => {
@@ -136,12 +136,13 @@ onMounted(() => {
       <ResourceDetail
           :item="selectedItem"
           :loading="imageStore.loading"
-          :subtitle="selectedItem?.id"
+          :subtitle="selectedItem?.id || ''"
           :title="selectedItem?.tags?.[0] || '镜像详情'"
           empty-text="请选择一个镜像以查看详情"
       >
         <template #actions>
-          <n-button circle quaternary size="small" type="error" @click="handleDelete(selectedItem.id)">
+          <n-button v-if="selectedItem" circle quaternary size="small" type="error"
+                    @click="handleDelete(selectedItem.id)">
             <template #icon>
               <n-icon>
                 <TrashOutline/>
@@ -157,7 +158,7 @@ onMounted(() => {
             </n-descriptions-item>
             <n-descriptions-item label="标签">
               <n-space>
-                <n-tag v-for="tag in selectedItem?.tags" :key="tag" bordered="false" size="small" type="info">
+                <n-tag v-for="tag in selectedItem?.tags" :key="tag" :bordered="false" size="small" type="info">
                   {{ tag }}
                 </n-tag>
                 <span v-if="!selectedItem?.tags || selectedItem?.tags.length === 0">无标签</span>
