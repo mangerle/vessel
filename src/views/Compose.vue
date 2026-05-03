@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { 
   NDescriptions, NDescriptionsItem,
-  useMessage, NModal, NGrid, NGi, NScrollbar
+  useMessage, NModal, NGrid, NGi, NScrollbar, NDropdown
 } from 'naive-ui'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -21,10 +21,42 @@ use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer
 
 import ComposeProjectList from '../components/compose/ComposeProjectList.vue'
 import ContainerDetail from '../components/compose/ContainerDetail.vue'
+import { useContextMenu } from '../hooks/useContextMenu'
 
 const composeStore = useComposeStore()
 const containerStore = useContainerStore()
 const message = useMessage()
+
+// --- Context Menu ---
+const {
+  showDropdown: showMenu,
+  x,
+  y,
+  currentOptions: menuOptions,
+  handleContextMenu,
+  onClickOutside: closeMenu
+} = useContextMenu()
+
+const handleMenuSelect = (key: string) => {
+  closeMenu()
+  if (!selectedContainerId.value) return
+
+  switch (key) {
+    case 'restart':
+      handleRestart()
+      break
+    case 'stop':
+      handleStop()
+      break
+    case 'terminal':
+      handleTerminal()
+      break
+    case 'logs':
+      // Switch to logs tab if possible, or just log for now
+      message.info('查看日志: ' + selectedContainerId.value)
+      break
+  }
+}
 
 // --- Selection & Details ---
 const selectedContainerId = ref<string | null>(null)
@@ -293,12 +325,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="compose-view">
+  <div class="compose-view" @contextmenu="handleContextMenu($event, 'global')">
     <div class="list-column floating-card">
       <ComposeProjectList 
         :items="containerStore.containers" 
         :selected-id="selectedContainerId" 
         @select="onSelect" 
+        @contextmenu="handleContextMenu"
       />
     </div>
     <div class="detail-column floating-card">
@@ -366,6 +399,18 @@ onUnmounted(() => {
   >
     <div ref="terminalRef" style="height: 60vh; width: 100%; background: #1e1e1e; padding: 8px; border-radius: 4px;"></div>
   </n-modal>
+
+  <!-- 右键菜单 -->
+  <n-dropdown
+    placement="bottom-start"
+    trigger="manual"
+    :x="x"
+    :y="y"
+    :options="menuOptions"
+    :show="showMenu"
+    :on-clickoutside="closeMenu"
+    @select="handleMenuSelect"
+  />
 </template>
 
 <style scoped>

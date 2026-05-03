@@ -1,5 +1,5 @@
 <template>
-  <div class="compose-project-list">
+  <div class="compose-project-list" @contextmenu="$emit('contextmenu', $event, 'global')">
     <div class="search-header">
       <n-input v-model:value="searchQuery" placeholder="搜索容器..." size="small" round clearable>
         <template #prefix>
@@ -14,6 +14,7 @@
         class="container-item"
         :class="{ active: selectedId === item.id }"
         @click="handleSelect(item.id)"
+        @contextmenu.stop="$emit('contextmenu', $event, 'container', item)"
       >
         <div class="status-indicator" :style="{ backgroundColor: item.state === 'running' ? 'var(--macos-success-green)' : 'var(--macos-border-color)' }"></div>
         <div class="item-body">
@@ -35,7 +36,7 @@ const props = defineProps<{
   selectedId: string | null
 }>()
 
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'contextmenu'])
 
 const searchQuery = ref('')
 
