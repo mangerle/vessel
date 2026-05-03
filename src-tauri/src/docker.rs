@@ -1,6 +1,6 @@
 use crate::connection::get_docker_client;
 use bollard::container::{ListContainersOptions, LogsOptions, StatsOptions};
-use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecResults};
+use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults};
 use bollard::image::{CreateImageOptions, ListImagesOptions};
 use futures_util::stream::StreamExt;
 use once_cell::sync::Lazy;
@@ -594,7 +594,7 @@ pub async fn create_container_terminal(
                 attach_stderr: Some(true),
                 tty: Some(true),
                 user,
-                cmd: Some(vec!["/bin/sh".to_string()]), // 默认使用 sh，前端可以根据需要修改
+                cmd: Some(vec!["sh".to_string()]), // 默认使用 sh，前端可以根据需要修改
                 ..Default::default()
             },
         )
@@ -607,7 +607,14 @@ pub async fn create_container_terminal(
 
     // 2. 启动 Exec
     let start_result = docker
-        .start_exec(&exec_id, None)
+        .start_exec(
+            &exec_id,
+            Some(StartExecOptions {
+                detach: false,
+                tty: true,
+                ..Default::default()
+            }),
+        )
         .await
         .map_err(|e| format!("启动终端失败: {}", e))?;
 
@@ -650,6 +657,9 @@ pub async fn create_container_terminal(
                     if input.write_all(&data).await.is_err() {
                         break;
                     }
+                    if input.flush().await.is_err() {
+                        break;
+                    }
                 }
             });
 
@@ -687,7 +697,7 @@ pub async fn write_to_terminal(exec_id: String, data: Vec<u8>) -> Result<(), Str
     }
 }
 
-/// 璋冪暣终端澶у皬
+/// 调整终端大小
 #[tauri::command]
 pub async fn resize_container_terminal(
     exec_id: String,
@@ -696,9 +706,15 @@ pub async fn resize_container_terminal(
 ) -> Result<(), String> {
     let docker = get_docker_client().await?;
     docker
-        .resize_exec(&exec_id, ResizeExecOptions { height, width })
+        .resize_exec(
+            &exec_id,
+            ResizeExecOptions {
+                height,
+                width,
+            },
+        )
         .await
-        .map_err(|e| format!("璋冪暣终端澶у皬澶辫触: {}", e))
+        .map_err(|e| format!("调整终端大小失败: {}", e))
 }
 
 #[tauri::command]

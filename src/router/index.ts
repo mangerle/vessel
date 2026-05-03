@@ -8,7 +8,7 @@ const routes = [
     children: [
       {
         path: '',
-        redirect: 'containers'
+        redirect: 'connections'
       },
       {
         path: 'connections',

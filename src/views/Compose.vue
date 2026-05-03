@@ -397,24 +397,49 @@ const openTerminal = async (id: string | null, user?: string) => {
       term.loadAddon(fitAddon)
       term.open(terminalRef.value)
       fitAddon.fit()
+      term.focus()
       
       term.onData(async (data) => {
+        if (!terminalExecId) return
         const encoder = new TextEncoder()
         const bytes = Array.from(encoder.encode(data))
         try {
-          await invoke('write_to_terminal', { exec_id: terminalExecId, data: bytes })
+          await invoke('write_to_terminal', { execId: terminalExecId, data: bytes })
         } catch (e) {
           console.error('写入终端失败', e)
         }
       })
 
+      term.onResize(async (size) => {
+        if (!terminalExecId) return
+        try {
+          await invoke('resize_container_terminal', {
+            execId: terminalExecId,
+            height: size.rows,
+            width: size.cols
+          })
+        } catch (e) {
+          console.error('调整终端大小失败', e)
+        }
+      })
+
       try {
-        terminalExecId = await invoke('create_container_terminal', { id, user })
+        terminalExecId = await invoke('create_container_terminal', {id, user})
         termUnlisten = await listen(`container-terminal-stdout-${terminalExecId}`, (event: any) => {
           const arr = new Uint8Array(event.payload)
           const str = new TextDecoder().decode(arr)
           term?.write(str)
         })
+
+        // 发送一个回车以触发提示符显示（以防初始输出被错过）
+        setTimeout(async () => {
+          if (terminalExecId) {
+            const encoder = new TextEncoder()
+            const bytes = Array.from(encoder.encode('\n'))
+            await invoke('write_to_terminal', { execId: terminalExecId, data: bytes })
+          }
+          fitAddon?.fit()
+        }, 300)
       } catch (e: any) {
         term.write(`\r\nError: ${e}\r\n`)
       }
