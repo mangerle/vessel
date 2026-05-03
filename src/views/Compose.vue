@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, h, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useComposeStore } from '../store/compose'
 import { useContainerStore } from '../store/container'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { 
-  NTabs, NTabPane, NDescriptions, NDescriptionsItem,
+  NDescriptions, NDescriptionsItem,
   useMessage, NModal, NGrid, NGi, NScrollbar
 } from 'naive-ui'
 import { Terminal } from '@xterm/xterm'

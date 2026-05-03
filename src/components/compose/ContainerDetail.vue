@@ -48,7 +48,7 @@ import { NButton, NIcon, NSpin, NText } from 'naive-ui'
 import { RefreshOutline, StopOutline } from '@vicons/ionicons5'
 import SegmentedControl from '../common/SegmentedControl.vue'
 
-const props = defineProps<{
+defineProps<{
   container: any | null,
   loading: boolean
 }>()
