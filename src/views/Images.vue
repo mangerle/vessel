@@ -36,7 +36,8 @@ const selectedId = ref<string | null>(null)
 const selectedDetails = ref<any>(null)
 const loadingDetails = ref(false)
 const pullImageName = ref('')
-const showPullDrawer = ref(false)
+const showConfirmModal = ref(false)
+const pendingPullImage = ref<any>(null)
 
 const tabs = [
   {label: '概览', value: 'overview'},
@@ -69,13 +70,17 @@ const formatBytes = (bytes: number, decimals = 2) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
 }
 
-const formatDate = (timestamp: number) => {
-  if (!timestamp) return 'N/A'
-  return new Date(timestamp * 1000).toLocaleString()
+const formatDate = (val: number | string) => {
+  if (!val) return 'N/A'
+  if (typeof val === 'number') {
+    return new Date(val * 1000).toLocaleString()
+  }
+  return new Date(val).toLocaleString()
 }
 
-const timeAgo = (timestamp: number) => {
-  if (!timestamp) return ''
+const timeAgo = (val: number | string) => {
+  if (!val) return ''
+  const timestamp = typeof val === 'number' ? val : Math.floor(new Date(val).getTime() / 1000)
   const seconds = Math.floor(Date.now() / 1000 - timestamp)
   let interval = seconds / 31536000
   if (interval > 1) return Math.floor(interval) + ' 年前'
@@ -103,17 +108,27 @@ const handleDelete = async (id: string) => {
   }
 }
 
+const handleSelectPull = (val: string) => {
+  pullImageName.value = val
+  const option = autoCompleteOptions.value.find(o => o.value === val)
+  if (option) {
+    pendingPullImage.value = option
+    showConfirmModal.value = true
+  }
+}
+
 const handlePull = async () => {
   if (!pullImageName.value) {
     message.warning('请输入镜像名称')
     return
   }
-  showPullDrawer.value = true
+  showConfirmModal.value = false
   try {
     await imageStore.pullImage(pullImageName.value)
     pullImageName.value = ''
+    message.info('已开始后台拉取，请在左侧侧边栏查看进度')
   } catch (err) {
-    message.error('拉取失败: ' + err)
+    console.error('拉取失败:', err)
   }
 }
 
@@ -206,7 +221,7 @@ onMounted(() => {
             placeholder="输入并拉取镜像..."
             size="small"
             @input="handleSearch"
-            @select="(val) => pullImageName = val"
+            @select="handleSelectPull"
         >
           <template #suffix>
             <n-button :loading="imageStore.pulling" circle quaternary size="tiny" @click="handlePull">
@@ -349,15 +364,31 @@ onMounted(() => {
       </ResourceDetail>
     </div>
 
-    <!-- Pull Progress Modal -->
-    <n-modal v-model:show="showPullDrawer" preset="card" style="width: 600px" title="拉取进度">
-      <n-scrollbar style="max-height: 400px; background: #1e1e1e; padding: 12px; border-radius: 4px;">
-        <div v-for="(log, idx) in imageStore.pullLogs" :key="idx" class="log-line">
-          <span v-if="log.id" style="color: #888; margin-right: 8px">[{{ log.id }}]</span>
-          <span>{{ log.status }}</span>
-          <span v-if="log.progress" style="color: #aaa; margin-left: 8px">{{ log.progress }}</span>
+    <!-- Confirm Pull Modal -->
+    <n-modal
+      v-model:show="showConfirmModal"
+      preset="dialog"
+      title="确认拉取镜像"
+      positive-text="确认拉取"
+      negative-text="取消"
+      @positive-click="handlePull"
+    >
+      <div v-if="pendingPullImage" class="confirm-modal-content">
+        <div class="confirm-image-header">
+          <span class="confirm-image-name">{{ pendingPullImage.label }}</span>
+          <n-space align="center" size="small">
+             <n-tag v-if="pendingPullImage.is_official" size="tiny" type="success" :bordered="false">Official</n-tag>
+             <n-space align="center" :size="2">
+                <n-icon :component="Star" color="#f0a020" :size="12" />
+                <span style="font-size: 12px">{{ pendingPullImage.star_count }}</span>
+             </n-space>
+          </n-space>
         </div>
-      </n-scrollbar>
+        <div class="confirm-image-desc">{{ pendingPullImage.description }}</div>
+        <p style="margin-top: 16px; font-size: 13px; opacity: 0.8">
+          确定要从 Docker Hub 拉取此镜像吗？这可能需要一些时间，取决于镜像大小和网络状况。
+        </p>
+      </div>
     </n-modal>
 
     <n-dropdown
@@ -472,5 +503,51 @@ onMounted(() => {
   font-family: monospace;
   font-size: 12px;
   margin-bottom: 2px;
+}
+
+.confirm-modal-content {
+  padding: 8px 0;
+}
+
+.confirm-image-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.confirm-image-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.confirm-image-desc {
+  font-size: 13px;
+  opacity: 0.7;
+  line-height: 1.5;
+  background: rgba(0, 0, 0, 0.03);
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.pull-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pull-error-banner {
+  background: rgba(214, 48, 49, 0.1);
+  border: 1px solid rgba(214, 48, 49, 0.2);
+  padding: 12px;
+  border-radius: 6px;
+}
+
+.pull-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 8px;
 }
 </style>

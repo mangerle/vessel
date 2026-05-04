@@ -137,6 +137,17 @@ pub struct MountInfo {
     pub rw: bool,
 }
 
+/// 卷使用容器信息
+#[derive(Serialize)]
+pub struct VolumeUser {
+    pub container_id: String,
+    pub container_name: String,
+    pub source: String,
+    pub destination: String,
+    pub mode: String,
+    pub rw: bool,
+}
+
 /// 容器详情结构体
 #[derive(Serialize)]
 pub struct ContainerDetails {
@@ -158,7 +169,7 @@ pub struct ImageDetails {
     pub id: String,
     pub tags: Vec<String>,
     pub size: i64,
-    pub created: i64,
+    pub created: String,
     pub architecture: String,
     pub os: String,
     pub env: Vec<String>,

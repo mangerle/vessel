@@ -80,14 +80,15 @@ impl WslBridge {
 
                         let (mut client_reader, mut client_writer) = client_socket.split();
 
-                        // 双向转发流
-                        let _ = tokio::join!(
-                            tokio::io::copy(&mut client_reader, &mut stdin),
-                            tokio::io::copy(&mut stdout, &mut client_writer)
-                        );
+                        // 双向转发流，带有 30 秒空闲超时
+                        let _ = tokio::select! {
+                            _ = copy_with_idle_timeout(&mut client_reader, &mut stdin) => {},
+                            _ = copy_with_idle_timeout(&mut stdout, &mut client_writer) => {},
+                        };
                         
-                        // 确保进程结束
+                        // 确保进程结束并回收资源
                         let _ = child.kill().await;
+                        let _ = child.wait().await;
                     }
                 });
             }
@@ -95,5 +96,30 @@ impl WslBridge {
 
         *port_lock = Some(port);
         Ok(port)
+    }
+}
+
+/// 带有空闲超时的复制逻辑
+async fn copy_with_idle_timeout<R, W>(reader: &mut R, writer: &mut W) -> std::io::Result<()> 
+where 
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncReadExt;
+    use tokio::io::AsyncWriteExt;
+    use tokio::time::{timeout, Duration};
+
+    let mut buf = [0u8; 8192];
+    loop {
+        // 每次读取操作都有 30 秒超时
+        let n = match timeout(Duration::from_secs(30), reader.read(&mut buf)).await {
+            Ok(Ok(0)) => return Ok(()), // 读取结束
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "连接空闲超时")),
+        };
+
+        writer.write_all(&buf[..n]).await?;
+        writer.flush().await?;
     }
 }

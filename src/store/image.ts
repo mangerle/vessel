@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { useTaskStore } from './task'
 
 export interface ImageInfo {
   id: string
@@ -9,7 +10,8 @@ export interface ImageInfo {
   created: number
 }
 
-export interface ImageDetails extends ImageInfo {
+export interface ImageDetails extends Omit<ImageInfo, 'created'> {
+  created: string
   architecture: string
   os: string
   env: string[]
@@ -38,6 +40,10 @@ export interface PullProgress {
   id?: string
   stream?: string
   error?: string
+  progressDetail?: {
+    current?: number
+    total?: number
+  }
 }
 
 export const useImageStore = defineStore('image', {
@@ -47,7 +53,6 @@ export const useImageStore = defineStore('image', {
     imageHistory: [] as ImageHistoryInfo[],
     loading: false,
     pulling: false,
-    pullLogs: [] as PullProgress[],
     error: null as string | null
   }),
   actions: {
@@ -115,24 +120,49 @@ export const useImageStore = defineStore('image', {
       }
     },
     async pullImage(imageName: string) {
+      const taskStore = useTaskStore()
+      const taskId = crypto.randomUUID()
+      
+      taskStore.addTask({
+        id: taskId,
+        name: `拉取镜像: ${imageName}`,
+        status: 'running',
+        progress: 0,
+        logs: []
+      })
+
       this.pulling = true
-      this.pullLogs = []
       this.error = null
 
       const unlistenList: UnlistenFn[] = []
 
-      const cleanup = () => {
+      const cleanup = (status: 'success' | 'error', error?: string) => {
         unlistenList.forEach(fn => fn())
         this.pulling = false
+        taskStore.updateTask(taskId, { 
+          status, 
+          progress: status === 'success' ? 100 : undefined,
+          error 
+        })
       }
 
       try {
         // 监听拉取进度事件
         const unlistenProgress = await listen<PullProgress>('image-pull-progress', (event) => {
-          this.pullLogs.push(event.payload)
-          // 保持最近的 100 条日志
-          if (this.pullLogs.length > 100) {
-            this.pullLogs.shift()
+          const payload = event.payload
+          const logMsg = payload.status || payload.stream || ''
+          
+          let progress: number | undefined = undefined
+          if (payload.progressDetail?.current && payload.progressDetail?.total) {
+             progress = Math.round((payload.progressDetail.current / payload.progressDetail.total) * 100)
+          }
+
+          const task = taskStore.tasks.find(t => t.id === taskId)
+          if (task) {
+            taskStore.updateTask(taskId, {
+              progress: progress ?? task.progress,
+              logs: [...task.logs, logMsg].slice(-20)
+            })
           }
         })
         unlistenList.push(unlistenProgress)
@@ -140,12 +170,12 @@ export const useImageStore = defineStore('image', {
         const unlistenError = await listen<string>('image-pull-error', (event) => {
           console.error('拉取镜像出错:', event.payload)
           this.error = event.payload
-          cleanup()
+          cleanup('error', event.payload)
         })
         unlistenList.push(unlistenError)
 
         const unlistenFinished = await listen<string>('image-pull-finished', () => {
-          cleanup()
+          cleanup('success')
           this.fetchImages()
         })
         unlistenList.push(unlistenFinished)
@@ -154,7 +184,7 @@ export const useImageStore = defineStore('image', {
       } catch (err) {
         console.error('启动拉取任务失败:', err)
         this.error = String(err)
-        cleanup()
+        cleanup('error', String(err))
         throw err
       }
     }
