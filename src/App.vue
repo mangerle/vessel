@@ -50,7 +50,7 @@ onMounted(async () => {
   
   // 监听窗口关闭事件
   const appWindow = getCurrentWindow()
-  await appWindow.onCloseRequested(async (event) => {
+  await appWindow.onCloseRequested(async (_event) => {
     if (!settingsStore.closeToTray) {
       // 如果没有开启“最小化到托盘”，则直接退出程序
       await exit(0)
