@@ -233,7 +233,7 @@ pub async fn search_images(term: String) -> Result<Vec<ImageSearchResult>, Strin
         .search_images(bollard::image::SearchImagesOptions {
             term,
             limit: None,
-            filters: std::collections::HashMap::new(),
+            filters: HashMap::new(),
         })
         .await
         .map_err(|e| format!("搜索镜像失败: {}", e))?;
@@ -244,7 +244,7 @@ pub async fn search_images(term: String) -> Result<Vec<ImageSearchResult>, Strin
             name: item.name.unwrap_or_default(),
             description: item.description.unwrap_or_default(),
             is_official: item.is_official.unwrap_or_default(),
-            star_count: item.star_count.unwrap_or_default() as i64,
+            star_count: item.star_count.unwrap_or_default(),
         })
         .collect())
 }
@@ -526,8 +526,8 @@ pub async fn list_compose_projects() -> Result<Vec<ComposeProject>, String> {
         config_file: Option<String>,
     }
 
-    let mut projects_map: std::collections::HashMap<String, ProjectData> =
-        std::collections::HashMap::new();
+    let mut projects_map: HashMap<String, ProjectData> =
+        HashMap::new();
 
     for container in containers {
         if let Some(labels) = container.labels {
@@ -847,7 +847,6 @@ pub async fn run_compose_command(
     let stderr = child.stderr.take().unwrap();
 
     let app_clone = app.clone();
-
     // Handle stdout
     tauri::async_runtime::spawn(async move {
         let reader = tokio::io::BufReader::new(stdout);
@@ -864,6 +863,23 @@ pub async fn run_compose_command(
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
             let _ = app_clone_err.emit("compose-cmd-output", line);
+        }
+    });
+
+    let app_clone_finish = app.clone();
+    // Wait for process to exit
+    tauri::async_runtime::spawn(async move {
+        match child.wait().await {
+            Ok(status) => {
+                if status.success() {
+                    let _ = app_clone_finish.emit("compose-cmd-finished", ());
+                } else {
+                    let _ = app_clone_finish.emit("compose-cmd-error", format!("Process exited with status: {}", status));
+                }
+            }
+            Err(e) => {
+                let _ = app_clone_finish.emit("compose-cmd-error", format!("Failed to wait for process: {}", e));
+            }
         }
     });
 

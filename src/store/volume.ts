@@ -44,11 +44,16 @@ export const useVolumeStore = defineStore('volume', {
      * @param path 卷路径
      */
     async openPath(path: string) {
+      this.loading = true
+      this.error = null
       try {
         await invoke('open_volume_path', { path })
       } catch (err) {
         console.error('打开卷路径失败:', err)
+        this.error = String(err)
         throw err
+      } finally {
+        this.loading = false
       }
     },
     /**
@@ -56,24 +61,34 @@ export const useVolumeStore = defineStore('volume', {
      * @param name 卷名称
      */
     async removeVolume(name: string) {
+      this.loading = true
+      this.error = null
       try {
         await invoke('remove_volume', { name })
         await this.fetchVolumes()
       } catch (err) {
         console.error('删除卷失败:', err)
+        this.error = String(err)
         throw err
+      } finally {
+        this.loading = false
       }
     },
     /**
      * 清理未使用的数据卷
      */
     async pruneVolumes() {
+      this.loading = true
+      this.error = null
       try {
         await invoke('prune_volumes')
         await this.fetchVolumes()
       } catch (err) {
         console.error('清理卷失败:', err)
+        this.error = String(err)
         throw err
+      } finally {
+        this.loading = false
       }
     }
   }

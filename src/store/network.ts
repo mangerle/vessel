@@ -93,24 +93,34 @@ export const useNetworkStore = defineStore('network', {
      * @param id 网络 ID
      */
     async removeNetwork(id: string) {
+      this.loading = true
+      this.error = null
       try {
         await invoke('remove_network', { id })
         await this.fetchNetworks()
       } catch (err) {
         console.error('删除网络失败:', err)
+        this.error = String(err)
         throw err
+      } finally {
+        this.loading = false
       }
     },
     /**
      * 清理未使用的网络
      */
     async pruneNetworks() {
+      this.loading = true
+      this.error = null
       try {
         await invoke('prune_networks')
         await this.fetchNetworks()
       } catch (err) {
         console.error('清理网络失败:', err)
+        this.error = String(err)
         throw err
+      } finally {
+        this.loading = false
       }
     }
   }

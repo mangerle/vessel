@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { listen, UnlistenFn } from '@tauri-apps/api/event'
 
 export interface ImageInfo {
   id: string
@@ -79,17 +79,31 @@ export const useImageStore = defineStore('image', {
       }
     },
     async removeImage(id: string) {
+      this.loading = true
+      this.error = null
       try {
         await invoke('remove_image', { id })
         await this.fetchImages()
       } catch (err) {
         console.error('删除镜像失败:', err)
+        this.error = String(err)
         throw err
+      } finally {
+        this.loading = false
       }
     },
     async pullImage(imageName: string) {
       this.pulling = true
       this.pullLogs = []
+      this.error = null
+
+      const unlistenList: UnlistenFn[] = []
+
+      const cleanup = () => {
+        unlistenList.forEach(fn => fn())
+        this.pulling = false
+      }
+
       try {
         // 监听拉取进度事件
         const unlistenProgress = await listen<PullProgress>('image-pull-progress', (event) => {
@@ -99,28 +113,26 @@ export const useImageStore = defineStore('image', {
             this.pullLogs.shift()
           }
         })
+        unlistenList.push(unlistenProgress)
 
         const unlistenError = await listen<string>('image-pull-error', (event) => {
           console.error('拉取镜像出错:', event.payload)
           this.error = event.payload
-          this.pulling = false
-          unlistenProgress()
-          unlistenError()
-          unlistenFinished()
+          cleanup()
         })
+        unlistenList.push(unlistenError)
 
         const unlistenFinished = await listen<string>('image-pull-finished', () => {
-          this.pulling = false
+          cleanup()
           this.fetchImages()
-          unlistenProgress()
-          unlistenError()
-          unlistenFinished()
         })
+        unlistenList.push(unlistenFinished)
 
         await invoke('pull_image', { imageName })
       } catch (err) {
         console.error('启动拉取任务失败:', err)
-        this.pulling = false
+        this.error = String(err)
+        cleanup()
         throw err
       }
     }
