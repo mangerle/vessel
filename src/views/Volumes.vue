@@ -255,7 +255,7 @@ onMounted(() => {
 }
 
 .list-column {
-  width: 260px;
+  width: 320px;
   flex-shrink: 0;
 }
 
