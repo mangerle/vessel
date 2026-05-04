@@ -49,6 +49,8 @@ pub fn run() {
             docker::resize_container_terminal,
             docker::list_images,
             docker::remove_image,
+            docker::search_images,
+            docker::get_image_history,
             docker::pull_image,
             docker::list_compose_projects,
             docker::read_compose_file,

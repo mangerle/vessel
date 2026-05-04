@@ -41,6 +41,24 @@ pub struct ImageInfo {
     pub created: i64,
 }
 
+/// 镜像搜索结果结构体
+#[derive(Serialize)]
+pub struct ImageSearchResult {
+    pub name: String,
+    pub description: String,
+    pub is_official: bool,
+    pub star_count: i64,
+}
+
+/// 镜像历史信息结构体
+#[derive(Serialize)]
+pub struct ImageHistoryInfo {
+    pub id: String,
+    pub created: i64,
+    pub created_by: String,
+    pub size: i64,
+}
+
 /// 网络信息结构体
 #[derive(Serialize)]
 pub struct NetworkInfo {
@@ -177,6 +195,50 @@ pub async fn remove_image(id: String) -> Result<(), String> {
         .await
         .map_err(|e| format!("删除镜像失败: {}", e))?;
     Ok(())
+}
+
+/// 搜索镜像
+#[tauri::command]
+pub async fn search_images(term: String) -> Result<Vec<ImageSearchResult>, String> {
+    let docker = get_docker_client().await?;
+    let results = docker
+        .search_images(bollard::image::SearchImagesOptions {
+            term,
+            limit: None,
+            filters: std::collections::HashMap::new(),
+        })
+        .await
+        .map_err(|e| format!("搜索镜像失败: {}", e))?;
+
+    Ok(results
+        .into_iter()
+        .map(|item| ImageSearchResult {
+            name: item.name.unwrap_or_default(),
+            description: item.description.unwrap_or_default(),
+            is_official: item.is_official.unwrap_or_default(),
+            star_count: item.star_count.unwrap_or_default() as i64,
+        })
+        .collect())
+}
+
+/// 获取镜像历史
+#[tauri::command]
+pub async fn get_image_history(id: String) -> Result<Vec<ImageHistoryInfo>, String> {
+    let docker = get_docker_client().await?;
+    let history = docker
+        .image_history(&id)
+        .await
+        .map_err(|e| format!("获取镜像历史失败: {}", e))?;
+
+    Ok(history
+        .into_iter()
+        .map(|item| ImageHistoryInfo {
+            id: item.id,
+            created: item.created,
+            created_by: item.created_by,
+            size: item.size,
+        })
+        .collect())
 }
 
 /// 拉取镜像
@@ -737,12 +799,20 @@ pub async fn run_compose_command(
     project_dir: String,
     args: Vec<String>,
 ) -> Result<(), String> {
-    let mut child = tokio::process::Command::new("docker")
-        .arg("compose")
+    let mut cmd = tokio::process::Command::new("docker");
+    cmd.arg("compose")
         .args(args)
         .current_dir(project_dir)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to start docker compose: {}", e))?;
 
