@@ -124,6 +124,25 @@ export const useNetworkStore = defineStore('network', {
       } finally {
         this.loading = false
       }
+    },
+    /**
+     * 断开容器网络连接
+     * @param networkId 网络 ID
+     * @param containerId 容器 ID
+     */
+    async disconnectContainer(networkId: string, containerId: string) {
+      this.loading = true
+      this.error = null
+      try {
+        await invoke('disconnect_network', { networkId, containerId })
+        await this.fetchNetworkDetails(networkId)
+      } catch (err) {
+        console.error('断开网络连接失败:', err)
+        this.error = String(err)
+        throw err
+      } finally {
+        this.loading = false
+      }
     }
   }
 })

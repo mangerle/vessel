@@ -12,12 +12,26 @@ interface VolumeInfo {
 }
 
 /**
+ * 使用卷的容器信息
+ */
+export interface VolumeUser {
+  container_id: string
+  container_name: string
+  source: string
+  destination: string
+  mode: string
+  rw: boolean
+}
+
+/**
  * Docker 数据卷仓库
  */
 export const useVolumeStore = defineStore('volume', {
   state: () => ({
     // 数据卷列表
     volumes: [] as VolumeInfo[],
+    // 当前选中卷的使用者列表
+    volumeUsers: [] as VolumeUser[],
     // 加载状态
     loading: false,
     // 错误信息
@@ -34,6 +48,21 @@ export const useVolumeStore = defineStore('volume', {
         this.volumes = await invoke<VolumeInfo[]>('list_volumes')
       } catch (err) {
         console.error('获取卷列表失败:', err)
+        this.error = String(err)
+      } finally {
+        this.loading = false
+      }
+    },
+    /**
+     * 获取使用特定卷的容器
+     */
+    async fetchVolumeUsers(name: string) {
+      this.loading = true
+      this.error = null
+      try {
+        this.volumeUsers = await invoke<VolumeUser[]>('list_volume_containers', { name })
+      } catch (err) {
+        console.error('获取卷使用者失败:', err)
         this.error = String(err)
       } finally {
         this.loading = false

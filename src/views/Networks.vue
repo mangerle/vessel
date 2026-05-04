@@ -33,7 +33,24 @@ const containerColumns = [
   {title: '名称', key: 'name', minWidth: 150},
   {title: 'IPv4 地址', key: 'ipv4_address', minWidth: 120},
   {title: 'IPv6 地址', key: 'ipv6_address', minWidth: 120},
-  {title: 'MAC 地址', key: 'mac_address', minWidth: 140}
+  {title: 'MAC 地址', key: 'mac_address', minWidth: 140},
+  {
+    title: '操作',
+    key: 'actions',
+    width: 100,
+    render(row: any) {
+      return h(
+          NButton,
+          {
+            size: 'tiny',
+            quaternary: true,
+            type: 'error',
+            onClick: () => handleDisconnect(row.id)
+          },
+          {default: () => '断开'}
+      )
+    }
+  }
 ]
 
 const onSelect = async (id: string) => {
@@ -55,6 +72,16 @@ const handleDelete = async (id: string) => {
     }
   } catch (err) {
     message.error('删除网络失败: ' + err)
+  }
+}
+
+const handleDisconnect = async (containerId: string) => {
+  if (!selectedId.value) return
+  try {
+    await networkStore.disconnectContainer(selectedId.value, containerId)
+    message.success('已断开连接')
+  } catch (err) {
+    message.error('断开连接失败: ' + err)
   }
 }
 
@@ -129,7 +156,7 @@ onMounted(() => {
       <MacOSList
           :items="networkStore.networks"
           :render-name="(item) => item.name"
-          :render-sub="(item) => `${item.driver} | ${item.scope}`"
+          :render-sub="(item) => `${item.driver} (${item.scope})`"
           :search-fields="['name', 'id', 'driver']"
           :selected-id="selectedId"
           id-key="id"
@@ -229,7 +256,7 @@ onMounted(() => {
 }
 
 .list-column {
-  width: 280px;
+  width: 320px;
   flex-shrink: 0;
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, h, nextTick, onMounted, ref} from 'vue'
+import {computed, h, nextTick, onMounted, ref, watch} from 'vue'
 import {useVolumeStore} from '../store/volume'
 import {
   NButton,
@@ -10,9 +10,11 @@ import {
   NPopconfirm,
   NScrollbar,
   NSpace,
+  NTable,
+  NTag,
   useMessage
 } from 'naive-ui'
-import {InformationCircleOutline, LeafOutline, RefreshOutline, TrashOutline} from '@vicons/ionicons5'
+import {InformationCircleOutline, LeafOutline, RefreshOutline, TrashOutline, FolderOpenOutline} from '@vicons/ionicons5'
 
 import MacOSList from '../components/common/MacOSList.vue'
 import ResourceDetail from '../components/common/ResourceDetail.vue'
@@ -23,9 +25,21 @@ const message = useMessage()
 const selectedId = ref<string | null>(null)
 const selectedItem = computed(() => volumeStore.volumes.find(v => v.name === selectedId.value))
 
-const onSelect = (id: string) => {
+const tabs = [
+  { label: '概览', value: 'overview' },
+  { label: '使用者', value: 'users' }
+]
+
+const onSelect = async (id: string) => {
   selectedId.value = id
+  await volumeStore.fetchVolumeUsers(id)
 }
+
+watch(selectedId, async (newId) => {
+  if (newId) {
+    await volumeStore.fetchVolumeUsers(newId)
+  }
+})
 
 const handleDelete = async (name: string) => {
   try {
@@ -43,6 +57,15 @@ const handlePrune = async () => {
     message.success('清理完成')
   } catch (err) {
     message.error('清理失败: ' + err)
+  }
+}
+
+const handleOpenPath = async (path: string) => {
+  try {
+    await volumeStore.openPath(path)
+    message.success('已打开路径')
+  } catch (err) {
+    message.error('打开失败: ' + err)
   }
 }
 
@@ -124,6 +147,7 @@ onMounted(() => {
           :loading="volumeStore.loading"
           :subtitle="selectedItem?.driver || ''"
           :title="selectedItem?.name || '数据卷详情'"
+          :tabs="tabs"
           empty-text="请选择一个数据卷以查看详情"
       >
         <template #actions>
@@ -137,22 +161,76 @@ onMounted(() => {
           </n-button>
         </template>
 
-        <n-scrollbar class="detail-content-scroll">
-          <n-descriptions :column="1" bordered size="small" style="padding: 24px">
-            <n-descriptions-item label="名称">
-              {{ selectedItem?.name }}
-            </n-descriptions-item>
-            <n-descriptions-item label="驱动">
-              {{ selectedItem?.driver }}
-            </n-descriptions-item>
-            <n-descriptions-item label="挂载点">
-              <code>{{ selectedItem?.mountpoint }}</code>
-            </n-descriptions-item>
-            <n-descriptions-item label="创建时间">
-              {{ selectedItem?.created ? new Date(selectedItem.created).toLocaleString() : '未知' }}
-            </n-descriptions-item>
-          </n-descriptions>
-        </n-scrollbar>
+        <template #overview>
+          <n-scrollbar class="tab-pane-content">
+            <div style="padding: 24px">
+              <n-descriptions :column="1" bordered size="small">
+                <n-descriptions-item label="名称">
+                  {{ selectedItem?.name }}
+                </n-descriptions-item>
+                <n-descriptions-item label="驱动">
+                  {{ selectedItem?.driver }}
+                </n-descriptions-item>
+                <n-descriptions-item label="挂载点">
+                  <n-space vertical>
+                    <code>{{ selectedItem?.mountpoint }}</code>
+                    <n-button 
+                      v-if="selectedItem?.mountpoint" 
+                      size="tiny" 
+                      secondary 
+                      type="primary"
+                      @click="handleOpenPath(selectedItem.mountpoint)"
+                    >
+                      <template #icon>
+                        <n-icon><FolderOpenOutline /></n-icon>
+                      </template>
+                      在文件管理器中打开
+                    </n-button>
+                  </n-space>
+                </n-descriptions-item>
+                <n-descriptions-item label="创建时间">
+                  {{ selectedItem?.created ? new Date(selectedItem.created).toLocaleString() : '未知' }}
+                </n-descriptions-item>
+              </n-descriptions>
+            </div>
+          </n-scrollbar>
+        </template>
+
+        <template #users>
+          <n-scrollbar class="tab-pane-content">
+            <div style="padding: 24px">
+              <div v-if="volumeStore.volumeUsers.length === 0" class="empty-users">
+                暂无容器使用此数据卷
+              </div>
+              <n-table v-else :bordered="false" :single-column="false" size="small">
+                <thead>
+                  <tr>
+                    <th>容器</th>
+                    <th>源路径</th>
+                    <th>目标路径</th>
+                    <th>模式</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="user in volumeStore.volumeUsers" :key="user.container_id">
+                    <td>
+                      <n-tag :bordered="false" size="small" type="info">
+                        {{ user.container_name }}
+                      </n-tag>
+                    </td>
+                    <td><code class="path-code">{{ user.source }}</code></td>
+                    <td><code class="path-code">{{ user.destination }}</code></td>
+                    <td>
+                      <n-tag :bordered="false" size="small" :type="user.rw ? 'success' : 'warning'">
+                        {{ user.mode }} ({{ user.rw ? '读写' : '只读' }})
+                      </n-tag>
+                    </td>
+                  </tr>
+                </tbody>
+              </n-table>
+            </div>
+          </n-scrollbar>
+        </template>
       </ResourceDetail>
     </div>
 
@@ -201,7 +279,19 @@ onMounted(() => {
   border-bottom: 0.5px solid var(--macos-border-color);
 }
 
-.detail-content-scroll {
-  flex: 1;
+.tab-pane-content {
+  height: calc(100vh - 180px);
+}
+
+.empty-users {
+  text-align: center;
+  padding: 40px;
+  color: #86868b;
+  font-size: 14px;
+}
+
+.path-code {
+  font-size: 12px;
+  word-break: break-all;
 }
 </style>

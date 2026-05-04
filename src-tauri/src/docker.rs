@@ -659,6 +659,22 @@ pub async fn prune_networks() -> Result<(), String> {
     Ok(())
 }
 
+/// 断开网络连接
+#[tauri::command]
+pub async fn disconnect_network(network_id: String, container_id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker
+        .disconnect_network(
+            &network_id,
+            bollard::network::DisconnectNetworkOptions {
+                container: container_id,
+                force: false,
+            },
+        )
+        .await
+        .map_err(|e| format!("断开网络连接失败: {}", e))
+}
+
 /// 获取卷列表
 #[tauri::command]
 pub async fn list_volumes() -> Result<Vec<VolumeInfo>, String> {
@@ -699,6 +715,51 @@ pub async fn prune_volumes() -> Result<(), String> {
         .await
         .map_err(|e| format!("清理卷失败: {}", e))?;
     Ok(())
+}
+
+/// 获取使用特定卷的容器列表
+#[tauri::command]
+pub async fn list_volume_containers(name: String) -> Result<Vec<VolumeUser>, String> {
+    let docker = get_docker_client().await?;
+    
+    // 获取所有容器
+    let containers = docker
+        .list_containers(Some(ListContainersOptions::<String> {
+            all: true,
+            ..Default::default()
+        }))
+        .await
+        .map_err(|e| format!("无法获取容器列表: {}", e))?;
+    
+    let mut users = Vec::new();
+    
+    for container in containers {
+        // 对于每个容器，获取其详细信息以检查挂载点
+        if let Some(id) = container.id {
+            let details = docker
+                .inspect_container(&id, None)
+                .await
+                .map_err(|e| format!("无法获取容器详情 ({}): {}", id, e))?;
+            
+            if let Some(mounts) = details.mounts {
+                for mount in mounts {
+                    // 检查挂载是否匹配指定的卷名
+                    if mount.name.as_deref() == Some(&name) || mount.source.as_deref() == Some(&name) {
+                        users.push(VolumeUser {
+                            container_id: id.clone(),
+                            container_name: details.name.clone().unwrap_or_default().trim_start_matches('/').to_string(),
+                            source: mount.source.unwrap_or_default(),
+                            destination: mount.destination.unwrap_or_default(),
+                            mode: mount.mode.unwrap_or_default(),
+                            rw: mount.rw.unwrap_or_default(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(users)
 }
 
 /// 终端会话结构体
