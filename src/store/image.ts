@@ -9,6 +9,15 @@ export interface ImageInfo {
   created: number
 }
 
+export interface ImageDetails extends ImageInfo {
+  architecture: string
+  os: string
+  env: string[]
+  exposed_ports: string[]
+  cmd: string[]
+  entrypoint: string[]
+}
+
 export interface ImageSearchResult {
   name: string
   description: string
@@ -62,6 +71,19 @@ export const useImageStore = defineStore('image', {
       } catch (err) {
         console.error('搜索镜像失败:', err)
         this.error = String(err)
+      } finally {
+        this.loading = false
+      }
+    },
+    async inspectImage(id: string) {
+      this.loading = true
+      this.error = null
+      try {
+        return await invoke<ImageDetails>('inspect_image', { id })
+      } catch (err) {
+        console.error('获取镜像详情失败:', err)
+        this.error = String(err)
+        throw err
       } finally {
         this.loading = false
       }

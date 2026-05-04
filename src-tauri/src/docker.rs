@@ -150,6 +150,21 @@ pub struct ContainerDetails {
     pub mounts: Vec<MountInfo>,
 }
 
+/// 镜像详情结构体
+#[derive(Serialize)]
+pub struct ImageDetails {
+    pub id: String,
+    pub tags: Vec<String>,
+    pub size: i64,
+    pub created: i64,
+    pub architecture: String,
+    pub os: String,
+    pub env: Vec<String>,
+    pub exposed_ports: Vec<String>,
+    pub cmd: Vec<String>,
+    pub entrypoint: Vec<String>,
+}
+
 /// 获取本地 Docker 容器列表的命令
 #[tauri::command]
 pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
@@ -212,6 +227,34 @@ pub async fn list_images() -> Result<Vec<ImageInfo>, String> {
             created: img.created,
         })
         .collect())
+}
+
+/// 获取镜像详情
+#[tauri::command]
+pub async fn inspect_image(id: String) -> Result<ImageDetails, String> {
+    let docker = get_docker_client().await?;
+    let details = docker
+        .inspect_image(&id)
+        .await
+        .map_err(|e| format!("获取镜像详情失败: {}", e))?;
+
+    let config = details.config.as_ref();
+
+    Ok(ImageDetails {
+        id: details.id.unwrap_or_default(),
+        tags: details.repo_tags.unwrap_or_default(),
+        size: details.size.unwrap_or_default(),
+        created: details.created.unwrap_or_default(),
+        architecture: details.architecture.unwrap_or_default(),
+        os: details.os.unwrap_or_default(),
+        env: config.and_then(|c| c.env.clone()).unwrap_or_default(),
+        exposed_ports: config
+            .and_then(|c| c.exposed_ports.as_ref())
+            .map(|p| p.keys().cloned().collect())
+            .unwrap_or_default(),
+        cmd: config.and_then(|c| c.cmd.clone()).unwrap_or_default(),
+        entrypoint: config.and_then(|c| c.entrypoint.clone()).unwrap_or_default(),
+    })
 }
 
 /// 删除镜像

@@ -48,6 +48,7 @@ pub fn run() {
             docker::write_to_terminal,
             docker::resize_container_terminal,
             docker::list_images,
+            docker::inspect_image,
             docker::remove_image,
             docker::search_images,
             docker::get_image_history,
