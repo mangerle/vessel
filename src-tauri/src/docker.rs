@@ -92,6 +92,8 @@ pub struct NetworkDetails {
     pub internal: bool,
     pub attachable: bool,
     pub ingress: bool,
+    pub subnet: String,
+    pub gateway: String,
     pub containers: Vec<ConnectedContainer>,
     pub options: HashMap<String, String>,
     pub labels: HashMap<String, String>,
@@ -951,6 +953,18 @@ pub async fn get_network_details(id: String) -> Result<NetworkDetails, String> {
         })
         .collect();
 
+    let (subnet, gateway) = network
+        .ipam
+        .and_then(|ipam| ipam.config)
+        .and_then(|config| config.first().cloned())
+        .map(|cfg| {
+            (
+                cfg.subnet.unwrap_or_else(|| "N/A".to_string()),
+                cfg.gateway.unwrap_or_else(|| "N/A".to_string()),
+            )
+        })
+        .unwrap_or_else(|| ("N/A".to_string(), "N/A".to_string()));
+
     Ok(NetworkDetails {
         id: network.id.unwrap_or_default(),
         name: network.name.unwrap_or_default(),
@@ -960,6 +974,8 @@ pub async fn get_network_details(id: String) -> Result<NetworkDetails, String> {
         internal: network.internal.unwrap_or_default(),
         attachable: network.attachable.unwrap_or_default(),
         ingress: network.ingress.unwrap_or_default(),
+        subnet,
+        gateway,
         containers,
         options: network.options.unwrap_or_default(),
         labels: network.labels.unwrap_or_default(),

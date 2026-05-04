@@ -35,6 +35,8 @@ export interface NetworkDetails {
   internal: boolean
   attachable: boolean
   ingress: boolean
+  subnet: string
+  gateway: string
   containers: ConnectedContainer[]
   options: Record<string, string>
   labels: Record<string, string>

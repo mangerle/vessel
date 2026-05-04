@@ -10,6 +10,7 @@ import {
   NPopconfirm,
   NScrollbar,
   NSpace,
+  NDataTable,
   useMessage
 } from 'naive-ui'
 import {InformationCircleOutline, LeafOutline, RefreshOutline, TrashOutline} from '@vicons/ionicons5'
@@ -21,17 +22,37 @@ const networkStore = useNetworkStore()
 const message = useMessage()
 
 const selectedId = ref<string | null>(null)
-const selectedItem = computed(() => networkStore.networks.find(n => n.id === selectedId.value))
+const selectedItem = computed(() => networkStore.currentNetwork)
 
-const onSelect = (id: string) => {
+const tabs = [
+  {label: '概览', value: 'overview'},
+  {label: '已连接容器', value: 'containers'}
+]
+
+const containerColumns = [
+  {title: '名称', key: 'name', minWidth: 150},
+  {title: 'IPv4 地址', key: 'ipv4_address', minWidth: 120},
+  {title: 'IPv6 地址', key: 'ipv6_address', minWidth: 120},
+  {title: 'MAC 地址', key: 'mac_address', minWidth: 140}
+]
+
+const onSelect = async (id: string) => {
   selectedId.value = id
+  try {
+    await networkStore.fetchNetworkDetails(id)
+  } catch (err) {
+    message.error('获取网络详情失败: ' + err)
+  }
 }
 
 const handleDelete = async (id: string) => {
   try {
     await networkStore.removeNetwork(id)
     message.success('网络已删除')
-    if (selectedId.value === id) selectedId.value = null
+    if (selectedId.value === id) {
+      selectedId.value = null
+      networkStore.currentNetwork = null
+    }
   } catch (err) {
     message.error('删除网络失败: ' + err)
   }
@@ -123,6 +144,7 @@ onMounted(() => {
           :item="selectedItem"
           :loading="networkStore.loading"
           :subtitle="selectedItem?.id || ''"
+          :tabs="tabs"
           :title="selectedItem?.name || '网络详情'"
           empty-text="请选择一个网络以查看详情"
       >
@@ -137,25 +159,52 @@ onMounted(() => {
           </n-button>
         </template>
 
-        <n-scrollbar class="detail-content-scroll">
-          <n-descriptions :column="1" bordered size="small" style="padding: 24px">
-            <n-descriptions-item label="网络 ID">
-              <code>{{ selectedItem?.id }}</code>
-            </n-descriptions-item>
-            <n-descriptions-item label="名称">
-              {{ selectedItem?.name }}
-            </n-descriptions-item>
-            <n-descriptions-item label="驱动">
-              {{ selectedItem?.driver }}
-            </n-descriptions-item>
-            <n-descriptions-item label="范围">
-              {{ selectedItem?.scope }}
-            </n-descriptions-item>
-            <n-descriptions-item label="创建时间">
-              {{ selectedItem?.created ? new Date(selectedItem.created).toLocaleString() : '未知' }}
-            </n-descriptions-item>
-          </n-descriptions>
-        </n-scrollbar>
+        <template #overview>
+          <n-scrollbar class="tab-pane-content">
+            <div class="detail-section">
+              <n-descriptions :column="1" bordered label-placement="left" size="small">
+                <n-descriptions-item label="名称">
+                  {{ selectedItem?.name }}
+                </n-descriptions-item>
+                <n-descriptions-item label="网络 ID">
+                  <code>{{ selectedItem?.id }}</code>
+                </n-descriptions-item>
+                <n-descriptions-item label="驱动">
+                  {{ selectedItem?.driver }}
+                </n-descriptions-item>
+                <n-descriptions-item label="范围">
+                  {{ selectedItem?.scope }}
+                </n-descriptions-item>
+                <n-descriptions-item label="子网">
+                  {{ selectedItem?.subnet || 'N/A' }}
+                </n-descriptions-item>
+                <n-descriptions-item label="网关">
+                  {{ selectedItem?.gateway || 'N/A' }}
+                </n-descriptions-item>
+                <n-descriptions-item label="内部网络">
+                  {{ selectedItem?.internal ? '是' : '否' }}
+                </n-descriptions-item>
+                <n-descriptions-item label="可连接">
+                  {{ selectedItem?.attachable ? '是' : '否' }}
+                </n-descriptions-item>
+                <n-descriptions-item label="创建时间">
+                  {{ selectedItem?.created ? new Date(selectedItem.created).toLocaleString() : '未知' }}
+                </n-descriptions-item>
+              </n-descriptions>
+            </div>
+          </n-scrollbar>
+        </template>
+
+        <template #containers>
+          <div class="tab-pane-content" style="padding: 0">
+            <n-data-table
+                :columns="containerColumns"
+                :data="selectedItem?.containers || []"
+                :max-height="'calc(100vh - 200px)'"
+                size="small"
+            />
+          </div>
+        </template>
       </ResourceDetail>
     </div>
 
@@ -180,7 +229,7 @@ onMounted(() => {
 }
 
 .list-column {
-  width: 260px;
+  width: 280px;
   flex-shrink: 0;
 }
 
@@ -204,7 +253,11 @@ onMounted(() => {
   border-bottom: 0.5px solid var(--macos-border-color);
 }
 
-.detail-content-scroll {
-  flex: 1;
+.tab-pane-content {
+  height: calc(100vh - 180px);
+}
+
+.detail-section {
+  padding: 24px;
 }
 </style>
