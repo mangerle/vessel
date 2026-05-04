@@ -342,13 +342,8 @@ const openTerminal = async (id: string | null, user?: string) => {
           term?.write(str)
         })
         
-        // 发送一个回车以触发提示符显示（以防初始输出被错过）
+        // 等待终端准备就绪
         setTimeout(async () => {
-          if (terminalExecId) {
-            const encoder = new TextEncoder()
-            const bytes = Array.from(encoder.encode('\n'))
-            await invoke('write_to_terminal', { execId: terminalExecId, data: bytes })
-          }
           fitAddon?.fit()
         }, 300)
       } catch (e: any) {
