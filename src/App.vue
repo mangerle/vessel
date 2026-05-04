@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { exit } from '@tauri-apps/plugin-process'
+import { useSettingsStore } from './store/settings'
 import { 
   NConfigProvider, 
   NMessageProvider, 
@@ -38,6 +42,21 @@ const themeOverrides: GlobalThemeOverrides = {
     borderRadius: '6px'
   }
 }
+
+const settingsStore = useSettingsStore()
+
+onMounted(async () => {
+  await settingsStore.loadSettings()
+  
+  // 监听窗口关闭事件
+  const appWindow = getCurrentWindow()
+  await appWindow.onCloseRequested(async (event) => {
+    if (!settingsStore.closeToTray) {
+      // 如果没有开启“最小化到托盘”，则直接退出程序
+      await exit(0)
+    }
+  })
+})
 </script>
 
 <template>

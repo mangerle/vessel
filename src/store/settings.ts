@@ -4,17 +4,24 @@ import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 
 export const useSettingsStore = defineStore('settings', () => {
   const autoStart = ref(false)
+  const closeToTray = ref(true)
   
   const loadSettings = async () => {
     try {
       autoStart.value = await isEnabled()
+      
+      const saved = localStorage.getItem('vessel-settings')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        closeToTray.value = parsed.closeToTray ?? true
+      }
     } catch (e) {
-      console.error('Failed to check autostart status:', e)
-      // Fallback to local storage if plugin fails
+      console.error('Failed to load settings:', e)
       const saved = localStorage.getItem('vessel-settings')
       if (saved) {
         const parsed = JSON.parse(saved)
         autoStart.value = parsed.autoStart || false
+        closeToTray.value = parsed.closeToTray ?? true
       }
     }
   }
@@ -32,16 +39,24 @@ export const useSettingsStore = defineStore('settings', () => {
       console.error('Failed to set autostart:', e)
     }
   }
+
+  const setCloseToTray = (value: boolean) => {
+    closeToTray.value = value
+    saveSettings()
+  }
   
   const saveSettings = () => {
     localStorage.setItem('vessel-settings', JSON.stringify({
-      autoStart: autoStart.value
+      autoStart: autoStart.value,
+      closeToTray: closeToTray.value
     }))
   }
   
   return {
     autoStart,
+    closeToTray,
     loadSettings,
-    setAutoStart
+    setAutoStart,
+    setCloseToTray
   }
 })

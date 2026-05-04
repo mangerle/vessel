@@ -16,6 +16,16 @@
               <n-switch v-model:value="settingsStore.autoStart" @update:value="handleAutoStartChange" />
             </div>
           </n-list-item>
+
+          <n-list-item>
+            <div class="setting-item">
+              <div class="setting-info">
+                <div class="setting-label">退出行为</div>
+                <div class="setting-description">点击关闭按钮时最小化到系统托盘</div>
+              </div>
+              <n-switch v-model:value="settingsStore.closeToTray" @update:value="handleCloseToTrayChange" />
+            </div>
+          </n-list-item>
           
           <n-list-item>
             <div class="setting-item">
@@ -40,6 +50,10 @@ const settingsStore = useSettingsStore()
 
 const handleAutoStartChange = (value: boolean) => {
   settingsStore.setAutoStart(value)
+}
+
+const handleCloseToTrayChange = (value: boolean) => {
+  settingsStore.setCloseToTray(value)
 }
 
 onMounted(async () => {
