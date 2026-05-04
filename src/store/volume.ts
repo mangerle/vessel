@@ -40,6 +40,18 @@ export const useVolumeStore = defineStore('volume', {
       }
     },
     /**
+     * 在文件管理器中打开卷路径
+     * @param path 卷路径
+     */
+    async openPath(path: string) {
+      try {
+        await invoke('open_volume_path', { path })
+      } catch (err) {
+        console.error('打开卷路径失败:', err)
+        throw err
+      }
+    },
+    /**
      * 删除数据卷
      * @param name 卷名称
      */

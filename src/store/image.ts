@@ -9,6 +9,20 @@ export interface ImageInfo {
   created: number
 }
 
+export interface ImageSearchResult {
+  name: string
+  description: string
+  is_official: boolean
+  star_count: number
+}
+
+export interface ImageHistoryInfo {
+  id: string
+  created: number
+  created_by: string
+  size: number
+}
+
 export interface PullProgress {
   status?: string
   progress?: string
@@ -20,6 +34,8 @@ export interface PullProgress {
 export const useImageStore = defineStore('image', {
   state: () => ({
     images: [] as ImageInfo[],
+    searchResults: [] as ImageSearchResult[],
+    imageHistory: [] as ImageHistoryInfo[],
     loading: false,
     pulling: false,
     pullLogs: [] as PullProgress[],
@@ -33,6 +49,30 @@ export const useImageStore = defineStore('image', {
         this.images = await invoke<ImageInfo[]>('list_images')
       } catch (err) {
         console.error('获取镜像失败:', err)
+        this.error = String(err)
+      } finally {
+        this.loading = false
+      }
+    },
+    async searchImages(term: string) {
+      this.loading = true
+      this.error = null
+      try {
+        this.searchResults = await invoke<ImageSearchResult[]>('search_images', { term })
+      } catch (err) {
+        console.error('搜索镜像失败:', err)
+        this.error = String(err)
+      } finally {
+        this.loading = false
+      }
+    },
+    async fetchImageHistory(id: string) {
+      this.loading = true
+      this.error = null
+      try {
+        this.imageHistory = await invoke<ImageHistoryInfo[]>('get_image_history', { id })
+      } catch (err) {
+        console.error('获取镜像历史失败:', err)
         this.error = String(err)
       } finally {
         this.loading = false
