@@ -67,6 +67,12 @@ impl WslBridge {
                         .stdout(Stdio::piped())
                         .stderr(Stdio::null());
 
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::process::CommandExt;
+                        cmd.creation_flags(0x08000000);
+                    }
+
                     let child = cmd.spawn();
 
                     if let Ok(mut child) = child {

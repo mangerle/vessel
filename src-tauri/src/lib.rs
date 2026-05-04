@@ -57,10 +57,12 @@ pub fn run() {
             docker::write_compose_file,
             docker::run_compose_command,
             docker::list_networks,
+            docker::get_network_details,
             docker::remove_network,
             docker::prune_networks,
             docker::list_volumes,
             docker::remove_volume,
+            docker::open_volume_path,
             docker::prune_volumes,
         ])
         .run(tauri::generate_context!())

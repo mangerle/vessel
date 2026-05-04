@@ -2,12 +2,14 @@ use crate::connection::get_docker_client;
 use bollard::container::{ListContainersOptions, LogsOptions, StatsOptions};
 use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults};
 use bollard::image::{CreateImageOptions, ListImagesOptions};
+use bollard::network::InspectNetworkOptions;
 use futures_util::stream::StreamExt;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_opener::OpenerExt;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
@@ -67,6 +69,32 @@ pub struct NetworkInfo {
     pub driver: String,
     pub scope: String,
     pub created: String,
+}
+
+/// 已连接的容器信息
+#[derive(Serialize)]
+pub struct ConnectedContainer {
+    pub id: String,
+    pub name: String,
+    pub ipv4_address: String,
+    pub ipv6_address: String,
+    pub mac_address: String,
+}
+
+/// 网络详情结构体
+#[derive(Serialize)]
+pub struct NetworkDetails {
+    pub id: String,
+    pub name: String,
+    pub driver: String,
+    pub scope: String,
+    pub created: String,
+    pub internal: bool,
+    pub attachable: bool,
+    pub ingress: bool,
+    pub containers: Vec<ConnectedContainer>,
+    pub options: HashMap<String, String>,
+    pub labels: HashMap<String, String>,
 }
 
 /// 卷信息结构体
@@ -841,4 +869,49 @@ pub async fn run_compose_command(
     });
 
     Ok(())
+}
+
+/// 获取网络详情
+#[tauri::command]
+pub async fn get_network_details(id: String) -> Result<NetworkDetails, String> {
+    let docker = get_docker_client().await?;
+    let network = docker
+        .inspect_network(&id, None::<InspectNetworkOptions<String>>)
+        .await
+        .map_err(|e| format!("无法获取网络详情: {}", e))?;
+
+    let containers = network
+        .containers
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(container_id, details)| ConnectedContainer {
+            id: container_id,
+            name: details.name.unwrap_or_default(),
+            ipv4_address: details.ipv4_address.unwrap_or_default(),
+            ipv6_address: details.ipv6_address.unwrap_or_default(),
+            mac_address: details.mac_address.unwrap_or_default(),
+        })
+        .collect();
+
+    Ok(NetworkDetails {
+        id: network.id.unwrap_or_default(),
+        name: network.name.unwrap_or_default(),
+        driver: network.driver.unwrap_or_default(),
+        scope: network.scope.unwrap_or_default(),
+        created: network.created.unwrap_or_default(),
+        internal: network.internal.unwrap_or_default(),
+        attachable: network.attachable.unwrap_or_default(),
+        ingress: network.ingress.unwrap_or_default(),
+        containers,
+        options: network.options.unwrap_or_default(),
+        labels: network.labels.unwrap_or_default(),
+    })
+}
+
+/// 在文件管理器中打开卷路径
+#[tauri::command]
+pub async fn open_volume_path(app: AppHandle, path: String) -> Result<(), String> {
+    app.opener()
+        .open_path(path, None::<String>)
+        .map_err(|e| format!("无法打开目录: {}", e))
 }
