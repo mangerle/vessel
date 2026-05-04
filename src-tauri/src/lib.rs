@@ -13,6 +13,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
@@ -77,12 +78,8 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let window = window.clone();
-                let app_handle = window.app_handle();
                 
-                // 获取前端存储的设置
-                // 由于无法直接读取 localStorage，我们通过一种约定：
-                // 后端拦截 CloseRequested，然后通过 emit 发送给前端，由前端决定调用 exit 还是 hide
-                // 或者更简单：默认隐藏窗口，如果用户真想退出，从托盘菜单退出
+                // 默认拦截并隐藏，由前端设置决定是否退出
                 api.prevent_close();
                 window.hide().unwrap();
             }
