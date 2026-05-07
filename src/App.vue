@@ -53,6 +53,8 @@ onMounted(async () => {
   await appWindow.onCloseRequested(async (_event) => {
     if (!settingsStore.closeToTray) {
       // 如果没有开启“最小化到托盘”，则直接退出程序
+      // 先销毁窗口，确保 WebView2 资源释放，避免 1412 错误
+      await appWindow.destroy()
       await exit(0)
     }
   })

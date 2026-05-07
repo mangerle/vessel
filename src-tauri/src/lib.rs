@@ -30,6 +30,10 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
+                        // 在退出前销毁所有窗口，避免 1412 错误
+                        for window in app.webview_windows().values() {
+                            let _ = window.destroy();
+                        }
                         app.exit(0);
                     }
                     "show" => {
