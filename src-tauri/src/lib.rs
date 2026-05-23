@@ -120,6 +120,8 @@ pub fn run() {
             docker::remove_volume,
             docker::open_volume_path,
             docker::prune_volumes,
+            docker::list_wsl_distros,
+            docker::open_config_dir,
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用程序时出错");

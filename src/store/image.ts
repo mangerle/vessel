@@ -80,6 +80,9 @@ export const useImageStore = defineStore('image', {
         this.loading = false
       }
     },
+    clearSearchResults() {
+      this.searchResults = []
+    },
     async inspectImage(id: string) {
       this.loading = true
       this.error = null
@@ -120,12 +123,20 @@ export const useImageStore = defineStore('image', {
       }
     },
     async pullImage(imageName: string) {
+      // 调试：确保 imageName 是字符串
+      if (typeof imageName !== 'string') {
+        throw new TypeError('参数 imageName 必须是字符串')
+      }
+      
       const taskStore = useTaskStore()
       const taskId = crypto.randomUUID()
       
+      // 使用 includes 检查标签
+      const targetImageName = imageName.includes(':') ? imageName : `${imageName}:latest`
+
       taskStore.addTask({
         id: taskId,
-        name: `拉取镜像: ${imageName}`,
+        name: `拉取镜像: ${targetImageName}`,
         status: 'running',
         progress: 0,
         logs: []
@@ -138,7 +149,14 @@ export const useImageStore = defineStore('image', {
 
       const cleanup = (status: 'success' | 'error', error?: string) => {
         unlistenList.forEach(fn => fn())
-        this.pulling = false
+        
+        setTimeout(() => {
+          const hasOtherRunning = taskStore.tasks.some(t => t.id !== taskId && t.name.startsWith('拉取镜像:') && t.status === 'running')
+          if (!hasOtherRunning) {
+            this.pulling = false
+          }
+        }, 100)
+
         taskStore.updateTask(taskId, { 
           status, 
           progress: status === 'success' ? 100 : undefined,
@@ -147,9 +165,10 @@ export const useImageStore = defineStore('image', {
       }
 
       try {
-        // 监听拉取进度事件
-        const unlistenProgress = await listen<PullProgress>('image-pull-progress', (event) => {
-          const payload = event.payload
+        const unlistenProgress = await listen<{ image: string, info: PullProgress }>('image-pull-progress', (event) => {
+          const { image, info: payload } = event.payload
+          if (image !== targetImageName) return
+
           const logMsg = payload.status || payload.stream || ''
           
           let progress: number | undefined = undefined
@@ -167,22 +186,24 @@ export const useImageStore = defineStore('image', {
         })
         unlistenList.push(unlistenProgress)
 
-        const unlistenError = await listen<string>('image-pull-error', (event) => {
-          console.error('拉取镜像出错:', event.payload)
-          this.error = event.payload
-          cleanup('error', event.payload)
+        const unlistenError = await listen<{ image: string, error: string }>('image-pull-error', (event) => {
+          const { image, error } = event.payload
+          if (image !== targetImageName) return
+          cleanup('error', error)
         })
         unlistenList.push(unlistenError)
 
-        const unlistenFinished = await listen<string>('image-pull-finished', () => {
+        const unlistenFinished = await listen<string>('image-pull-finished', (event) => {
+          const image = event.payload
+          if (image !== targetImageName) return
           cleanup('success')
           this.fetchImages()
         })
         unlistenList.push(unlistenFinished)
 
+        // 调用后端，参数名 imageName
         await invoke('pull_image', { imageName })
       } catch (err) {
-        console.error('启动拉取任务失败:', err)
         this.error = String(err)
         cleanup('error', String(err))
         throw err

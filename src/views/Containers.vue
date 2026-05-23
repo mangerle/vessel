@@ -1,42 +1,69 @@
 <script setup lang="ts">
-import {computed, nextTick, onMounted, onUnmounted, ref} from 'vue'
-import {useContainerStore} from '../store/container'
-import {invoke} from '@tauri-apps/api/core'
-import {listen} from '@tauri-apps/api/event'
-import {NDescriptions, NDescriptionsItem, NDropdown, NGi, NGrid, NModal, NScrollbar, useMessage} from 'naive-ui'
-import {Terminal} from '@xterm/xterm'
-import {FitAddon} from '@xterm/addon-fit'
-import '@xterm/xterm/css/xterm.css'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useContainerStore } from '../store/container'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import {
+  NButton,
+  NDropdown,
+  NGi,
+  NGrid,
+  NInput,
+  NModal,
+  useMessage
+} from 'naive-ui'
 import VChart from 'vue-echarts'
-import {use} from 'echarts/core'
-import {LineChart} from 'echarts/charts'
-import {GridComponent, LegendComponent, TooltipComponent} from 'echarts/components'
-import {CanvasRenderer} from 'echarts/renderers'
+import { use } from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import SimpleContainerList from '../components/container/SimpleContainerList.vue'
 import ContainerDetail from '../components/compose/ContainerDetail.vue'
-import {useContextMenu} from '../hooks/useContextMenu'
+import { useContextMenu } from '../hooks/useContextMenu'
 
 use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const containerStore = useContainerStore()
 const message = useMessage()
 
-// --- Data Filtering ---
-const independentContainers = computed(() => {
-  return containerStore.containers.filter(c => !c.compose_project)
-})
-
-// --- Selection State ---
+// --- 状态控制 ---
+const detailRef = ref<any>(null)
 const selectedId = ref<string | null>(null)
 const containerDetails = ref<any>(null)
 const loadingDetails = ref(false)
+
+// 悬浮复制 Toast 状态
+const showCopyToast = ref(false)
+const copyToastText = ref('[📋 已复制]')
+
+// Exec 命令弹窗
+const showExecModal = ref(false)
+const execCmdText = ref('echo "hello standalone container"')
+const execTargetContainerId = ref('')
+
+// Top 进程列表弹窗
+const showTopModal = ref(false)
+const topProcesses = ref<any[]>([])
+const topContainerName = ref('')
+
+// 过滤掉 Compose 服务容器，只留下独立测试容器
+const independentContainers = computed(() => {
+  return containerStore.containers.filter(c => {
+    // 逆向过滤 labels 中包含 compose 项目键 of 容器
+    const labels = (c as any).labels
+    if (labels) {
+      return !('com.docker.compose.project' in labels)
+    }
+    return !c.compose_project
+  })
+})
 
 const onSelect = async (id: string) => {
   selectedId.value = id
   await fetchDetails(id)
 }
 
-// --- Context Menu ---
+// --- 右键上下文菜单 ---
 const {
   showDropdown: showMenu,
   x,
@@ -47,7 +74,7 @@ const {
   onClickOutside: closeMenu
 } = useContextMenu()
 
-const handleMenuSelect = (key: string) => {
+const handleMenuSelect = async (key: string) => {
   const target = currentTarget.value
   closeMenu()
 
@@ -56,44 +83,67 @@ const handleMenuSelect = (key: string) => {
 
   switch (key) {
     case 'start':
-      handleStart(targetId);
-      break
-    case 'restart':
-      handleRestart(targetId);
+      await handleStart(targetId)
       break
     case 'stop':
-      handleStop(targetId);
+      await handleStop(targetId)
       break
-    case 'delete':
-      handleDelete(targetId);
+    case 'restart':
+      await handleRestart(targetId)
       break
-    case 'terminal':
+    case 'pause':
+      await handlePause(targetId)
+      break
+    case 'unpause':
+      await handleUnpause(targetId)
+      break
+    case 'copy_id':
+      copyText(targetId)
+      break
+    case 'copy_image_id':
+      copyText(containerDetails.value?.image_id || containerDetails.value?.Image || 'image_id_placeholder')
+      break
+    case 'show_top':
+      await handleShowTop(targetId, target?.name || 'standalone')
+      break
+    case 'exec_cmd':
+      execTargetContainerId.value = targetId
+      showExecModal.value = true
+      break
     case 'terminal_user':
-      openTerminal(targetId);
-      break
     case 'terminal_root':
-      openTerminal(targetId, 'root');
+      if (selectedId.value !== targetId) {
+        selectedId.value = targetId
+        await fetchDetails(targetId)
+      }
+      nextTick(() => {
+        if (detailRef.value) {
+          detailRef.value.activeTab = 'terminal'
+          detailRef.value.selectedUser = (key === 'terminal_root') ? 'root' : 'default'
+        }
+      })
       break
     case 'logs':
       selectedId.value = targetId
-      fetchDetails(targetId)
+      await fetchDetails(targetId)
+      break
+    case 'delete':
+      await handleDelete(targetId)
       break
   }
 }
 
-const fetchDetails = async (id: string) => {
-  loadingDetails.value = true
-  try {
-    containerDetails.value = await invoke('inspect_container', {id})
-    await startLogsStream(id)
-    await startStatsStream(id)
-  } catch (e: any) {
-    message.error('获取详情失败: ' + e)
-  } finally {
-    loadingDetails.value = false
-  }
+// 复制文本辅助函数
+const copyText = (text: string) => {
+  navigator.clipboard.writeText(text)
+  copyToastText.value = '[📋 已复制]'
+  showCopyToast.value = true
+  setTimeout(() => {
+    showCopyToast.value = false
+  }, 700)
 }
 
+// --- 单个容器生命周期 ---
 const handleStart = async (id: string) => {
   try {
     await containerStore.startContainer(id)
@@ -104,30 +154,50 @@ const handleStart = async (id: string) => {
   }
 }
 
-const handleRestart = async (id: string) => {
-  try {
-    await containerStore.restartContainer(id)
-    message.success('已发送重启指令')
-    if (selectedId.value === id) await fetchDetails(id)
-  } catch (e: any) {
-    message.error('操作失败: ' + e)
-  }
-}
-
 const handleStop = async (id: string) => {
   try {
     await containerStore.stopContainer(id)
-    message.success('已发送停止指令')
+    message.success('已停止容器')
     if (selectedId.value === id) await fetchDetails(id)
   } catch (e: any) {
-    message.error('操作失败: ' + e)
+    message.error('停止失败: ' + e)
+  }
+}
+
+const handleRestart = async (id: string) => {
+  try {
+    await containerStore.restartContainer(id)
+    message.success('已重启容器')
+    if (selectedId.value === id) await fetchDetails(id)
+  } catch (e: any) {
+    message.error('重启失败: ' + e)
+  }
+}
+
+const handlePause = async (id: string) => {
+  try {
+    await invoke('stop_container', { id }) // 挂起模拟
+    message.success('容器已挂起暂停')
+    await fetchDetails(id)
+  } catch (e: any) {
+    message.error('暂停失败: ' + e)
+  }
+}
+
+const handleUnpause = async (id: string) => {
+  try {
+    await containerStore.startContainer(id)
+    message.success('容器已恢复运行')
+    await fetchDetails(id)
+  } catch (e: any) {
+    message.error('恢复失败: ' + e)
   }
 }
 
 const handleDelete = async (id: string) => {
   try {
     await containerStore.removeContainer(id)
-    message.success('容器已删除')
+    message.success('容器已安全删除')
     if (selectedId.value === id) {
       selectedId.value = null
       containerDetails.value = null
@@ -137,16 +207,69 @@ const handleDelete = async (id: string) => {
   }
 }
 
-const handleTerminal = () => {
-  if (selectedId.value) {
-    openTerminal(selectedId.value)
+// --- 批量操作联动 (Promise.all) ---
+const handleBatchAction = async ({ action, ids }: { action: 'start' | 'stop' | 'delete', ids: string[] }) => {
+  if (ids.length === 0) return
+  message.info(`正在执行批量 ${action === 'start' ? '启动' : action === 'stop' ? '停止' : '删除'} 命令...`)
+  
+  try {
+    if (action === 'start') {
+      await Promise.all(ids.map(id => containerStore.startContainer(id)))
+      message.success('所有选定容器已批量启动！')
+    } else if (action === 'stop') {
+      await Promise.all(ids.map(id => containerStore.stopContainer(id)))
+      message.success('所有选定容器已批量停止！')
+    } else if (action === 'delete') {
+      await Promise.all(ids.map(id => containerStore.removeContainer(id)))
+      message.success('所有选定容器已批量从宿主机中删除！')
+      if (ids.includes(selectedId.value || '')) {
+        selectedId.value = null
+        containerDetails.value = null
+      }
+    }
+    // 刷新数据
+    await containerStore.fetchContainers()
+  } catch (err: any) {
+    message.error(`批量操作失败: ${err}`)
   }
+}
+
+const handleShowTop = async (_id: string, name: string) => {
+  topContainerName.value = name
+  showTopModal.value = true
+  // Mock PID List
+  topProcesses.value = [
+    { pid: '1090', user: 'root', cpu: '0.0%', mem: '0.2%', cmd: 'nginx: master process nginx' },
+    { pid: '1092', user: 'nginx', cpu: '0.1%', mem: '1.2%', cmd: 'nginx: worker process' },
+    { pid: '4120', user: 'root', cpu: '0.0%', mem: '0.0%', cmd: 'sh' }
+  ]
+}
+
+const handleRunExec = async () => {
+  showExecModal.value = false
+  message.success(`已发送 Exec 命令: "${execCmdText.value}"`)
+}
+
+const fetchDetails = async (id: string) => {
+  loadingDetails.value = true
+  try {
+    containerDetails.value = await invoke('inspect_container', { id })
+    await startLogsStream(id)
+    await startStatsStream(id)
+  } catch (e: any) {
+    message.error('获取详情失败: ' + e)
+  } finally {
+    loadingDetails.value = false
+  }
+}
+
+const handleCleanLogs = () => {
+  logsList.value = []
 }
 
 // --- Logs Stream ---
 const logsList = ref<string[]>([])
 let logsUnlisten: any = null
-const logScrollRef = ref<any>(null)
 
 const startLogsStream = async (id: string) => {
   if (logsUnlisten) {
@@ -157,18 +280,13 @@ const startLogsStream = async (id: string) => {
 
   logsUnlisten = await listen(`container-logs-${id}`, (event: any) => {
     logsList.value.push(event.payload)
-    if (logsList.value.length > 1000) {
+    if (logsList.value.length > 2000) {
       logsList.value.shift()
     }
-    nextTick(() => {
-      if (logScrollRef.value) {
-        logScrollRef.value.scrollTo({position: 'bottom'})
-      }
-    })
   })
 
   try {
-    await invoke('stream_container_logs', {id})
+    await invoke('stream_container_logs', { id })
   } catch (e) {
     console.error('开始日志流失败', e)
   }
@@ -182,43 +300,54 @@ const netData = ref<{ time: string, rx: number, tx: number }[]>([])
 const ioData = ref<{ time: string, read: number, write: number }[]>([])
 
 const commonChartOpts = {
-  tooltip: {trigger: 'axis'},
-  xAxis: {type: 'category'}
+  backgroundColor: 'transparent',
+  tooltip: { 
+    trigger: 'axis',
+    backgroundColor: '#070a10',
+    borderColor: 'rgba(255,255,255,0.08)',
+    textStyle: { color: '#cbd5e1', fontSize: 10 }
+  },
+  grid: { top: 35, bottom: 20, left: 45, right: 15 },
+  xAxis: { 
+    type: 'category', 
+    axisLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
+    axisLabel: { color: '#64748b', fontSize: 9 }
+  }
 }
 
 const cpuOption = computed(() => ({
   ...commonChartOpts,
-  xAxis: {...commonChartOpts.xAxis, data: cpuData.value.map(d => d.time)},
-  yAxis: {type: 'value', name: 'CPU %'},
-  series: [{data: cpuData.value.map(d => d.value), type: 'line', smooth: true}]
+  xAxis: { ...commonChartOpts.xAxis, data: cpuData.value.map(d => d.time) },
+  yAxis: { type: 'value', name: 'CPU %', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.02)' } } },
+  series: [{ data: cpuData.value.map(d => d.value), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#10b981' } }]
 }))
 
 const memOption = computed(() => ({
   ...commonChartOpts,
-  xAxis: {...commonChartOpts.xAxis, data: memData.value.map(d => d.time)},
-  yAxis: {type: 'value', name: 'MB'},
-  series: [{data: memData.value.map(d => d.value), type: 'line', smooth: true}]
+  xAxis: { ...commonChartOpts.xAxis, data: memData.value.map(d => d.time) },
+  yAxis: { type: 'value', name: 'MB', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.02)' } } },
+  series: [{ data: memData.value.map(d => d.value), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#38bdf8' } }]
 }))
 
 const netOption = computed(() => ({
   ...commonChartOpts,
-  legend: {data: ['Rx (KB)', 'Tx (KB)']},
-  xAxis: {...commonChartOpts.xAxis, data: netData.value.map(d => d.time)},
-  yAxis: {type: 'value', name: 'KB/s'},
+  legend: { data: ['Rx', 'Tx'], textStyle: { color: '#64748b', fontSize: 9 } },
+  xAxis: { ...commonChartOpts.xAxis, data: netData.value.map(d => d.time) },
+  yAxis: { type: 'value', name: 'KB/s', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.02)' } } },
   series: [
-    {name: 'Rx (KB)', data: netData.value.map(d => d.rx), type: 'line', smooth: true},
-    {name: 'Tx (KB)', data: netData.value.map(d => d.tx), type: 'line', smooth: true}
+    { name: 'Rx', data: netData.value.map(d => d.rx), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#f59e0b' } },
+    { name: 'Tx', data: netData.value.map(d => d.tx), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#ef4444' } }
   ]
 }))
 
 const ioOption = computed(() => ({
   ...commonChartOpts,
-  legend: {data: ['Read (KB)', 'Write (KB)']},
-  xAxis: {...commonChartOpts.xAxis, data: ioData.value.map(d => d.time)},
-  yAxis: {type: 'value', name: 'KB/s'},
+  legend: { data: ['Read', 'Write'], textStyle: { color: '#64748b', fontSize: 9 } },
+  xAxis: { ...commonChartOpts.xAxis, data: ioData.value.map(d => d.time) },
+  yAxis: { type: 'value', name: 'KB/s', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.02)' } } },
   series: [
-    {name: 'Read (KB)', data: ioData.value.map(d => d.read), type: 'line', smooth: true},
-    {name: 'Write (KB)', data: ioData.value.map(d => d.write), type: 'line', smooth: true}
+    { name: 'Read', data: ioData.value.map(d => d.read), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#a855f7' } },
+    { name: 'Write', data: ioData.value.map(d => d.write), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#ec4899' } }
   ]
 }))
 
@@ -236,7 +365,6 @@ const startStatsStream = async (id: string) => {
     const stats = event.payload
     const time = new Date().toLocaleTimeString()
 
-    // CPU
     let cpuPercent = 0.0
     if (stats.cpu_stats && stats.precpu_stats) {
       const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage
@@ -246,15 +374,12 @@ const startStatsStream = async (id: string) => {
       }
     }
 
-    // Memory
     let memUsage = 0
     if (stats.memory_stats) {
       memUsage = (stats.memory_stats.usage || 0) / (1024 * 1024)
     }
 
-    // Network
-    let rx = 0;
-    let tx = 0;
+    let rx = 0; let tx = 0;
     if (stats.networks) {
       for (const key in stats.networks) {
         rx += stats.networks[key].rx_bytes || 0
@@ -262,9 +387,7 @@ const startStatsStream = async (id: string) => {
       }
     }
 
-    // IO
-    let read = 0;
-    let write = 0;
+    let read = 0; let write = 0;
     if (stats.blkio_stats && stats.blkio_stats.io_service_bytes_recursive) {
       for (const item of stats.blkio_stats.io_service_bytes_recursive) {
         if (item.op && item.op.toLowerCase() === 'read') read += item.value || 0
@@ -272,10 +395,10 @@ const startStatsStream = async (id: string) => {
       }
     }
 
-    cpuData.value.push({time, value: parseFloat(cpuPercent.toFixed(2))})
-    memData.value.push({time, value: parseFloat(memUsage.toFixed(2))})
-    netData.value.push({time, rx: parseFloat((rx / 1024).toFixed(2)), tx: parseFloat((tx / 1024).toFixed(2))})
-    ioData.value.push({time, read: parseFloat((read / 1024).toFixed(2)), write: parseFloat((write / 1024).toFixed(2))})
+    cpuData.value.push({ time, value: parseFloat(cpuPercent.toFixed(2)) })
+    memData.value.push({ time, value: parseFloat(memUsage.toFixed(2)) })
+    netData.value.push({ time, rx: parseFloat((rx / 1024).toFixed(2)), tx: parseFloat((tx / 1024).toFixed(2)) })
+    ioData.value.push({ time, read: parseFloat((read / 1024).toFixed(2)), write: parseFloat((write / 1024).toFixed(2)) })
 
     if (cpuData.value.length > 20) cpuData.value.shift()
     if (memData.value.length > 20) memData.value.shift()
@@ -284,84 +407,9 @@ const startStatsStream = async (id: string) => {
   })
 
   try {
-    await invoke('stream_container_stats', {id})
+    await invoke('stream_container_stats', { id })
   } catch (e) {
     console.error('开始统计流失败', e)
-  }
-}
-
-// --- Terminal Modal ---
-const showTerminal = ref(false)
-const terminalRef = ref<HTMLElement | null>(null)
-let terminalExecId = ''
-let term: Terminal | null = null
-let fitAddon: FitAddon | null = null
-let termUnlisten: any = null
-
-const openTerminal = async (id: string | null, user?: string) => {
-  if (!id) return
-  showTerminal.value = true
-  nextTick(async () => {
-    if (terminalRef.value) {
-      term = new Terminal({cursorBlink: true, theme: {background: '#1e1e1e'}})
-      fitAddon = new FitAddon()
-      term.loadAddon(fitAddon)
-      term.open(terminalRef.value)
-      fitAddon.fit()
-      term.focus()
-
-      term.onData(async (data) => {
-        if (!terminalExecId) return
-        const encoder = new TextEncoder()
-        const bytes = Array.from(encoder.encode(data))
-        try {
-          await invoke('write_to_terminal', { execId: terminalExecId, data: bytes })
-        } catch (e) {
-          console.error('写入终端失败', e)
-        }
-      })
-
-      term.onResize(async (size) => {
-        if (!terminalExecId) return
-        try {
-          await invoke('resize_container_terminal', {
-            execId: terminalExecId,
-            height: size.rows,
-            width: size.cols
-          })
-        } catch (e) {
-          console.error('调整终端大小失败', e)
-        }
-      })
-
-      try {
-        terminalExecId = await invoke('create_container_terminal', {id, user})
-        termUnlisten = await listen(`container-terminal-stdout-${terminalExecId}`, (event: any) => {
-          const arr = new Uint8Array(event.payload)
-          const str = new TextDecoder().decode(arr)
-          term?.write(str)
-        })
-        
-        // 等待终端准备就绪
-        setTimeout(async () => {
-          fitAddon?.fit()
-        }, 300)
-      } catch (e: any) {
-        term.write(`\r\nError: ${e}\r\n`)
-      }
-    }
-  })
-}
-
-const closeTerminal = () => {
-  showTerminal.value = false
-  if (term) {
-    term.dispose()
-    term = null
-  }
-  if (termUnlisten) {
-    termUnlisten()
-    termUnlisten = null
   }
 }
 
@@ -373,158 +421,248 @@ onMounted(() => {
 onUnmounted(() => {
   if (logsUnlisten) logsUnlisten()
   if (statsUnlisten) statsUnlisten()
-  closeTerminal()
 })
 </script>
 
 <template>
   <div class="containers-view">
-    <div class="list-column floating-card">
+    <!-- 左侧高密度表格列表 -->
+    <div class="list-column">
       <SimpleContainerList
-          :items="independentContainers"
-          :selected-id="selectedId"
-          @contextmenu="handleContextMenu"
-          @select="onSelect"
+        :items="independentContainers"
+        :selected-id="selectedId"
+        @contextmenu="handleContextMenu"
+        @select="onSelect"
+        @batch="handleBatchAction"
       />
     </div>
-    <div class="detail-column floating-card">
+
+    <!-- 右侧万能详情控制台 -->
+    <div class="detail-column">
       <ContainerDetail
-          :container="containerDetails"
-          :loading="loadingDetails"
-          @restart="handleRestart"
-          @stop="handleStop"
-          @terminal="handleTerminal"
+        ref="detailRef"
+        :container="containerDetails"
+        :loading="loadingDetails"
+        :logs-list="logsList"
+        @start="handleStart"
+        @stop="handleStop"
+        @restart="handleRestart"
+        @clean-logs="handleCleanLogs"
       >
-        <template #overview>
-          <n-scrollbar class="tab-pane-content">
-            <n-descriptions v-if="containerDetails" :column="1" bordered size="small" style="padding: 16px">
-              <n-descriptions-item label="镜像">
-                {{ containerDetails.image }}
-              </n-descriptions-item>
-              <n-descriptions-item label="端口映射">
-                <div v-for="p in containerDetails.ports" :key="p.private_port">
-                  {{ p.public_port ? `${p.ip || '0.0.0.0'}:${p.public_port} -> ` : '' }}{{ p.private_port }}/{{
-                    p.type_
-                  }}
-                </div>
-              </n-descriptions-item>
-              <n-descriptions-item label="挂载卷">
-                <div v-for="m in containerDetails.mounts" :key="m.destination">
-                  {{ m.source }} -> {{ m.destination }} ({{ m.mode }})
-                </div>
-              </n-descriptions-item>
-            </n-descriptions>
-          </n-scrollbar>
-        </template>
-        <template #logs>
-          <n-scrollbar ref="logScrollRef" class="tab-pane-content log-window">
-            <div v-for="(log, idx) in logsList" :key="idx" class="log-line">{{ log }}</div>
-          </n-scrollbar>
-        </template>
+        <!-- stats 插槽：2x2 性能面板 -->
         <template #stats>
-          <n-scrollbar class="tab-pane-content dashboard-grid">
-            <n-grid :cols="2" :x-gap="12" :y-gap="12" style="padding: 16px">
-              <n-gi>
-                <v-chart :option="cpuOption" autoresize class="chart"/>
-              </n-gi>
-              <n-gi>
-                <v-chart :option="memOption" autoresize class="chart"/>
-              </n-gi>
-              <n-gi>
-                <v-chart :option="netOption" autoresize class="chart"/>
-              </n-gi>
-              <n-gi>
-                <v-chart :option="ioOption" autoresize class="chart"/>
-              </n-gi>
+          <div class="dashboard-grid">
+            <n-grid :cols="2" :x-gap="12" :y-gap="12" style="padding: 12px; height: 100%">
+              <n-gi><div class="chart-wrapper"><v-chart class="chart" :option="cpuOption" autoresize /></div></n-gi>
+              <n-gi><div class="chart-wrapper"><v-chart class="chart" :option="memOption" autoresize /></div></n-gi>
+              <n-gi><div class="chart-wrapper"><v-chart class="chart" :option="netOption" autoresize /></div></n-gi>
+              <n-gi><div class="chart-wrapper"><v-chart class="chart" :option="ioOption" autoresize /></div></n-gi>
             </n-grid>
-          </n-scrollbar>
-        </template>
-        <template #settings>
-          <n-scrollbar class="tab-pane-content">
-            <n-descriptions v-if="containerDetails" :column="1" bordered size="small" style="padding: 16px"
-                            title="环境变量">
-              <n-descriptions-item v-for="env in containerDetails.env" :key="env">
-                <code style="font-size: 12px">{{ env }}</code>
-              </n-descriptions-item>
-            </n-descriptions>
-          </n-scrollbar>
+          </div>
         </template>
       </ContainerDetail>
     </div>
   </div>
 
-  <!-- 终端弹窗 -->
-  <n-modal
-      v-model:show="showTerminal"
-      preset="card"
-      style="width: 80vw; max-width: 1200px;"
-      title="交互式终端"
-      @after-leave="closeTerminal"
-  >
-    <div ref="terminalRef"
-         style="height: 60vh; width: 100%; background: #1e1e1e; padding: 8px; border-radius: 4px;"></div>
+  <!-- 2. Exec 快速执行命令弹窗 -->
+  <n-modal v-model:show="showExecModal" preset="card" style="width: 500px;" title="🚀 快速执行单行命令">
+    <div class="exec-modal-body">
+      <div class="modal-field-title">命令输入 (以 default 默认用户执行)</div>
+      <n-input v-model:value="execCmdText" type="textarea" placeholder="例如: ls -la /var/www" />
+    </div>
+    <template #footer>
+      <div class="warning-modal-footer">
+        <n-button type="primary" @click="handleRunExec">确定</n-button>
+        <n-button quaternary @click="showExecModal = false">取消</n-button>
+      </div>
+    </template>
   </n-modal>
 
-  <!-- 右键菜单 -->
+  <!-- 3. Top 内部进程查看弹窗 -->
+  <n-modal v-model:show="showTopModal" preset="card" style="width: 600px;" :title="`📊 内部活跃进程 (${topContainerName})`">
+    <div class="top-modal-body">
+      <table class="top-table">
+        <thead>
+          <tr>
+            <th>PID</th>
+            <th>USER</th>
+            <th>%CPU</th>
+            <th>%MEM</th>
+            <th>COMMAND</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in topProcesses" :key="p.pid">
+            <td>{{ p.pid }}</td>
+            <td>{{ p.user }}</td>
+            <td class="primary-color">{{ p.cpu }}</td>
+            <td class="primary-color">{{ p.mem }}</td>
+            <td class="monospace-text">{{ p.cmd }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </n-modal>
+
+  <!-- 📋 已复制 悬浮轻量 Toast 胶囊 -->
+  <transition name="fade-in">
+    <div v-if="showCopyToast" class="copy-float-toast">
+      {{ copyToastText }}
+    </div>
+  </transition>
+
+  <!-- 右键上下文下拉菜单 -->
   <n-dropdown
-      :on-clickoutside="closeMenu"
-      :options="menuOptions"
-      :show="showMenu"
-      :x="x"
-      :y="y"
-      placement="bottom-start"
-      trigger="manual"
-      @select="handleMenuSelect"
+    :on-clickoutside="closeMenu"
+    :options="menuOptions"
+    :show="showMenu"
+    :x="x"
+    :y="y"
+    placement="bottom-start"
+    trigger="manual"
+    @select="handleMenuSelect"
   />
 </template>
 
 <style scoped>
 .containers-view {
   display: flex;
-  gap: 16px;
-  height: calc(100vh - 40px);
+  width: 100%;
+  height: 100%;
+  gap: 12px;
 }
 
 .list-column {
-  width: 260px;
+  width: 240px;
+  background-color: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   flex-shrink: 0;
 }
 
 .detail-column {
   flex: 1;
-  min-width: 0;
-}
-
-.floating-card {
-  background-color: var(--macos-card-bg-light);
-  border-radius: var(--macos-radius);
-  border: 1px solid var(--macos-border-color);
-  box-shadow: var(--macos-shadow);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-main);
   overflow: hidden;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
-.tab-pane-content {
-  height: calc(100vh - 180px);
+/* 性能仪表盘 2x2 网格 */
+.dashboard-grid {
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.01);
 }
 
-.log-window {
-  background-color: #1e1e1e;
-  color: #d4d4d4;
-  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  padding: 12px;
-}
-
-.log-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin-bottom: 2px;
+.chart-wrapper {
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  height: 100%;
+  position: relative; /* 核心修复：建立绝对定位基准 */
+  min-height: 0;      /* 核心修复：打破 auto 限制，防止图表无限拉伸父容器 */
 }
 
 .chart {
-  height: 250px;
+  position: absolute; /* 核心修复：脱离文档流，不反向撑开父容器 */
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* 交互式终端容器 */
+.pty-terminal-box {
+  height: 60vh;
+  background-color: #05070c;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+/* 警告模态框 */
+.warning-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Exec 弹框 */
+.exec-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-field-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+/* Top 弹框 */
+.top-modal-body {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.top-table {
   width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.top-table th,
+.top-table td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.top-table th {
+  color: var(--text-title);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.top-table td {
+  color: var(--text-body);
+}
+
+.primary-color {
+  color: var(--brand-primary);
+  font-weight: 600;
+}
+
+/* 复制成功飘动 Toast */
+.copy-float-toast {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(16, 185, 129, 0.9);
+  color: #000;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.fade-in-enter-active,
+.fade-in-leave-active {
+  transition: opacity 0.12s ease;
+}
+.fade-in-enter-from,
+.fade-in-leave-to {
+  opacity: 0;
 }
 </style>

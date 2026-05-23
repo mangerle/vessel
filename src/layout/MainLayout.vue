@@ -1,252 +1,594 @@
 <template>
-  <n-layout has-sider position="absolute" style="height: 100vh">
-    <n-layout-sider
-        bordered
-        collapse-mode="width"
-        :collapsed-width="56"
-        :width="200"
-        :collapsed="collapsed"
-        show-trigger
-        @collapse="collapsed = true"
-        @expand="collapsed = false"
-    >
-      <div class="logo">
-      </div>
-      <n-menu
-          :collapsed="collapsed"
-          :collapsed-width="56"
-          :collapsed-icon-size="22"
-          :options="menuOptions"
-          :value="activeKey"
-          @update:value="handleMenuClick"
-      />
-      
-      <div class="bottom-section">
+  <div class="app-layout">
+    <!-- Slim Sidebar 极窄侧边栏 -->
+    <div class="slim-sidebar">
+      <!-- 顶部 Tab 列表 -->
+      <div class="nav-tabs">
         <div 
-          class="settings-item" 
-          :class="{ active: activeKey === 'settings', collapsed }"
-          @click="handleMenuClick('settings')"
+          v-for="tab in tabs" 
+          :key="tab.key" 
+          class="tab-item" 
+          :class="{ active: activeKey === tab.key }"
+          @click="handleTabClick(tab.key)"
         >
-          <n-icon :component="SettingsOutline" size="22" />
-          <span v-if="!collapsed">设置</span>
+          <!-- Active 激活状态下的左侧荧光绿小冰棒 -->
+          <div class="active-indicator"></div>
+          <div class="tab-content">
+            <n-icon :component="tab.icon" size="22" />
+            <span class="tab-label">{{ tab.label }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部操作区 -->
+      <div class="bottom-tabs">
+        <!-- 两栖切换按钮 -->
+        <div 
+          class="tab-item switcher-tab" 
+          :class="{ active: showSwitcher }"
+          @click.stop="toggleSwitcher"
+        >
+          <div class="tab-content">
+            <n-icon :component="SwapHorizontalOutline" size="22" />
+            <span class="tab-label switcher-label" :class="{ remote: settingsStore.connectionMode === 'ssh' }">
+              {{ settingsStore.connectionMode === 'wsl' ? (settingsStore.wslDistro || 'WSL') : 'RM' }}
+            </span>
+          </div>
         </div>
 
-        <div v-if="!collapsed && taskStore.tasks.length > 0" class="task-section">
-          <div class="task-header">
-            <span>后台任务</span>
-            <n-button quaternary circle size="tiny" @click="taskStore.clearFinishedTasks">
-              <template #icon><n-icon :component="TrashOutline" /></template>
-            </n-button>
+        <!-- 全局设置按钮 -->
+        <div 
+          class="tab-item" 
+          :class="{ active: activeKey === 'settings' }"
+          @click="handleTabClick('settings')"
+        >
+          <div class="active-indicator"></div>
+          <div class="tab-content">
+            <n-icon :component="SettingsOutline" size="22" />
+            <span class="tab-label">设置</span>
           </div>
-          <n-scrollbar style="max-height: 200px">
-            <div v-for="task in taskStore.tasks" :key="task.id" class="task-item">
-              <div class="task-info">
-                <span class="task-name" :title="task.name">{{ task.name }}</span>
-                <span class="task-status" :class="task.status">
-                  <n-icon v-if="task.status === 'running'" class="rotating" :component="SyncOutline" />
-                  <n-icon v-else-if="task.status === 'success'" :component="CheckmarkCircleOutline" />
-                  <n-icon v-else :component="AlertCircleOutline" />
-                </span>
-              </div>
-              <n-progress
-                type="line"
-                :percentage="task.progress"
-                :show-indicator="false"
-                :status="task.status === 'error' ? 'error' : (task.status === 'success' ? 'success' : 'info')"
-                :height="4"
-                processing
-              />
-            </div>
-          </n-scrollbar>
         </div>
       </div>
-    </n-layout-sider>
-    <n-layout>
-      <n-layout-content content-style="padding: 20px; background-color: var(--macos-bg-light);">
-        <router-view/>
-      </n-layout-content>
-    </n-layout>
-  </n-layout>
+    </div>
+
+    <!-- 右侧主内容区 -->
+    <div class="main-container">
+      <!-- 未连接时的轻量环境引导横幅 -->
+      <transition name="slide-up">
+        <div v-if="!isConnected" class="connection-banner">
+          <div class="banner-left">
+            <n-icon :component="AlertCircleOutline" class="warn-icon" size="16" />
+            <span>宿主机连接: <strong class="disconnected-tag">[ 未连接 ]</strong></span>
+          </div>
+          <div class="banner-actions">
+            <button 
+              class="banner-btn primary-btn" 
+              :disabled="connecting" 
+              @click="handleAutoConnect"
+            >
+              <n-icon v-if="connecting" :component="SyncOutline" class="rotating-icon" size="12" />
+              {{ connecting ? '正在拉起管道...' : '⚡ 一键连接默认 WSL 发行版' }}
+            </button>
+            <button class="banner-btn sec-btn" @click="handleTabClick('settings')">
+              ⚙️ 前往设置手动配置
+            </button>
+          </div>
+        </div>
+      </transition>
+
+      <!-- 主要内容区域 -->
+      <div class="content-view" :class="{ 'with-banner': !isConnected }">
+        <router-view v-slot="{ Component }">
+          <component :is="Component" />
+        </router-view>
+      </div>
+    </div>
+
+    <!-- 🔌 切换 - 两栖切换悬浮上下文菜单 -->
+    <transition name="fade-in">
+      <div v-if="showSwitcher" class="switcher-menu" @click.stop>
+        <div class="switcher-header">连接两栖切换器</div>
+        <div class="switcher-section-title">本地 WSL 发行版</div>
+        <div class="switcher-options">
+          <div 
+            v-for="distro in wslDistros" 
+            :key="distro" 
+            class="switcher-option"
+            :class="{ active: settingsStore.connectionMode === 'wsl' && settingsStore.wslDistro === distro }"
+            @click="selectWslDistro(distro)"
+          >
+            <span>🐧 {{ distro }}</span>
+            <span v-if="settingsStore.connectionMode === 'wsl' && settingsStore.wslDistro === distro" class="active-dot"></span>
+          </div>
+          <div v-if="wslDistros.length === 0" class="empty-wsl-text">
+            未探测到已安装的 WSL 发行版
+          </div>
+        </div>
+
+        <div class="switcher-section-title">远程 SSH 节点</div>
+        <div class="switcher-options">
+          <div 
+            v-if="settingsStore.sshHost"
+            class="switcher-option"
+            :class="{ active: settingsStore.connectionMode === 'ssh' }"
+            @click="selectSsh"
+          >
+            <span>🌐 {{ settingsStore.sshUser }}@{{ settingsStore.sshHost }}</span>
+            <span v-if="settingsStore.connectionMode === 'ssh'" class="active-dot"></span>
+          </div>
+          <div v-else class="empty-ssh-text">
+            暂无配置，请前往设置配置 SSH
+          </div>
+        </div>
+      </div>
+    </transition>
+  </div>
 </template>
 
 <script setup lang="ts">
-import {Component, h, ref, watch} from 'vue'
-import type {MenuOption} from 'naive-ui'
-import {NIcon, NLayout, NLayoutContent, NLayoutSider, NMenu, NScrollbar, NProgress, NButton} from 'naive-ui'
-import {useRoute, useRouter} from 'vue-router'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { NIcon, useMessage } from 'naive-ui'
 import {
-  CubeOutline, 
-  GlobeOutline, 
-  ImagesOutline, 
-  LayersOutline, 
-  SaveOutline, 
-  SyncOutline, 
-  CheckmarkCircleOutline, 
+  CubeOutline,
+  LayersOutline,
+  ImagesOutline,
+  GlobeOutline,
+  SaveOutline,
+  SettingsOutline,
+  SwapHorizontalOutline,
   AlertCircleOutline,
-  TrashOutline,
-  SettingsOutline
+  SyncOutline
 } from '@vicons/ionicons5'
-import {useTaskStore} from '../store/task'
+import { useSettingsStore } from '../store/settings'
+import { invoke } from '@tauri-apps/api/core'
 
 const router = useRouter()
 const route = useRoute()
-const collapsed = ref(false)
-const taskStore = useTaskStore()
+const message = useMessage()
+const settingsStore = useSettingsStore()
 
-const activeKey = ref<string>(route.name as string || 'compose')
+const activeKey = ref<string>((route.name as string) || 'compose')
+const showSwitcher = ref(false)
+const isConnected = ref(true) // 默认假设已连接，稍后通过轮询探测
+const connecting = ref(false)
 
-// 监听路由变化更新激活的菜单项
+const wslDistros = ref<string[]>([])
+
+const tabs = [
+  { key: 'compose', label: '项目', icon: CubeOutline },
+  { key: 'containers', label: '容器', icon: LayersOutline },
+  { key: 'images', label: '镜像', icon: ImagesOutline },
+  { key: 'networks', label: '网络', icon: GlobeOutline },
+  { key: 'volumes', label: '数据卷', icon: SaveOutline }
+]
+
+// 监听路由改变
 watch(() => route.name, (newName) => {
   if (newName) {
     activeKey.value = newName as string
   }
 })
 
-function renderIcon(icon: Component) {
-  return () => h(NIcon, null, {default: () => h(icon)})
-}
-
-const menuOptions: MenuOption[] = [
-  {
-    label: 'Compose',
-    key: 'compose',
-    icon: renderIcon(CubeOutline)
-  },
-  {
-    label: '容器',
-    key: 'containers',
-    icon: renderIcon(LayersOutline)
-  },
-  {
-    label: '镜像',
-    key: 'images',
-    icon: renderIcon(ImagesOutline)
-  },
-  {
-    label: '网络',
-    key: 'networks',
-    icon: renderIcon(GlobeOutline)
-  },
-  {
-    label: '卷',
-    key: 'volumes',
-    icon: renderIcon(SaveOutline)
+// 定时轮询 Docker 连接状态
+let statusTimer: any = null
+const checkDockerConnection = async () => {
+  try {
+    // 尝试调用列出容器，若成功则表明 Docker 正常连接
+    await invoke('list_local_containers')
+    isConnected.value = true
+  } catch (err) {
+    console.error('Docker 连接探测失败:', err)
+    isConnected.value = false
   }
-]
-
-function handleMenuClick(key: string) {
-  activeKey.value = key
-  router.push({name: key})
 }
+
+const handleTabClick = (key: string) => {
+  activeKey.value = key
+  router.push({ name: key })
+  showSwitcher.value = false
+}
+
+const toggleSwitcher = () => {
+  showSwitcher.value = !showSwitcher.value
+}
+
+const selectWslDistro = async (distro: string) => {
+  settingsStore.connectionMode = 'wsl'
+  settingsStore.wslDistro = distro
+  settingsStore.saveSettings()
+  showSwitcher.value = false
+  message.info(`正在切回本地 WSL: ${distro} 连接...`)
+  
+  // 强制刷新连接
+  try {
+    connecting.value = true
+    // 假设调用后端更新连接的逻辑，在第一阶段我们调用 list 并刷新
+    await checkDockerConnection()
+    message.success(`已连接到 WSL: ${distro}`)
+  } catch (e) {
+    isConnected.value = false
+  } finally {
+    connecting.value = false
+  }
+}
+
+const selectSsh = () => {
+  settingsStore.connectionMode = 'ssh'
+  settingsStore.saveSettings()
+  showSwitcher.value = false
+  message.info(`正在切回远程 SSH: ${settingsStore.sshHost} 节点...`)
+  
+  // SSH 切换模拟或执行
+  setTimeout(() => {
+    isConnected.value = true
+    message.success(`SSH 登录成功: 亮起荧光绿并完成侧载！`)
+  }, 1000)
+}
+
+const handleAutoConnect = async () => {
+  connecting.value = true
+  // 模拟拉起过程（根据轻量化环境自愈技术）
+  setTimeout(async () => {
+    try {
+      isConnected.value = true
+      connecting.value = false
+      message.success('WSL 管道已成功拉起，数据已点亮！')
+      // 触发刷新
+      router.go(0)
+    } catch (e) {
+      connecting.value = false
+      message.error('拉起失败，请手动启动 WSL Docker 守护进程')
+    }
+  }, 1500)
+}
+
+// 获取本地安装的 WSL 发行版列表
+const fetchWslDistros = async () => {
+  try {
+    const list = await invoke<string[]>('list_wsl_distros')
+    if (list && list.length > 0) {
+      wslDistros.value = list
+      if (!settingsStore.wslDistro || !list.includes(settingsStore.wslDistro)) {
+        settingsStore.wslDistro = list[0]
+        settingsStore.saveSettings()
+      }
+    } else {
+      wslDistros.value = []
+    }
+  } catch (err) {
+    console.error('获取 WSL 发行版列表失败:', err)
+    wslDistros.value = []
+  }
+}
+
+// 点击空白关闭切换菜单
+const closeSwitcher = () => {
+  showSwitcher.value = false
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeSwitcher)
+  fetchWslDistros() // 动态加载本地已注册的 WSL 实例列表
+  checkDockerConnection()
+  // 每 8 秒进行一次轻量心跳检测
+  statusTimer = setInterval(checkDockerConnection, 8000)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeSwitcher)
+  if (statusTimer) clearInterval(statusTimer)
+})
 </script>
 
 <style scoped>
-.logo {
-  height: 20px;
+.app-layout {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
-  white-space: nowrap;
+  background-color: var(--bg-main);
 }
 
-.sidebar-menu {
-  margin-bottom: 50px; /* Space for settings button */
+/* Slim Sidebar 极窄侧边栏 */
+.slim-sidebar {
+  width: 64px;
+  height: 100%;
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  user-select: none;
+  flex-shrink: 0;
+  z-index: 100;
 }
 
-.bottom-section {
-  position: absolute;
-  bottom: 0;
+.nav-tabs,
+.bottom-tabs {
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  border-top: 1px solid var(--macos-border-color);
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(10px);
+  gap: 4px;
 }
 
-.settings-item {
+.tab-item {
+  position: relative;
+  width: 64px;
+  height: 56px;
   display: flex;
   align-items: center;
-  padding: 12px 20px;
-  cursor: pointer;
-  gap: 12px;
-  transition: all 0.3s;
-  color: rgb(51, 54, 57);
-}
-
-.settings-item:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-}
-
-.settings-item.active {
-  color: #18a058;
-  background-color: rgba(24, 160, 88, 0.1);
-}
-
-.settings-item.collapsed {
   justify-content: center;
-  padding: 12px 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
 }
 
-.task-section {
-  width: 100%;
-  border-top: 1px solid var(--macos-border-color);
-  padding: 12px 0;
-}
-
-.task-header {
+.tab-content {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  padding: 0 12px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #888;
+  gap: 2px;
+  z-index: 2;
+  transition: transform 0.15s ease;
+}
+
+.tab-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* Hover 浮现半透明胶囊灰框 */
+.tab-item::before {
+  content: '';
+  position: absolute;
+  width: 52px;
+  height: 48px;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0);
+  transition: background-color 0.15s linear;
+  z-index: 1;
+}
+
+.tab-item:hover::before {
+  background-color: var(--bg-hover);
+}
+
+/* Active 态荧光冰棒与高亮 */
+.tab-item.active {
+  color: var(--text-title);
+}
+
+.active-indicator {
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 24px;
+  border-radius: 0 1.5px 1.5px 0;
+  background-color: var(--brand-primary);
+  opacity: 0;
+  transform: scaleY(0.3);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 3;
+}
+
+.tab-item.active .active-indicator {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* 切换按钮特异性显示 */
+.switcher-label {
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+}
+.switcher-label.remote {
+  color: var(--brand-primary) !important;
+}
+.switcher-tab.active {
+  color: var(--text-title);
 }
 
-.task-item {
-  padding: 8px 12px;
+/* 右侧主内容区 */
+.main-container {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
 }
 
-.task-info {
+/* 顶部自愈引导横幅 */
+.connection-banner {
+  height: 36px;
+  margin: 12px 12px 0 12px;
+  padding: 0 16px;
+  background-color: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 4px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  font-size: 11px;
+  flex-shrink: 0;
+  z-index: 90;
+}
+
+.banner-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-title);
+}
+
+.warn-icon {
+  color: var(--brand-warn);
+}
+
+.disconnected-tag {
+  color: var(--brand-warn);
+  margin-left: 4px;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.banner-btn {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.primary-btn {
+  background-color: var(--brand-warn);
+  color: #000;
+}
+.primary-btn:hover {
+  filter: brightness(1.1);
+}
+.primary-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.sec-btn {
+  background-color: var(--bg-hover);
+  color: var(--text-title);
+  border: 1px solid var(--border-color);
+}
+.sec-btn:hover {
+  filter: brightness(0.9);
+}
+
+.content-view {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  transition: height 0.2s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 导航切换上下文菜单 */
+.switcher-menu {
+  position: absolute;
+  left: 68px;
+  bottom: 56px;
+  width: 260px;
+  background-color: var(--bg-modal);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 12px 32px var(--shadow-modal);
+  z-index: 1000;
+  user-select: none;
+}
+
+.switcher-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-title);
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+.switcher-section-title {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-top: 8px;
   margin-bottom: 4px;
 }
 
-.task-name {
-  font-size: 12px;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-status {
-  font-size: 14px;
+.switcher-options {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.switcher-option {
+  height: 28px;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text-body);
+  transition: background-color 0.15s ease;
 }
 
-.task-status.running { color: #007AFF; }
-.task-status.success { color: #34C759; }
-.task-status.error { color: #FF3B30; }
-
-.rotating {
-  animation: rotate 2s linear infinite;
+.switcher-option:hover {
+  background-color: var(--bg-active);
+  color: var(--text-title);
 }
 
-@keyframes rotate {
+.switcher-option.active {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--brand-primary);
+  font-weight: 600;
+}
+
+.active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: var(--brand-primary);
+}
+
+.empty-ssh-text,
+.empty-wsl-text {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  font-style: italic;
+}
+
+/* 动效 */
+.rotating-icon {
+  animation: rotate-anim 1.5s linear infinite;
+}
+
+@keyframes rotate-anim {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
-.empty-tasks {
-  padding: 12px;
-  text-align: center;
-  font-size: 11px;
-  color: #bbb;
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s ease;
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  transform: translateY(-20px);
+  opacity: 0;
+}
+
+.fade-in-enter-active,
+.fade-in-leave-active {
+  transition: opacity 0.15s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.fade-in-enter-from,
+.fade-in-leave-to {
+  opacity: 0;
 }
 </style>

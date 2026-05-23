@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
@@ -329,35 +329,64 @@ pub async fn get_image_history(id: String) -> Result<Vec<ImageHistoryInfo>, Stri
 #[tauri::command]
 pub async fn pull_image(app: AppHandle, image_name: String) -> Result<(), String> {
     let docker = get_docker_client().await?;
+    
+    // 确保镜像名包含标签，默认为 latest
+    let full_image_name = if image_name.contains(':') {
+        image_name.clone()
+    } else {
+        format!("{}:latest", image_name)
+    };
+
+    println!("开始拉取镜像: {}", full_image_name);
 
     let mut stream = docker.create_image(
         Some(CreateImageOptions {
-            from_image: image_name.clone(),
+            from_image: full_image_name.clone(),
             ..Default::default()
         }),
         None,
         None,
     );
 
+    let app_handle = app.clone();
+    let name_for_events = full_image_name.clone();
+    
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = stream.next().await {
             match msg {
                 Ok(info) => {
-                    // 发送拉取进度到前端
-                    if let Err(e) = app.emit("image-pull-progress", info) {
+                    // 发送拉取进度到前端，包含镜像名以便过滤
+                    #[derive(Serialize, Clone)]
+                    struct ProgressPayload {
+                        image: String,
+                        info: bollard::models::CreateImageInfo,
+                    }
+                    if let Err(e) = app_handle.emit("image-pull-progress", ProgressPayload {
+                        image: name_for_events.clone(),
+                        info,
+                    }) {
                         eprintln!("发送拉取进度事件失败: {}", e);
                         break;
                     }
                 }
                 Err(e) => {
-                    eprintln!("拉取镜像出错: {}", e);
-                    let _ = app.emit("image-pull-error", e.to_string());
+                    eprintln!("拉取镜像 {} 出错: {}", name_for_events, e);
+                    #[derive(Serialize, Clone)]
+                    struct ErrorPayload {
+                        image: String,
+                        error: String,
+                    }
+                    let _ = app_handle.emit("image-pull-error", ErrorPayload {
+                        image: name_for_events.clone(),
+                        error: e.to_string(),
+                    });
                     break;
                 }
             }
         }
         // 拉取完成
-        let _ = app.emit("image-pull-finished", image_name);
+        println!("镜像拉取任务结束: {}", name_for_events);
+        let _ = app_handle.emit("image-pull-finished", name_for_events);
     });
 
     Ok(())
@@ -467,13 +496,13 @@ pub async fn inspect_container(id: String) -> Result<ContainerDetails, String> {
             .state
             .as_ref()
             .and_then(|s| s.status)
-            .map(|s| format!("{:?}", s))
+            .map(|s| format!("{:?}", s).to_lowercase())
             .unwrap_or_default(),
         status: details
             .state
             .as_ref()
             .and_then(|s| s.status)
-            .map(|s| format!("{:?}", s))
+            .map(|s| format!("{:?}", s).to_lowercase())
             .unwrap_or_default(),
         created: details.created.unwrap_or_default(),
         env: config.and_then(|c| c.env.clone()).unwrap_or_default(),
@@ -1059,5 +1088,80 @@ pub async fn get_network_details(id: String) -> Result<NetworkDetails, String> {
 pub async fn open_volume_path(app: AppHandle, path: String) -> Result<(), String> {
     app.opener()
         .open_path(path, None::<String>)
+        .map_err(|e| format!("无法打开目录: {}", e))
+}
+
+/// 获取本地已安装的 WSL 发行版列表
+#[tauri::command]
+pub async fn list_wsl_distros() -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        use std::os::windows::process::CommandExt;
+
+        // 执行 wsl -l -q 命令
+        let mut cmd = Command::new("wsl.exe");
+        cmd.args(["-l", "-q"]);
+        // 0x08000000 即 CREATE_NO_WINDOW，防止弹出 cmd 黑色窗口
+        cmd.creation_flags(0x08000000);
+
+        let output = cmd.output()
+            .map_err(|e| format!("无法执行 wsl 命令，可能未安装 WSL: {}", e))?;
+
+        if !output.status.success() {
+            return Err("WSL 命令执行失败".to_string());
+        }
+
+        let stdout_raw = output.stdout;
+        let mut distros = Vec::new();
+
+        // 优先尝试 UTF-16 LE 解析（因为 Windows 下 wsl -l -q 默认为 UTF-16 字节流）
+        if stdout_raw.len() % 2 == 0 {
+            let u16_data: Vec<u16> = stdout_raw
+                .chunks_exact(2)
+                .map(|chunk| u16::from_ne_bytes([chunk[0], chunk[1]]))
+                .collect();
+            if let Ok(text) = String::from_utf16(&u16_data) {
+                for line in text.lines() {
+                    let trimmed = line.trim().trim_start_matches('\u{feff}').to_string();
+                    if !trimmed.is_empty() {
+                        distros.push(trimmed);
+                    }
+                }
+            }
+        }
+
+        // 如果 UTF-16 解析结果为空，回退到 UTF-8 编码解析
+        if distros.is_empty() {
+            if let Ok(text) = String::from_utf8(stdout_raw) {
+                for line in text.lines() {
+                    let trimmed = line.trim().trim_start_matches('\u{feff}').to_string();
+                    if !trimmed.is_empty() {
+                        distros.push(trimmed);
+                    }
+                }
+            }
+        }
+
+        Ok(distros)
+    }
+
+    #[cfg(not(windows))]
+    {
+        // 非 Windows 平台不提供 WSL 发行版
+        Ok(vec![])
+    }
+}
+
+/// 打开本地配置文件目录
+#[tauri::command]
+pub async fn open_config_dir(app: AppHandle) -> Result<(), String> {
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("无法获取应用数据目录: {}", e))?;
+    
+    app.opener()
+        .open_path(app_dir.to_string_lossy().to_string(), None::<String>)
         .map_err(|e| format!("无法打开目录: {}", e))
 }

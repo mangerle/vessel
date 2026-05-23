@@ -1,10 +1,10 @@
 .n-dropdown-menu {
-  background-color: rgba(255, 255, 255, 0.72) !important;
+  background-color: var(--bg-modal) !important;
   backdrop-filter: blur(20px) !important;
   border-radius: 10px !important;
   padding: 4px !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
-  border: 0.5px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 8px 32px var(--shadow-modal) !important;
+  border: 0.5px solid var(--border-color) !important;
 }
 
 .n-dropdown-option {
@@ -16,15 +16,16 @@
   border-radius: 6px !important;
   padding: 0 8px !important;
   font-size: 13px !important;
+  color: var(--text-body) !important;
 }
 
-/* 选中态使用 macOS 强调色 */
+/* 选中态使用主题强调色 */
 .n-dropdown-option-body:hover {
-  background-color: var(--macos-accent-blue) !important;
+  background-color: var(--brand-primary) !important;
   color: white !important;
 }
 
 .n-dropdown-divider {
-  background-color: rgba(0, 0, 0, 0.06) !important;
+  background-color: var(--border-color) !important;
   margin: 4px 0 !important;
 }

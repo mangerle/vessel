@@ -1,15 +1,78 @@
-:root {
-  --macos-bg-light: #F5F5F7;
-  --macos-card-bg-light: #FFFFFF;
-  --macos-accent-blue: #007AFF;
-  --macos-success-green: #28CD41;
-  --macos-border-color: rgba(0, 0, 0, 0.1);
-  --macos-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-  --macos-radius: 12px;
+/* 默认是深邃暗黑 (Deep Black) */
+:root, [data-theme='deep-black'] {
+  /* 基础调色盘 */
+  --bg-main: #0b0f19;
+  --bg-sidebar: #070a10;
+  --bg-active: #1e293b;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-card: rgba(255, 255, 255, 0.02);
+  --bg-input: #070a10;
+  --bg-modal: rgba(11, 15, 25, 0.85);
+  --brand-primary: #10b981;
+  --brand-warn: #f59e0b;
+  --brand-danger: #ef4444;
+  --text-title: #f8fafc;
+  --text-body: #cbd5e1;
+  --text-muted: #64748b;
+  --border-color: rgba(255, 255, 255, 0.04);
+  --shadow-color: rgba(0, 0, 0, 0.4);
+  --shadow-modal: rgba(0, 0, 0, 0.5);
 }
 
+[data-theme='zed-gray'] {
+  /* Zed 同款冷灰 (Zed Gray) */
+  --bg-main: #181818;
+  --bg-sidebar: #121212;
+  --bg-active: #2d2d2d;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-card: rgba(255, 255, 255, 0.03);
+  --bg-input: #121212;
+  --bg-modal: rgba(24, 24, 24, 0.85);
+  --brand-primary: #4ade80;
+  --brand-warn: #fbbf24;
+  --brand-danger: #f87171;
+  --text-title: #ffffff;
+  --text-body: #cccccc;
+  --text-muted: #555555;
+  --border-color: rgba(255, 255, 255, 0.06);
+  --shadow-color: rgba(0, 0, 0, 0.5);
+  --shadow-modal: rgba(0, 0, 0, 0.6);
+}
+
+[data-theme='light-apple'] {
+  /* 亮色苹果风格 (Light Apple) */
+  --bg-main: #ffffff;
+  --bg-sidebar: #f5f5f7;
+  --bg-active: #e8e8ed;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-card: #f5f5f7;
+  --bg-input: #ffffff;
+  --bg-modal: rgba(255, 255, 255, 0.9);
+  --brand-primary: #0071e3;
+  --brand-warn: #f56300;
+  --brand-danger: #ff030b;
+  --text-title: #1d1d1f;
+  --text-body: #424245;
+  --text-muted: #86868b;
+  --border-color: rgba(0, 0, 0, 0.1);
+  --shadow-color: rgba(0, 0, 0, 0.08);
+  --shadow-modal: rgba(0, 0, 0, 0.12);
+}
+
+/* 全局基础设置 */
 body {
-  background-color: var(--macos-bg-light);
+  background-color: var(--bg-main);
+  color: var(--text-body);
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 等宽字体规范 */
+.monospace-text,
+.log-window,
+.yaml-editor textarea,
+.console-body {
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace !important;
 }

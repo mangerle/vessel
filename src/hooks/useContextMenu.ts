@@ -1,5 +1,5 @@
-import {h, ref} from 'vue'
-import {NIcon} from 'naive-ui'
+import { h, ref } from 'vue'
+import { NIcon } from 'naive-ui'
 import {
   CopyOutline,
   DocumentTextOutline,
@@ -7,7 +7,11 @@ import {
   RefreshOutline,
   StopOutline,
   TerminalOutline,
-  TrashOutline
+  TrashOutline,
+  PauseOutline,
+  EyeOutline,
+  FlashOutline,
+  ListOutline
 } from '@vicons/ionicons5'
 
 export function useContextMenu() {
@@ -25,42 +29,67 @@ export function useContextMenu() {
     e.preventDefault()
     showDropdown.value = false
     
-    // Ensure reactivity update triggers before showing again
+    // 延迟以确保 Vue 响应式状态更新触发，避免闪烁
     setTimeout(() => {
       x.value = e.clientX
       y.value = e.clientY
       currentTarget.value = data
 
       if (type === 'container') {
+        const isRunning = data.state === 'running' || (data.State && data.State.Running)
+        const isPaused = data.state === 'paused' || (data.State && data.State.Paused)
+
         currentOptions.value = [
-          { label: '启动', key: 'start', icon: renderIcon(PlayOutline), disabled: data.state === 'running' },
-          { label: '停止', key: 'stop', icon: renderIcon(StopOutline), disabled: data.state !== 'running' },
-          { label: '重启', key: 'restart', icon: renderIcon(RefreshOutline) },
-          { type: 'divider', key: 'd1' },
+          // 组 1: 生命周期控制
+          { label: '▶️ 启动', key: 'start', icon: renderIcon(PlayOutline), disabled: isRunning },
+          { label: '⏹️ 停止', key: 'stop', icon: renderIcon(StopOutline), disabled: !isRunning },
+          { label: '🔄 重启', key: 'restart', icon: renderIcon(RefreshOutline) },
           { 
-            label: '打开终端', 
+            label: isPaused ? '⏯️ 恢复' : '⏸️ 暂停', 
+            key: isPaused ? 'unpause' : 'pause', 
+            icon: renderIcon(PauseOutline), 
+            disabled: !isRunning 
+          },
+          { type: 'divider', key: 'div1' },
+          
+          // 组 2: 资产快捷搬运
+          { label: '💿 查看对应镜像', key: 'view_image', icon: renderIcon(EyeOutline) },
+          { label: '📋 复制容器 ID', key: 'copy_id', icon: renderIcon(CopyOutline) },
+          { label: '🗎 复制镜像 ID', key: 'copy_image_id', icon: renderIcon(CopyOutline) },
+          { type: 'divider', key: 'div2' },
+
+          // 组 3: 深度观测
+          { label: '🔍 检查元数据', key: 'inspect_meta', icon: renderIcon(DocumentTextOutline) },
+          { label: '📊 显示内部进程 (Top)', key: 'show_top', icon: renderIcon(ListOutline) },
+          { type: 'divider', key: 'div3' },
+
+          // 组 4: 控制流注入
+          { label: '🔗 附加标准流 (Attach)', key: 'attach_stream', icon: renderIcon(FlashOutline) },
+          { label: '🚀 快速执行命令 (Exec...)', key: 'exec_cmd', icon: renderIcon(TerminalOutline) },
+          { 
+            label: '🖥️ 打开交互终端', 
             key: 'terminal_group', 
             icon: renderIcon(TerminalOutline),
             children: [
-              { label: '作为普通用户', key: 'terminal_user' },
-              { label: '作为 Root 用户', key: 'terminal_root' }
+              { label: '👤 普通用户', key: 'terminal_user' },
+              { label: '👤 Root 用户', key: 'terminal_root' }
             ]
           },
-          { label: '查看日志', key: 'logs', icon: renderIcon(DocumentTextOutline) },
-          { type: 'divider', key: 'd2' },
-          { label: '复制 ID', key: 'copy_id', icon: renderIcon(CopyOutline) },
-          { label: '删除', key: 'delete', icon: renderIcon(TrashOutline) }
+          { type: 'divider', key: 'div4' },
+
+          // 组 5: 危险项
+          { label: '🗑️ 安全删除...', key: 'delete', icon: renderIcon(TrashOutline) }
         ]
       } else if (type === 'project') {
-          currentOptions.value = [
-              {label: '启动 (Up)', key: 'up', icon: renderIcon(PlayOutline)},
-              {label: '停止 (Down)', key: 'down', icon: renderIcon(StopOutline)},
-              {label: '重启', key: 'restart_project', icon: renderIcon(RefreshOutline)},
-              {type: 'divider', key: 'd1'},
-              {label: '编辑配置', key: 'edit', icon: renderIcon(DocumentTextOutline)},
-              {type: 'divider', key: 'd2'},
-              {label: '删除项目', key: 'delete_project', icon: renderIcon(TrashOutline)}
-          ]
+        currentOptions.value = [
+          { label: '🚀 全部启动 (Compose Up)', key: 'up', icon: renderIcon(PlayOutline) },
+          { label: '🔄 全部重启 (Compose Restart)', key: 'restart_project', icon: renderIcon(RefreshOutline) },
+          { label: '⏹️ 全部停止 (Compose Stop)', key: 'down', icon: renderIcon(StopOutline) },
+          { type: 'divider', key: 'd1' },
+          { label: '📝 编辑 YAML 配置', key: 'edit', icon: renderIcon(DocumentTextOutline) },
+          { type: 'divider', key: 'd2' },
+          { label: '💥 彻底删除 (Compose Down...)', key: 'delete_project', icon: renderIcon(TrashOutline) }
+        ]
       } else if (type === 'global') {
         currentOptions.value = [
           { label: '刷新列表', key: 'refresh', icon: renderIcon(RefreshOutline) }
