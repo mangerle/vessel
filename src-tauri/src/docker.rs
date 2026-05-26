@@ -1,5 +1,6 @@
 use crate::connection::get_docker_client;
-use bollard::container::{ListContainersOptions, LogsOptions, StatsOptions};
+use bollard::container::{Config, ListContainersOptions, LogsOptions, StatsOptions};
+use bollard::models::{HostConfig, PortBinding};
 use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults};
 use bollard::image::{CreateImageOptions, ListImagesOptions};
 use bollard::network::InspectNetworkOptions;
@@ -1157,6 +1158,135 @@ pub async fn open_volume_path(app: AppHandle, path: String) -> Result<(), String
     app.opener()
         .open_path(path, None::<String>)
         .map_err(|e| format!("无法打开目录: {}", e))
+}
+
+/// 运行镜像（创建并启动容器）
+#[tauri::command]
+pub async fn run_image(
+    image: String,
+    name: Option<String>,
+    ports: Vec<String>,
+    env: Vec<String>,
+    restart_policy: Option<String>,
+    binds: Option<Vec<String>>,
+    tty: Option<bool>,
+    open_stdin: Option<bool>,
+    cmd: Option<Vec<String>>,
+    overwrite: Option<bool>,
+) -> Result<String, String> {
+    let docker = get_docker_client().await?;
+
+    // 0. 如果需要覆盖，先强制清理同名旧容器
+    if overwrite.unwrap_or(false) {
+        if let Some(ref container_name) = name {
+            let remove_options = bollard::container::RemoveContainerOptions {
+                v: true,      // 顺便删除其挂载的数据卷
+                force: true,  // 强制删除，即使它正在运行
+                link: false,
+            };
+            let _ = docker.remove_container(container_name, Some(remove_options)).await;
+        }
+    }
+
+    // 1. 处理端口映射
+    let mut port_bindings = HashMap::new();
+    let mut exposed_ports = HashMap::new();
+
+    for p in ports {
+        let parts: Vec<&str> = p.split(':').collect();
+        let (host_port, container_part) = if parts.len() == 2 {
+            (parts[0], parts[1])
+        } else if parts.len() == 1 {
+            ("", parts[0])
+        } else {
+            continue;
+        };
+
+        let container_parts: Vec<&str> = container_part.split('/').collect();
+        let container_port = container_parts[0];
+        let protocol = if container_parts.len() > 1 { container_parts[1] } else { "tcp" };
+
+        if container_port.trim().is_empty() {
+            continue;
+        }
+
+        let container_key = format!("{}/{}", container_port.trim(), protocol);
+        exposed_ports.insert(container_key.clone(), HashMap::new());
+        
+        let host_port_opt = if host_port.trim().is_empty() {
+            None
+        } else {
+            Some(host_port.trim().to_string())
+        };
+        let binding = PortBinding {
+            host_ip: Some("0.0.0.0".to_string()),
+            host_port: host_port_opt,
+        };
+        port_bindings.insert(container_key, Some(vec![binding]));
+    }
+
+    // 2. 处理重启策略
+    let restart = restart_policy.map(|p| {
+        use bollard::models::RestartPolicyNameEnum;
+        let name = match p.as_str() {
+            "always" => RestartPolicyNameEnum::ALWAYS,
+            "unless-stopped" => RestartPolicyNameEnum::UNLESS_STOPPED,
+            "on-failure" => RestartPolicyNameEnum::ON_FAILURE,
+            _ => RestartPolicyNameEnum::EMPTY,
+        };
+        bollard::models::RestartPolicy {
+            name: Some(name),
+            maximum_retry_count: None,
+        }
+    });
+
+    // 3. 处理容器启动命令与文件挂载
+    let container_cmd = match cmd {
+        Some(v) if !v.is_empty() => Some(v),
+        _ => None,
+    };
+
+    let host_binds = match binds {
+        Some(v) if !v.is_empty() => Some(v),
+        _ => None,
+    };
+
+    // 4. 创建容器配置
+    let config = Config {
+        image: Some(image),
+        env: Some(env),
+        exposed_ports: Some(exposed_ports),
+        tty,
+        open_stdin,
+        cmd: container_cmd,
+        host_config: Some(HostConfig {
+            port_bindings: Some(port_bindings),
+            restart_policy: restart,
+            binds: host_binds,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    // 5. 创建容器
+    let container = docker
+        .create_container(
+            name.as_ref().map(|n| bollard::container::CreateContainerOptions {
+                name: n.clone(),
+                ..Default::default()
+            }),
+            config,
+        )
+        .await
+        .map_err(|e| format!("创建容器失败: {}", e))?;
+
+    // 6. 启动容器
+    docker
+        .start_container::<String>(&container.id, None)
+        .await
+        .map_err(|e| format!("启动容器失败: {}", e))?;
+
+    Ok(container.id)
 }
 
 /// 获取本地已安装的 WSL 发行版列表

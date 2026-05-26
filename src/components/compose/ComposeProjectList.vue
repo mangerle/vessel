@@ -35,11 +35,14 @@
             v-for="container in project.containers"
             :key="container.id"
             class="container-node"
-            :class="{ active: selectedId === container.id }"
+            :class="{ 
+              active: selectedId === container.id,
+              'is-up': container.state === 'running',
+              'is-down': container.state !== 'running'
+            }"
             @click="handleSelect(container.id)"
             @contextmenu.stop="$emit('contextmenu', $event, 'container', container)"
           >
-            <span class="sub-line">├──</span>
             <n-icon :component="SettingsOutline" class="node-icon service-icon" />
             <span class="node-label">{{ container.name }}</span>
           </div>
@@ -169,9 +172,20 @@ const handleImportProject = () => {
   color: var(--text-title);
 }
 
-.project-node.active,
-.container-node.active {
+.project-node.active {
   background-color: var(--macos-accent-blue) !important;
+  color: #fff;
+  font-weight: 600;
+}
+
+.container-node.active.is-up {
+  background-color: #10b981 !important;
+  color: #fff;
+  font-weight: 600;
+}
+
+.container-node.active.is-down {
+  background-color: #64748b !important;
   color: #fff;
   font-weight: 600;
 }
@@ -213,15 +227,23 @@ const handleImportProject = () => {
   padding-left: 20px;
 }
 
-.sub-line {
-  color: var(--text-muted);
-  margin-right: 6px;
-  font-family: monospace;
-  opacity: 0.5;
+.container-node.is-up .service-icon {
+  color: #10b981;
+  opacity: 1;
+}
+
+.container-node.is-down .service-icon {
+  color: #64748b;
+  opacity: 0.6;
+}
+
+.container-node.active .service-icon {
+  color: #fff !important;
+  opacity: 1;
 }
 
 .service-icon {
   font-size: 10px;
-  opacity: 0.8;
+  transition: color 0.2s ease;
 }
 </style>

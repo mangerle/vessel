@@ -75,7 +75,11 @@
         v-for="item in filteredItems"
         :key="item.id"
         class="container-item"
-        :class="{ active: selectedId === item.id }"
+        :class="{ 
+          active: selectedId === item.id,
+          'is-up': (item.state || item.status) === 'running',
+          'is-down': (item.state || item.status) !== 'running'
+        }"
         @click="handleSelect(item.id)"
         @contextmenu.stop="$emit('contextmenu', $event, 'container', item)"
       >
@@ -352,8 +356,14 @@ onUnmounted(() => {
   color: var(--text-title);
 }
 
-.container-item.active {
-  background-color: var(--macos-accent-blue) !important;
+.container-item.active.is-up {
+  background-color: #10b981 !important;
+  color: #fff;
+  font-weight: 600;
+}
+
+.container-item.active.is-down {
+  background-color: #64748b !important;
   color: #fff;
   font-weight: 600;
 }
@@ -365,10 +375,13 @@ onUnmounted(() => {
   border-radius: 3px;
   margin-left: 8px;
   margin-right: 8px;
-  background-color: var(--text-muted);
+  background-color: #64748b;
 }
-.status-dot.running {
-  background-color: var(--brand-primary);
+.status-dot.running, .status-dot.up {
+  background-color: #10b981;
+}
+.status-dot.exited, .status-dot.stopped {
+  background-color: #64748b;
 }
 
 .item-name {

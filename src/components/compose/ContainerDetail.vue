@@ -712,13 +712,13 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: var(--text-muted);
+  background-color: #64748b;
 }
 .status-dot.running, .status-dot.up {
-  background-color: var(--brand-primary);
+  background-color: #10b981;
 }
 .status-dot.exited, .status-dot.stopped {
-  background-color: var(--brand-danger);
+  background-color: #64748b;
 }
 .status-dot.paused {
   background-color: var(--brand-warn);

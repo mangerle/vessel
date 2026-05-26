@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
+import { invoke } from '@tauri-apps/api/core'
 import { useImageStore } from '../store/image'
-import { Command } from '@tauri-apps/plugin-shell'
-import { useSettingsStore } from '../store/settings'
 import {
   NButton,
   NDropdown,
@@ -13,9 +12,11 @@ import {
   NSpace,
   NTag,
   NInput,
+  NSelect,
   useMessage,
   NAutoComplete,
-  NProgress
+  NProgress,
+  NSwitch
 } from 'naive-ui'
 import {
   StarOutline,
@@ -25,9 +26,6 @@ import {
   TrashOutline,
   FlashOutline,
   ReturnDownBackOutline,
-  CheckmarkCircleOutline,
-  CloseCircleOutline,
-  SparklesOutline,
   DiscOutline,
   HelpCircleOutline,
   LayersOutline,
@@ -38,13 +36,13 @@ import {
   ChevronUpOutline,
   ChevronDownOutline,
   CubeOutline,
-  FileTrayFullOutline
+  FileTrayFullOutline,
+  AddOutline
 } from '@vicons/ionicons5'
 import { useTaskStore } from '../store/task'
 
 const router = useRouter()
 const imageStore = useImageStore()
-const settingsStore = useSettingsStore()
 const taskStore = useTaskStore()
 const message = useMessage()
 
@@ -64,8 +62,47 @@ const localSearchQuery = ref('') // 本地镜像检索输入词
 // 运行镜像弹窗
 const showRunModal = ref(false)
 const runContainerName = ref('')
-const runPortMapping = ref('8080:80')
+const runPortMappings = ref<{ host: string, container: string, protocol: string }[]>([])
 const runningImage = ref('')
+const runEnvVars = ref<{ key: string, value: string }[]>([])
+const runRestartPolicy = ref('unless-stopped')
+const runVolumes = ref<{ host: string, container: string }[]>([])
+const runInteractive = ref(false)
+const runTty = ref(false)
+const runCmd = ref('')
+const runOverwrite = ref(true)
+const showAdvanced = ref(false)
+
+const addEnvVar = () => {
+  runEnvVars.value.push({ key: '', value: '' })
+}
+
+const removeEnvVar = (index: number) => {
+  runEnvVars.value.splice(index, 1)
+}
+
+const addPortMapping = () => {
+  runPortMappings.value.push({ host: '', container: '', protocol: 'tcp' })
+}
+
+const removePortMapping = (index: number) => {
+  runPortMappings.value.splice(index, 1)
+}
+
+const addVolume = () => {
+  runVolumes.value.push({ host: '', container: '' })
+}
+
+const removeVolume = (index: number) => {
+  runVolumes.value.splice(index, 1)
+}
+
+const restartOptions = [
+  { label: '不重启 (no)', value: 'none' },
+  { label: '总是重启 (always)', value: 'always' },
+  { label: '除非手动停止 (unless-stopped)', value: 'unless-stopped' },
+  { label: '失败时重启 (on-failure)', value: 'on-failure' }
+]
 
 // Hub 镜像详情查看
 const selectedHubImage = ref<any>(null)
@@ -197,42 +234,104 @@ const handleDelete = async (id: string) => {
 
 const openRunModal = (imgTag: string) => {
   runningImage.value = imgTag
-  runContainerName.value = 'test-' + imgTag.split(':')[0].replace(/[^a-zA-Z0-9]/g, '-')
+  // 生成一个基于镜像名的默认容器名
+  const baseName = imgTag.split(':')[0].split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '-') || 'container'
+  runContainerName.value = `vessel-${baseName}-${Math.floor(Math.random() * 1000)}`
+  
+  // 1. 初始化端口映射
+  runPortMappings.value = []
+  if (selectedDetails.value && selectedDetails.value.exposed_ports) {
+    selectedDetails.value.exposed_ports.forEach((p: string) => {
+      const parts = p.split('/')
+      runPortMappings.value.push({
+        host: '',
+        container: parts[0],
+        protocol: parts[1] || 'tcp'
+      })
+    })
+  }
+
+  // 2. 初始化环境变量
+  runEnvVars.value = []
+  if (selectedDetails.value && selectedDetails.value.env) {
+    selectedDetails.value.env.forEach((e: string) => {
+      const idx = e.indexOf('=')
+      if (idx !== -1) {
+        runEnvVars.value.push({
+          key: e.substring(0, idx),
+          value: e.substring(idx + 1)
+        })
+      } else {
+        runEnvVars.value.push({ key: e, value: '' })
+      }
+    })
+  }
+
+  // 3. 重置其他高级选项
+  runRestartPolicy.value = 'unless-stopped'
+  runVolumes.value = []
+  runInteractive.value = false
+  runTty.value = false
+  runCmd.value = ''
+  runOverwrite.value = true
+  showAdvanced.value = false
+  
   showRunModal.value = true
 }
 
 const handleRunImage = async () => {
+  if (!runContainerName.value.trim()) {
+    message.warning('请输入容器名称')
+    return
+  }
+  
   showRunModal.value = false
-  message.info(`正在拉起容器 "${runContainerName.value}"...`)
+  message.info(`正在尝试拉起容器 "${runContainerName.value}"...`)
 
   try {
-    let cmdArgs = ['run', '-d', '--name', runContainerName.value]
-    if (runPortMapping.value) {
-      cmdArgs.push('-p', runPortMapping.value)
-    }
-    cmdArgs.push(runningImage.value)
+    // 组装端口映射: ["8080:80/tcp", "9090:90/udp"]
+    const ports = runPortMappings.value
+      .filter(p => p.container.trim())
+      .map(p => {
+        const hostPart = p.host.trim() ? `${p.host.trim()}:` : ''
+        const protoPart = p.protocol ? `/${p.protocol}` : ''
+        return `${hostPart}${p.container.trim()}${protoPart}`
+      })
+      
+    // 组装挂载卷
+    const binds = runVolumes.value
+      .filter(v => v.host.trim() && v.container.trim())
+      .map(v => `${v.host.trim()}:${v.container.trim()}`)
 
-    let execCmd = 'docker'
-    let finalArgs = cmdArgs
+    // 组装环境变量
+    const env = runEnvVars.value
+      .filter(e => e.key.trim())
+      .map(e => `${e.key.trim()}=${e.value.trim()}`)
 
-    if (settingsStore.connectionMode === 'wsl') {
-      execCmd = 'wsl'
-      let wslArgs = ['-d', settingsStore.wslDistro || 'Ubuntu', 'docker']
-      wslArgs.push(...cmdArgs)
-      finalArgs = wslArgs
+    // 组装启动命令
+    let cmd = null
+    if (runCmd.value.trim()) {
+      cmd = runCmd.value.trim().split(/\s+/).filter(Boolean)
     }
 
-    const command = Command.create(execCmd, finalArgs)
-    const out = await command.execute()
-    
-    if (out.code === 0) {
-      message.success('容器拉起成功！已成功侧载。')
-      router.push({ name: 'containers' })
-    } else {
-      throw new Error(out.stderr || '未知错误')
-    }
+    await invoke('run_image', {
+      image: runningImage.value,
+      name: runContainerName.value.trim() || null,
+      ports,
+      env,
+      restartPolicy: runRestartPolicy.value,
+      binds,
+      tty: runTty.value,
+      openStdin: runInteractive.value,
+      cmd,
+      overwrite: runOverwrite.value
+    })
+
+    message.success('容器已成功创建并启动！')
+    router.push({ name: 'containers' })
   } catch (e: any) {
-    message.error('拉起失败: ' + e.message)
+    console.error('运行镜像失败:', e)
+    message.error('启动失败: ' + e)
   }
 }
 
@@ -623,21 +722,144 @@ onMounted(() => {
     v-model:show="showRunModal"
     preset="card"
     title="🚀 运行新容器"
-    style="width: 450px"
+    style="width: 600px"
   >
-    <div class="run-modal-body">
-      <div class="field-title">容器名称</div>
-      <n-input v-model:value="runContainerName" placeholder="例如: my-nginx" />
-      <div class="field-title">端口映射</div>
-      <n-input v-model:value="runPortMapping" placeholder="例如: 8080:80" />
-      <div style="margin-top: 12px; font-size: 11px; color: var(--text-muted)">
-        镜像: {{ runningImage }}
+    <n-scrollbar style="max-height: 65vh; padding-right: 8px;">
+      <div class="run-modal-body">
+        
+        <!-- 基础设置 -->
+        <div class="field-section">
+          <div class="field-title">基础设置</div>
+          
+          <div class="field-row">
+            <div class="field-label">容器名称</div>
+            <n-input v-model:value="runContainerName" placeholder="建议使用小写字母和中划线" />
+          </div>
+
+          <div class="field-row-grid">
+            <div class="field-row flex-1">
+              <div class="field-label">重启策略</div>
+              <n-select v-model:value="runRestartPolicy" :options="restartOptions" />
+            </div>
+            
+            <div class="field-row flex-shrink-0 flex-align-center" style="margin-left: 24px; flex-direction: row; align-self: flex-end; height: 34px;">
+              <span class="field-label" style="margin-bottom: 0; margin-right: 8px;">覆盖同名容器</span>
+              <n-switch v-model:value="runOverwrite" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 端口映射 -->
+        <div class="field-section">
+          <div class="field-title flex-between">
+            <span>端口映射 <span class="sub-hint">(宿主机端口留空则自动随机映射)</span></span>
+            <n-button quaternary circle size="tiny" @click="addPortMapping">
+              <template #icon><n-icon :component="AddOutline" /></template>
+            </n-button>
+          </div>
+          
+          <div v-for="(pm, idx) in runPortMappings" :key="idx" class="port-edit-row">
+            <n-input v-model:value="pm.host" placeholder="宿主机端口(如8080)" size="small" style="flex: 2;" />
+            <span class="port-sep">➔</span>
+            <n-input v-model:value="pm.container" placeholder="容器端口(如80)" size="small" style="flex: 2;" />
+            <n-select 
+              v-model:value="pm.protocol" 
+              :options="[{label: 'TCP', value: 'tcp'}, {label: 'UDP', value: 'udp'}]" 
+              size="small" 
+              style="width: 80px;" 
+            />
+            <n-button quaternary circle size="tiny" type="error" @click="removePortMapping(idx)">
+              <template #icon><n-icon :component="TrashOutline" /></template>
+            </n-button>
+          </div>
+          <div v-if="runPortMappings.length === 0" class="empty-hint">点击右上角按钮添加端口映射</div>
+        </div>
+
+        <!-- 高级设置开关 -->
+        <div class="advanced-toggle-bar" @click="showAdvanced = !showAdvanced">
+          <span>高级设置 (数据卷挂载、环境变量、启动终端等)</span>
+          <n-icon :component="showAdvanced ? ChevronUpOutline : ChevronDownOutline" />
+        </div>
+
+        <!-- 高级设置区域 -->
+        <div v-show="showAdvanced" class="advanced-section-wrapper">
+          
+          <!-- 数据卷挂载 -->
+          <div class="field-section" style="margin-bottom: 16px;">
+            <div class="field-title flex-between">
+              <span>数据卷 / 目录挂载</span>
+              <n-button quaternary circle size="tiny" @click="addVolume">
+                <template #icon><n-icon :component="AddOutline" /></template>
+              </n-button>
+            </div>
+            
+            <div v-for="(vol, idx) in runVolumes" :key="idx" class="volume-edit-row">
+              <n-input v-model:value="vol.host" placeholder="宿主机绝对路径或卷名" size="small" style="flex: 1;" />
+              <span class="vol-sep">➔</span>
+              <n-input v-model:value="vol.container" placeholder="容器内挂载路径 (如 /data)" size="small" style="flex: 1;" />
+              <n-button quaternary circle size="tiny" type="error" @click="removeVolume(idx)">
+                <template #icon><n-icon :component="TrashOutline" /></template>
+              </n-button>
+            </div>
+            <div v-if="runVolumes.length === 0" class="empty-hint">点击右上角按钮添加目录/卷挂载</div>
+          </div>
+
+          <!-- 环境变量 -->
+          <div class="field-section" style="margin-bottom: 16px;">
+            <div class="field-title flex-between">
+              <span>环境变量</span>
+              <n-button quaternary circle size="tiny" @click="addEnvVar">
+                <template #icon><n-icon :component="AddOutline" /></template>
+              </n-button>
+            </div>
+            
+            <div v-for="(env, idx) in runEnvVars" :key="idx" class="env-edit-row">
+              <n-input v-model:value="env.key" placeholder="KEY" size="small" style="flex: 1;" />
+              <span class="env-sep">=</span>
+              <n-input v-model:value="env.value" placeholder="VALUE" size="small" style="flex: 1;" />
+              <n-button quaternary circle size="tiny" type="error" @click="removeEnvVar(idx)">
+                <template #icon><n-icon :component="TrashOutline" /></template>
+              </n-button>
+            </div>
+            <div v-if="runEnvVars.length === 0" class="empty-hint">点击右上角按钮添加环境变量</div>
+          </div>
+
+          <!-- 控制台与交互启动 -->
+          <div class="field-section" style="margin-bottom: 16px;">
+            <div class="field-title">终端与交互设置</div>
+            <div class="terminal-settings-grid">
+              <div class="switch-item">
+                <span class="switch-label">分配伪终端 (TTY, -t)</span>
+                <n-switch v-model:value="runTty" />
+              </div>
+              <div class="switch-item">
+                <span class="switch-label">保持标准输入打开 (Stdin, -i)</span>
+                <n-switch v-model:value="runInteractive" />
+              </div>
+            </div>
+            <div class="terminal-settings-tip">
+              💡 运行终端基础镜像（如 ubuntu, alpine 等）时，建议开启这两项以防止容器启动后瞬间退出。
+            </div>
+          </div>
+
+          <!-- 覆写启动命令 -->
+          <div class="field-section">
+            <div class="field-title">覆写启动命令 (CMD)</div>
+            <n-input v-model:value="runCmd" placeholder="例如: sh -c 'while true; do sleep 1; done' (留空使用默认 CMD)" />
+          </div>
+        </div>
+
+        <!-- 镜像信息提示 -->
+        <div class="image-info-strip" style="margin-top: 16px;">
+          <n-icon :component="DiscOutline" />
+          <span>镜像: {{ runningImage }}</span>
+        </div>
       </div>
-    </div>
+    </n-scrollbar>
     <template #footer>
       <div class="warning-modal-footer">
         <n-button @click="showRunModal = false">取消</n-button>
-        <n-button type="primary" @click="handleRunImage">立即拉起</n-button>
+        <n-button type="primary" @click="handleRunImage">立即启动</n-button>
       </div>
     </template>
   </n-modal>
@@ -1292,6 +1514,149 @@ onMounted(() => {
   font-size: 11px;
   font-weight: 700;
   color: var(--text-muted);
+}
+
+/* 运行弹窗样式 */
+.run-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-title);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-row-grid {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.field-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sub-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: normal;
+  margin-left: 6px;
+}
+
+.port-edit-row, .volume-edit-row, .env-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.port-sep, .vol-sep, .env-sep {
+  color: var(--text-muted);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.empty-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 8px;
+  background-color: rgba(255, 255, 255, 0.01);
+  border-radius: 4px;
+  border: 1px dashed var(--border-color);
+}
+
+.advanced-toggle-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  margin: 8px 0;
+  transition: all 0.2s ease;
+  font-size: 12px;
+  color: var(--text-title);
+  font-weight: 600;
+}
+.advanced-toggle-bar:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--brand-primary);
+}
+
+.advanced-section-wrapper {
+  background-color: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.terminal-settings-grid {
+  display: flex;
+  gap: 24px;
+}
+
+.switch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  background-color: rgba(255, 255, 255, 0.02);
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.switch-label {
+  font-size: 11px;
+  color: var(--text-body);
+}
+
+.terminal-settings-tip {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.image-info-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background-color: var(--bg-hover);
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .warning-modal-footer {
