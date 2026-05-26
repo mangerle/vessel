@@ -780,6 +780,10 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
   cursor: pointer;
   transition: all 0.15s ease;
   outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
 .start-border {
@@ -819,6 +823,10 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
   cursor: pointer;
   transition: all 0.15s ease;
   outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 .split-main-btn:hover {
   background-color: rgba(255, 255, 255, 0.12);
@@ -830,7 +838,7 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
 }
 
 .split-arrow-btn {
-  width: 20px;
+  width: 24px;
   height: 100%;
   background-color: rgba(255, 255, 255, 0.08);
   border: 1px solid var(--border-color);
@@ -840,6 +848,9 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
   cursor: pointer;
   transition: all 0.15s ease;
   outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .split-arrow-btn:hover {
   background-color: rgba(255, 255, 255, 0.12);

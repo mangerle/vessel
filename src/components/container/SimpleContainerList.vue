@@ -240,8 +240,6 @@ onUnmounted(() => {
 .filter-dropdown-wrapper,
 .batch-dropdown-wrapper {
   position: relative;
-}
-
 .toolbar-btn {
   height: 24px;
   background-color: rgba(255,255,255,0.03);
@@ -249,7 +247,12 @@ onUnmounted(() => {
   border-radius: 4px;
   color: var(--text-body);
   font-size: 10px;
+  padding: 0 6px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
   white-space: nowrap;
   outline: none;
 }

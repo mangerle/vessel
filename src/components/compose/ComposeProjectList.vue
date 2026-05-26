@@ -130,6 +130,10 @@ const handleImportProject = () => {
   cursor: pointer;
   transition: all 0.15s ease;
   outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .import-btn:hover {

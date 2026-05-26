@@ -89,7 +89,7 @@
     <!-- 两栖切换悬浮上下文菜单 -->
     <transition name="fade-in">
       <div v-if="showSwitcher" class="switcher-menu" @click.stop>
-        <div class="switcher-header">连接两栖切换器</div>
+        <div class="switcher-header">连接切换</div>
         <div class="switcher-section-title">本地 WSL 发行版</div>
         <div class="switcher-options">
           <div 
