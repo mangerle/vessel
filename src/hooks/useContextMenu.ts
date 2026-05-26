@@ -86,8 +86,6 @@ export function useContextMenu() {
           { label: '全部重启 (Compose Restart)', key: 'restart_project', icon: renderIcon(RefreshOutline) },
           { label: '全部停止 (Compose Stop)', key: 'down', icon: renderIcon(StopOutline) },
           { type: 'divider', key: 'd1' },
-          { label: '编辑 YAML 配置', key: 'edit', icon: renderIcon(DocumentTextOutline) },
-          { type: 'divider', key: 'd2' },
           { label: '彻底删除 (Compose Down...)', key: 'delete_project', icon: renderIcon(TrashOutline) }
         ]
       } else if (type === 'global') {

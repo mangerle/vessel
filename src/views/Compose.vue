@@ -23,7 +23,6 @@ import {
   PlayOutline,
   StopOutline,
   SyncOutline,
-  SaveOutline,
   HammerOutline,
   TrashOutline,
   TerminalOutline,
@@ -84,9 +83,6 @@ const onSelect = async (id: string) => {
     selectedType.value = 'project'
     const projectName = id.split(':')[1]
     selectedProject.value = composeStore.projects.find(p => p.name === projectName)
-    if (selectedProject.value?.config_file) {
-      await composeStore.fetchComposeFile(selectedProject.value.config_file)
-    }
   } else {
     selectedType.value = 'container'
     await fetchDetails(id)
@@ -170,14 +166,13 @@ const handleMenuSelect = async (key: string) => {
   }
 
   // 项目动作
-  if (key === 'up' || key === 'down' || key === 'restart_project' || key === 'edit' || key === 'delete_project') {
+  if (key === 'up' || key === 'down' || key === 'restart_project' || key === 'delete_project') {
     const project = (target && !target.id) ? target : selectedProject.value
     if (!project) return
 
     if (key === 'up') await handleProjectUp(project)
     else if (key === 'down') await handleProjectDown(project)
     else if (key === 'restart_project') await handleProjectRestart(project)
-    else if (key === 'edit') await handleProjectEdit(project)
     else if (key === 'delete_project') {
       deletingProject.value = project
       showDeleteConfirm.value = true
@@ -308,29 +303,6 @@ const handleProjectRestart = async (project?: any) => {
   }
 }
 
-const handleProjectEdit = async (project?: any) => {
-  const p = project?.config_file ? project : selectedProject.value
-  if (!p?.config_file) {
-    message.warning('无法找到项目的配置文件路径')
-    return
-  }
-  try {
-    await composeStore.fetchComposeFile(p.config_file)
-    message.success('已成功载入 Compose YAML')
-  } catch (e: any) {
-    message.error('加载失败: ' + e)
-  }
-}
-
-const handleSaveConfig = async () => {
-  if (!selectedProject.value?.config_file) return
-  try {
-    await composeStore.saveComposeFile(selectedProject.value.config_file, composeStore.currentProjectFile)
-    message.success('配置已成功写入磁盘')
-  } catch (e: any) {
-    message.error('保存失败: ' + e)
-  }
-}
 
 const handleConfirmDownDestroy = async () => {
   showDeleteConfirm.value = false
@@ -672,32 +644,13 @@ onUnmounted(() => {
                 <template #icon><n-icon :component="SyncOutline" /></template>
                 重启
               </n-button>
-              <n-button @click="handleSaveConfig">
-                <template #icon><n-icon :component="SaveOutline" /></template>
-                保存
-              </n-button>
             </n-button-group>
           </div>
         </div>
 
         <div class="workspace-content">
-          <!-- YAML 编辑器 -->
-          <div class="editor-container">
-            <div class="editor-header">
-              <span>docker-compose.yml</span>
-              <span class="path-label">{{ selectedProject?.config_file }}</span>
-            </div>
-            <n-input
-              v-model:value="composeStore.currentProjectFile"
-              :autosize="{ minRows: 12 }"
-              class="yaml-editor"
-              placeholder="YAML 内容..."
-              type="textarea"
-            />
-          </div>
-
           <!-- 命令输出控制台 -->
-          <div class="console-panel">
+          <div class="console-panel" style="flex: 1; height: 100%; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color);">
             <div class="console-header">
               <n-icon :component="HammerOutline" style="margin-right: 6px" />
               CLI 执行输出
@@ -956,12 +909,32 @@ onUnmounted(() => {
   font-family: monospace;
 }
 
-.yaml-editor {
+.editor-content-wrapper {
   flex: 1;
   height: 100%;
-  border: none !important;
-  border-radius: 0;
-  background-color: var(--bg-terminal) !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--bg-terminal);
+}
+
+/* 确保 CodeMirror 6 满幅填充容器并隐藏外部边框 */
+.editor-content-wrapper :deep(.cm-editor) {
+  height: 100%;
+  flex: 1;
+  outline: none !important;
+}
+
+.editor-content-wrapper :deep(.cm-scroller) {
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace !important;
+}
+
+/* 启用高对比度文字抗锯齿，并微调字重，彻底消除深色模式下字体发虚模糊的问题 */
+.editor-content-wrapper :deep(.cm-content) {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-weight: 500;
 }
 
 /* 底部执行控制台 */
