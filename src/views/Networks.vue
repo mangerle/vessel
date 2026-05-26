@@ -1,11 +1,24 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, h } from 'vue'
 import { useNetworkStore } from '../store/network'
 import {
   NDropdown,
   NScrollbar,
+  NIcon,
   useMessage
 } from 'naive-ui'
+import {
+  GitNetworkOutline,
+  DocumentTextOutline,
+  TrashOutline,
+  SparklesOutline,
+  SwapHorizontalOutline,
+  FlashOutline,
+  CloseCircleOutline,
+  GlobeOutline,
+  LinkOutline,
+  FileTrayFullOutline
+} from '@vicons/ionicons5'
 
 const networkStore = useNetworkStore()
 const message = useMessage()
@@ -62,9 +75,9 @@ const handlePrune = async () => {
 
 // 驱动图标前缀
 const getDriverIcon = (driver: string) => {
-  if (driver === 'bridge') return '🌉'
-  if (driver === 'host') return '🔌'
-  return '❌'
+  if (driver === 'bridge') return SwapHorizontalOutline
+  if (driver === 'host') return FlashOutline
+  return CloseCircleOutline
 }
 
 // --- 右键菜单 ---
@@ -74,8 +87,8 @@ const y = ref(0)
 const menuTarget = ref<any>(null)
 
 const menuOptions = [
-  { label: '🗺️ 拓扑详情', key: 'detail' },
-  { label: '🗑️ 删除网络', key: 'delete' }
+  { label: '拓扑详情', key: 'detail', icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }) },
+  { label: '删除网络', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }
 ]
 
 const handleContextMenu = (e: MouseEvent, item: any) => {
@@ -108,7 +121,8 @@ onMounted(() => {
       <!-- 顶栏 40px 高度: 一键清理全部未用网络 -->
       <div class="header-tools">
         <button class="prune-btn" @click="handlePrune">
-          🧼 一键清理全部未用网络
+          <n-icon :component="SparklesOutline" />
+          一键清理全部未用网络
         </button>
       </div>
 
@@ -124,7 +138,8 @@ onMounted(() => {
           <div class="item-left-meta">
             <!-- 网络名与驱动类型图标 -->
             <div class="item-tag-title">
-              <span>{{ getDriverIcon(item.driver) }} {{ item.name }}</span>
+              <n-icon :component="getDriverIcon(item.driver)" style="margin-right: 6px" />
+              <span>{{ item.name }}</span>
             </div>
             <!-- 网关/驱动 -->
             <div class="item-sub-meta">
@@ -143,11 +158,13 @@ onMounted(() => {
           <!-- 行 1: 选项卡 (高 32px) -->
           <div class="tab-line-1">
             <div class="obs-tab" :class="{ active: activeTab === 'topology' }" @click="activeTab = 'topology'">
-              <span>🗺️ 拓扑结构</span>
+              <n-icon :component="GitNetworkOutline" />
+              <span>拓扑结构</span>
               <div class="tab-indicator"></div>
             </div>
             <div class="obs-tab" :class="{ active: activeTab === 'inspect' }" @click="activeTab = 'inspect'">
-              <span>📋 网络详情 (Inspect)</span>
+              <n-icon :component="DocumentTextOutline" />
+              <span>网络详情 (Inspect)</span>
               <div class="tab-indicator"></div>
             </div>
           </div>
@@ -165,7 +182,8 @@ onMounted(() => {
             <!-- 安全删除网络 -->
             <div class="meta-right">
               <button class="delete-btn" @click="handleDelete(selectedItem.id)">
-                🗑️ 销毁网络
+                <n-icon :component="TrashOutline" />
+                移除网络
               </button>
             </div>
           </div>
@@ -188,8 +206,8 @@ onMounted(() => {
                   <span class="branch-bullet">
                     {{ idx === selectedItem.containers.length - 1 ? '└──' : '├──' }}
                   </span>
-                  <!-- 小绿点表示已连接 -->
-                  <span class="conn-dot">🟢</span>
+                  <!-- 小圆点表示已连接 -->
+                  <span class="conn-dot"></span>
                   <span class="conn-name">{{ c.name }}</span>
                   <span class="connector-line">------------------------</span>
                   <span class="conn-ip">IP: {{ c.ipv4_address || 'N/A' }}</span>
@@ -197,12 +215,13 @@ onMounted(() => {
                   
                   <!-- 断开网络按钮 -->
                   <button class="disconnect-link-btn" @click="handleDisconnect(c.id)">
-                    🔌 断开
+                    <n-icon :component="FlashOutline" />
+                    断开
                   </button>
                 </div>
               </div>
               <div v-else class="empty-topology-text">
-                └── 📭 目前无任何容器挂载在该虚拟局域网下
+                └── <n-icon :component="FileTrayFullOutline" /> 目前无任何容器挂载在该虚拟局域网下
               </div>
             </div>
           </div>
@@ -227,7 +246,9 @@ onMounted(() => {
 
       <!-- 空白缺省页 -->
       <div v-else class="empty-state">
-        <div class="empty-logo">🌐</div>
+        <div class="empty-logo">
+          <n-icon :component="GlobeOutline" />
+        </div>
         <div class="empty-title">网络局域网观测台</div>
         <div class="empty-sub">选择左侧的虚拟网络以观察其网关、已挂载服务容器以及物理局域网拓扑结构。</div>
       </div>
@@ -477,7 +498,7 @@ onMounted(() => {
 
 .topology-pane {
   height: 100%;
-  background-color: #05070c;
+  background-color: var(--bg-terminal);
   padding: 24px;
   overflow-y: auto;
 }
@@ -486,7 +507,7 @@ onMounted(() => {
   font-family: monospace;
   font-size: 11px;
   line-height: 1.8;
-  color: var(--text-body);
+  color: var(--text-terminal);
 }
 
 .gateway-node {

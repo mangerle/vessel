@@ -85,12 +85,12 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
     },
     Dropdown: {
       color: bgMain,
-      optionColorHover: bgActive,
-      optionColorActive: bgActive,
-      optionTextColorHover: textTitle,
-      optionTextColorActive: textTitle,
-      optionIconColorHover: textTitle,
-      optionIconColorActive: textTitle,
+      optionColorHover: isLightApple ? '#007AFF' : '#007AFF',
+      optionColorActive: isLightApple ? '#007AFF' : '#007AFF',
+      optionTextColorHover: '#ffffff',
+      optionTextColorActive: '#ffffff',
+      optionIconColorHover: '#ffffff',
+      optionIconColorActive: '#ffffff',
       padding: '4px',
       borderRadius: '4px'
     },
@@ -167,12 +167,6 @@ body {
 .n-layout-sider {
   background-color: var(--bg-sidebar) !important;
   border-right: 1px solid var(--border-color) !important;
-}
-
-.n-dropdown-menu {
-  background-color: var(--bg-main) !important;
-  border: 1px solid var(--border-color) !important;
-  box-shadow: 0 4px 12px var(--shadow-color) !important;
 }
 </style>
 

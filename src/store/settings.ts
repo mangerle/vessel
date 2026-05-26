@@ -7,6 +7,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const closeToTray = ref(true)
   const theme = ref<'deep-black' | 'zed-gray' | 'light-apple'>('deep-black')
   const refreshInterval = ref(3) // 默认 3 秒
+  const visibleMenus = ref<string[]>(['compose', 'containers', 'images', 'networks', 'volumes'])
   const connectionMode = ref<'wsl' | 'ssh'>('wsl')
   const wslDistro = ref('')
   const sshHost = ref('')
@@ -29,6 +30,7 @@ export const useSettingsStore = defineStore('settings', () => {
         closeToTray.value = parsed.closeToTray ?? true
         theme.value = parsed.theme ?? 'deep-black'
         refreshInterval.value = parsed.refreshInterval ?? 3
+        visibleMenus.value = parsed.visibleMenus ?? ['compose', 'containers', 'images', 'networks', 'volumes']
         connectionMode.value = parsed.connectionMode ?? 'wsl'
         wslDistro.value = parsed.wslDistro ?? ''
         sshHost.value = parsed.sshHost ?? ''
@@ -45,6 +47,7 @@ export const useSettingsStore = defineStore('settings', () => {
         closeToTray.value = parsed.closeToTray ?? true
         theme.value = parsed.theme ?? 'deep-black'
         refreshInterval.value = parsed.refreshInterval ?? 3
+        visibleMenus.value = parsed.visibleMenus ?? ['compose', 'containers', 'images', 'networks', 'volumes']
         connectionMode.value = parsed.connectionMode ?? 'wsl'
         wslDistro.value = parsed.wslDistro ?? ''
         sshHost.value = parsed.sshHost ?? ''
@@ -85,6 +88,7 @@ export const useSettingsStore = defineStore('settings', () => {
       closeToTray: closeToTray.value,
       theme: theme.value,
       refreshInterval: refreshInterval.value,
+      visibleMenus: visibleMenus.value,
       connectionMode: connectionMode.value,
       wslDistro: wslDistro.value,
       sshHost: sshHost.value,
@@ -99,6 +103,7 @@ export const useSettingsStore = defineStore('settings', () => {
     closeToTray,
     theme,
     refreshInterval,
+    visibleMenus,
     connectionMode,
     wslDistro,
     sshHost,

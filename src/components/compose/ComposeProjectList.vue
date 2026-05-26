@@ -3,7 +3,8 @@
     <!-- 顶部 40px 高度的一键导入按钮 -->
     <div class="import-header">
       <button class="import-btn" @click="handleImportProject">
-        ➕ 导入现有项目
+        <n-icon :component="AddOutline" />
+        导入现有项目
       </button>
     </div>
 
@@ -22,9 +23,9 @@
             :class="{ expanded: expandedProjects.includes(project.name) }"
             @click.stop="toggleProject(project.name)"
           >
-            ▶
+            <n-icon :component="ChevronForwardOutline" />
           </span>
-          <span class="node-icon">📦</span>
+          <n-icon :component="CubeOutline" class="node-icon" />
           <span class="node-label">{{ project.name }}</span>
         </div>
 
@@ -39,7 +40,7 @@
             @contextmenu.stop="$emit('contextmenu', $event, 'container', container)"
           >
             <span class="sub-line">├──</span>
-            <span class="node-icon service-icon">⚙️</span>
+            <n-icon :component="SettingsOutline" class="node-icon service-icon" />
             <span class="node-label">{{ container.name }}</span>
           </div>
         </div>
@@ -50,7 +51,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { NScrollbar } from 'naive-ui'
+import { NScrollbar, NIcon } from 'naive-ui'
+import { 
+  CubeOutline, 
+  SettingsOutline, 
+  AddOutline,
+  ChevronForwardOutline
+} from '@vicons/ionicons5'
 
 const props = defineProps<{
   projects: any[]
@@ -160,8 +167,8 @@ const handleImportProject = () => {
 
 .project-node.active,
 .container-node.active {
-  background-color: var(--bg-active) !important;
-  color: var(--text-title);
+  background-color: var(--macos-accent-blue) !important;
+  color: #fff;
   font-weight: 600;
 }
 

@@ -80,12 +80,12 @@ watch(() => props.item, () => {
 .resource-info .name {
   font-size: 20px;
   font-weight: 700;
-  color: #1d1d1f;
+  color: var(--text-title);
 }
 
 .resource-info .subtitle {
   font-size: 12px;
-  color: #86868b;
+  color: var(--text-muted);
   font-family: monospace;
 }
 

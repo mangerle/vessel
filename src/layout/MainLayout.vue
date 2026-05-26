@@ -5,7 +5,7 @@
       <!-- 顶部 Tab 列表 -->
       <div class="nav-tabs">
         <div 
-          v-for="tab in tabs" 
+          v-for="tab in filteredTabs" 
           :key="tab.key" 
           class="tab-item" 
           :class="{ active: activeKey === tab.key }"
@@ -67,10 +67,12 @@
               @click="handleAutoConnect"
             >
               <n-icon v-if="connecting" :component="SyncOutline" class="rotating-icon" size="12" />
-              {{ connecting ? '正在拉起管道...' : '⚡ 一键连接默认 WSL 发行版' }}
+              <n-icon v-else :component="FlashOutline" size="12" />
+              {{ connecting ? '正在拉起管道...' : '一键连接默认 WSL 发行版' }}
             </button>
             <button class="banner-btn sec-btn" @click="handleTabClick('settings')">
-              ⚙️ 前往设置手动配置
+              <n-icon :component="SettingsOutline" size="12" />
+              前往设置手动配置
             </button>
           </div>
         </div>
@@ -84,7 +86,7 @@
       </div>
     </div>
 
-    <!-- 🔌 切换 - 两栖切换悬浮上下文菜单 -->
+    <!-- 两栖切换悬浮上下文菜单 -->
     <transition name="fade-in">
       <div v-if="showSwitcher" class="switcher-menu" @click.stop>
         <div class="switcher-header">连接两栖切换器</div>
@@ -97,7 +99,10 @@
             :class="{ active: settingsStore.connectionMode === 'wsl' && settingsStore.wslDistro === distro }"
             @click="selectWslDistro(distro)"
           >
-            <span>🐧 {{ distro }}</span>
+            <span>
+              <n-icon :component="LogoTux" style="margin-right: 6px" />
+              {{ distro }}
+            </span>
             <span v-if="settingsStore.connectionMode === 'wsl' && settingsStore.wslDistro === distro" class="active-dot"></span>
           </div>
           <div v-if="wslDistros.length === 0" class="empty-wsl-text">
@@ -113,7 +118,10 @@
             :class="{ active: settingsStore.connectionMode === 'ssh' }"
             @click="selectSsh"
           >
-            <span>🌐 {{ settingsStore.sshUser }}@{{ settingsStore.sshHost }}</span>
+            <span>
+              <n-icon :component="GlobeOutline" style="margin-right: 6px" />
+              {{ settingsStore.sshUser }}@{{ settingsStore.sshHost }}
+            </span>
             <span v-if="settingsStore.connectionMode === 'ssh'" class="active-dot"></span>
           </div>
           <div v-else class="empty-ssh-text">
@@ -126,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon, useMessage } from 'naive-ui'
 import {
@@ -138,7 +146,9 @@ import {
   SettingsOutline,
   SwapHorizontalOutline,
   AlertCircleOutline,
-  SyncOutline
+  SyncOutline,
+  LogoTux,
+  FlashOutline
 } from '@vicons/ionicons5'
 import { useSettingsStore } from '../store/settings'
 import { invoke } from '@tauri-apps/api/core'
@@ -162,6 +172,10 @@ const tabs = [
   { key: 'networks', label: '网络', icon: GlobeOutline },
   { key: 'volumes', label: '数据卷', icon: SaveOutline }
 ]
+
+const filteredTabs = computed(() => {
+  return tabs.filter(tab => settingsStore.visibleMenus.includes(tab.key))
+})
 
 // 监听路由改变
 watch(() => route.name, (newName) => {
@@ -359,7 +373,12 @@ onUnmounted(() => {
 
 /* Active 态荧光冰棒与高亮 */
 .tab-item.active {
-  color: var(--text-title);
+  color: #fff;
+}
+
+.tab-item.active::before {
+  background-color: var(--macos-accent-blue);
+  opacity: 1;
 }
 
 .active-indicator {
@@ -368,7 +387,7 @@ onUnmounted(() => {
   width: 3px;
   height: 24px;
   border-radius: 0 1.5px 1.5px 0;
-  background-color: var(--brand-primary);
+  background-color: #fff;
   opacity: 0;
   transform: scaleY(0.3);
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -388,7 +407,7 @@ onUnmounted(() => {
   color: var(--brand-primary) !important;
 }
 .switcher-tab.active {
-  color: var(--text-title);
+  color: #fff;
 }
 
 /* 右侧主内容区 */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch, h } from 'vue'
 import { useVolumeStore } from '../store/volume'
 import { useSettingsStore } from '../store/settings'
 import { Command } from '@tauri-apps/plugin-shell'
@@ -7,8 +7,26 @@ import {
   NDropdown,
   NScrollbar,
   NInput,
+  NIcon,
   useMessage
 } from 'naive-ui'
+import {
+  SaveOutline,
+  LinkOutline,
+  FolderOutline,
+  DocumentTextOutline,
+  SparklesOutline,
+  TrashOutline,
+  HomeOutline,
+  DocumentOutline,
+  DiscOutline,
+  ArrowBackOutline,
+  InformationCircleOutline,
+  LockClosedOutline,
+  FlashOutline,
+  LeafOutline,
+  CreateOutline
+} from '@vicons/ionicons5'
 
 const volumeStore = useVolumeStore()
 const settingsStore = useSettingsStore()
@@ -204,8 +222,8 @@ const y = ref(0)
 const menuTarget = ref<any>(null)
 
 const menuOptions = [
-  { label: '💾 文件浏览', key: 'files' },
-  { label: '🗑️ 删除卷', key: 'delete' }
+  { label: '文件浏览', key: 'files', icon: () => h(NIcon, null, { default: () => h(FolderOutline) }) },
+  { label: '删除卷', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }
 ]
 
 const handleContextMenu = (e: MouseEvent, item: any) => {
@@ -241,7 +259,8 @@ onMounted(() => {
       <!-- 顶栏 40px 高度: 清理未用卷 -->
       <div class="header-tools">
         <button class="prune-btn" @click="handlePrune">
-          🧼 一键清理孤儿卷
+          <n-icon :component="SparklesOutline" />
+          一键清理孤儿卷
         </button>
       </div>
 
@@ -255,13 +274,14 @@ onMounted(() => {
           @contextmenu="handleContextMenu($event, item)"
         >
           <div class="item-left-meta">
-            <!-- 卷名称与孤儿判定 -->
+            <!-- 卷名与容器数量图标 -->
             <div class="item-tag-title">
-              <span>📦 {{ item.name.substring(0, 24) }}{{ item.name.length > 24 ? '...' : '' }}</span>
+              <n-icon :component="SaveOutline" style="margin-right: 6px" />
+              <span>{{ item.name.substring(0, 20) }}{{ item.name.length > 20 ? '...' : '' }}</span>
             </div>
-            <!-- 驱动类型与孤儿文本 -->
+            <!-- 网关/驱动 -->
             <div class="item-sub-meta">
-              {{ item.driver }}
+              {{ item.driver }} · {{ item.scope }}
             </div>
           </div>
         </div>
@@ -276,15 +296,18 @@ onMounted(() => {
           <!-- 行 1: 选项卡 (高 32px) -->
           <div class="tab-line-1">
             <div class="obs-tab" :class="{ active: activeTab === 'users' }" @click="activeTab = 'users'">
-              <span>🗺️ 关联容器</span>
+              <n-icon :component="LinkOutline" />
+              <span>关联容器</span>
               <div class="tab-indicator"></div>
             </div>
             <div class="obs-tab" :class="{ active: activeTab === 'files' }" @click="activeTab = 'files'">
-              <span>💾 文件浏览器 (WSL)</span>
+              <n-icon :component="FolderOutline" />
+              <span>文件浏览器 (WSL)</span>
               <div class="tab-indicator"></div>
             </div>
             <div class="obs-tab" :class="{ active: activeTab === 'inspect' }" @click="activeTab = 'inspect'">
-              <span>📋 卷详情 (Inspect)</span>
+              <n-icon :component="DocumentTextOutline" />
+              <span>卷详情 (Inspect)</span>
               <div class="tab-indicator"></div>
             </div>
           </div>
@@ -292,9 +315,15 @@ onMounted(() => {
           <!-- 行 2: 元数据与销毁 (高 40px) -->
           <div class="meta-line-2">
             <div class="meta-left">
-              <span class="volume-name-title">📦 {{ selectedItem.name }}</span>
+              <span class="volume-name-title">
+                <n-icon :component="SaveOutline" />
+                {{ selectedItem.name }}
+              </span>
               <div class="vertical-divider"></div>
-              <span class="badge driver-badge">🔌 {{ selectedItem.driver }}</span>
+              <span class="badge driver-badge">
+                <n-icon :component="FlashOutline" />
+                {{ selectedItem.driver }}
+              </span>
             </div>
 
             <!-- 删除卷：防呆死锁控制 -->
@@ -303,14 +332,16 @@ onMounted(() => {
                 v-if="volumeStore.volumeUsers.length > 0" 
                 class="lock-tooltip-text"
               >
-                🔒 已绑定，解绑后可删
+                <n-icon :component="LockClosedOutline" />
+                已绑定，解绑后可删
               </span>
               <button 
                 class="delete-btn" 
                 :disabled="volumeStore.volumeUsers.length > 0" 
                 @click="handleDelete(selectedItem.name)"
               >
-                🗑️ 删除卷
+                <n-icon :component="TrashOutline" />
+                删除卷
               </button>
             </div>
           </div>
@@ -321,14 +352,18 @@ onMounted(() => {
           <!-- 1. 🗺️ 关联容器 -->
           <div v-show="activeTab === 'users'" class="users-pane">
             <div v-if="volumeStore.volumeUsers.length === 0" class="empty-list-text">
-              🍂 目前无任何运行中容器挂载绑定此数据卷
+              <n-icon :component="LeafOutline" />
+              目前无任何运行中容器挂载绑定此数据卷
             </div>
             <div v-else class="users-list-grid">
               <div class="list-section-title">绑定此卷的容器列表</div>
               <div v-for="user in volumeStore.volumeUsers" :key="user.container_id" class="user-binding-card">
                 <div class="binding-row">
                   <span class="binding-key">容器:</span>
-                  <span class="binding-val container-tag">🟢 {{ user.container_name }}</span>
+                  <span class="binding-val container-tag">
+                    <span class="status-dot-mini"></span>
+                    {{ user.container_name }}
+                  </span>
                 </div>
                 <div class="binding-row">
                   <span class="binding-key">挂载源:</span>
@@ -346,7 +381,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- 2. 💾 文件浏览器 (WSL本土特化) -->
+          <!-- 2. 文件浏览器 (WSL本土特化) -->
           <div v-show="activeTab === 'files'" class="files-pane">
             <!-- 文件树/编辑器左右结构 -->
             <div class="files-browser-grid">
@@ -358,7 +393,8 @@ onMounted(() => {
                     class="tree-back-btn" 
                     @click="goBackDir"
                   >
-                    ⬅️ 返回上一级
+                    <n-icon :component="ArrowBackOutline" />
+                    返回上一级
                   </button>
                   <span v-else class="tree-root-label">_data (数据根)</span>
                 </div>
@@ -371,7 +407,9 @@ onMounted(() => {
                     :class="{ active: selectedFile === file.path }"
                     @click="clickFileNode(file)"
                   >
-                    <span class="node-bullet">{{ file.isDir ? '📁' : '🗎' }}</span>
+                    <span class="node-bullet">
+                      <n-icon :component="file.isDir ? FolderOutline : DocumentOutline" />
+                    </span>
                     <span class="node-text">{{ file.name }}</span>
                   </div>
                   <div v-if="fileList.length === 0" class="empty-dir-text">空目录</div>
@@ -382,9 +420,13 @@ onMounted(() => {
               <div class="file-editor-area">
                 <template v-if="selectedFile">
                   <div class="editor-top-bar">
-                    <span class="editor-file-path">📝 {{ selectedFile }}</span>
+                    <span class="editor-file-path">
+                      <n-icon :component="CreateOutline" />
+                      {{ selectedFile }}
+                    </span>
                     <button class="save-file-gold-btn" :disabled="fileSaving" @click="handleSaveFile">
-                      {{ fileSaving ? '保存中...' : '💾 保存并写回' }}
+                      <n-icon :component="SaveOutline" v-if="!fileSaving" />
+                      {{ fileSaving ? '保存中...' : '保存并写回' }}
                     </button>
                   </div>
                   <n-input
@@ -417,7 +459,9 @@ onMounted(() => {
 
       <!-- 空白缺省页 -->
       <div v-else class="empty-state">
-        <div class="empty-logo">📦</div>
+        <div class="empty-logo">
+          <n-icon :component="DiscOutline" />
+        </div>
         <div class="empty-title">持久化数据卷</div>
         <div class="empty-sub">选择左侧的数据卷以观测其挂载状态，或使用内置文件树直接操作内部文件。</div>
       </div>
@@ -723,8 +767,18 @@ onMounted(() => {
 }
 
 .container-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--brand-primary);
   font-weight: 600;
+}
+
+.status-dot-mini {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: var(--brand-primary);
 }
 
 .path-code {
@@ -836,7 +890,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background-color: #05070c;
+  background-color: var(--bg-terminal);
 }
 
 .editor-top-bar {

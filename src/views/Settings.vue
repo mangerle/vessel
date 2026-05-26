@@ -9,8 +9,18 @@ import {
   NInputNumber,
   NRadio,
   NRadioGroup,
+  NCheckbox,
+  NCheckboxGroup,
+  NIcon,
   useMessage
 } from 'naive-ui'
+import {
+  DesktopOutline,
+  LogoDocker,
+  GlobeOutline,
+  ShieldCheckmarkOutline,
+  SaveOutline
+} from '@vicons/ionicons5'
 
 const settingsStore = useSettingsStore()
 const message = useMessage()
@@ -19,11 +29,20 @@ const activeTab = ref<string>('general')
 
 // 页面分类小页签
 const tabs = [
-  { label: '💻 基础常规', value: 'general' },
-  { label: '🐳 Docker 引擎', value: 'docker' },
-  { label: '🌐 镜像仓库', value: 'registries' },
-  { label: '🛡️ 账户凭证', value: 'credentials' },
-  { label: '💾 数据备份', value: 'backup' }
+  { label: '基础常规', value: 'general', icon: DesktopOutline },
+  { label: 'Docker 引擎', value: 'docker', icon: LogoDocker },
+  { label: '镜像仓库', value: 'registries', icon: GlobeOutline },
+  { label: '账户凭证', value: 'credentials', icon: ShieldCheckmarkOutline },
+  { label: '数据备份', value: 'backup', icon: SaveOutline }
+]
+
+// 菜单显示项
+const menuOptions = [
+  { label: '项目 (Compose)', value: 'compose' },
+  { label: '容器 (Containers)', value: 'containers' },
+  { label: '镜像 (Images)', value: 'images' },
+  { label: '网络 (Networks)', value: 'networks' },
+  { label: '数据卷 (Volumes)', value: 'volumes' }
 ]
 
 // 主题备选项
@@ -48,6 +67,7 @@ const draft = ref({
   autoStart: false,
   closeToTray: true,
   refreshInterval: 3,
+  visibleMenus: ['compose', 'containers', 'images', 'networks', 'volumes'],
   connectionMode: 'wsl',
   wslDistro: 'Ubuntu',
   sshHost: '192.168.1.105',
@@ -63,6 +83,7 @@ const syncDraftFromStore = () => {
     autoStart: settingsStore.autoStart,
     closeToTray: settingsStore.closeToTray,
     refreshInterval: settingsStore.refreshInterval,
+    visibleMenus: [...settingsStore.visibleMenus],
     connectionMode: settingsStore.connectionMode,
     wslDistro: settingsStore.wslDistro || 'Ubuntu',
     sshHost: settingsStore.sshHost || '192.168.1.105',
@@ -79,6 +100,7 @@ const isDirty = computed(() => {
     draft.value.autoStart !== settingsStore.autoStart ||
     draft.value.closeToTray !== settingsStore.closeToTray ||
     draft.value.refreshInterval !== settingsStore.refreshInterval ||
+    JSON.stringify(draft.value.visibleMenus) !== JSON.stringify(settingsStore.visibleMenus) ||
     draft.value.connectionMode !== settingsStore.connectionMode ||
     draft.value.wslDistro !== (settingsStore.wslDistro || 'Ubuntu') ||
     draft.value.sshHost !== (settingsStore.sshHost || '192.168.1.105') ||
@@ -93,6 +115,7 @@ const handleSave = async () => {
   settingsStore.theme = draft.value.theme as any
   settingsStore.closeToTray = draft.value.closeToTray
   settingsStore.refreshInterval = draft.value.refreshInterval
+  settingsStore.visibleMenus = [...draft.value.visibleMenus]
   settingsStore.connectionMode = draft.value.connectionMode as any
   settingsStore.wslDistro = draft.value.wslDistro
   settingsStore.sshHost = draft.value.sshHost
@@ -173,6 +196,7 @@ onMounted(async () => {
           :class="{ active: activeTab === t.value }"
           @click="activeTab = t.value"
         >
+          <n-icon :component="t.icon" size="14" />
           <span>{{ t.label }}</span>
         </div>
       </div>
@@ -211,6 +235,20 @@ onMounted(async () => {
               </div>
               <div class="row-value-area">
                 <n-switch v-model:value="draft.closeToTray" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="row-label-area">
+                <div class="row-title">侧边栏功能菜单</div>
+                <div class="row-desc">选择显示在侧边栏的功能菜单项，未选中的项将被隐藏。</div>
+              </div>
+              <div class="row-value-area wide">
+                <n-checkbox-group v-model:value="draft.visibleMenus">
+                  <div class="checkbox-grid">
+                    <n-checkbox v-for="opt in menuOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+                  </div>
+                </n-checkbox-group>
               </div>
             </div>
           </div>
@@ -415,6 +453,7 @@ onMounted(async () => {
   height: 32px;
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 0 12px;
   font-size: 11px;
   font-weight: 500;
@@ -502,6 +541,17 @@ onMounted(async () => {
 
 .row-value-area.align-center {
   align-items: center;
+}
+
+.row-value-area.wide {
+  width: 320px;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
 }
 
 .select-field {

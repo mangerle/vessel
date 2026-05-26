@@ -54,7 +54,7 @@ onMounted(() => {
 <style scoped>
 .segmented-control {
   display: flex;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--bg-hover);
   border-radius: 8px;
   padding: 2px;
   position: relative;
@@ -63,15 +63,15 @@ onMounted(() => {
 .selection-pill {
   position: absolute;
   height: calc(100% - 4px);
-  background: white;
+  background: var(--bg-active);
   border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px var(--shadow-color);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .option-item {
   padding: 4px 12px;
   font-size: 13px;
-  color: #333;
+  color: var(--text-muted);
   cursor: pointer;
   position: relative;
   z-index: 1;
@@ -80,6 +80,6 @@ onMounted(() => {
 }
 .option-item.active {
   font-weight: 500;
-  color: #000;
+  color: var(--text-title);
 }
 </style>

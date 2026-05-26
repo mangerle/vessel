@@ -19,10 +19,20 @@
   color: var(--text-body) !important;
 }
 
-/* 选中态使用主题强调色 */
+/* 选中态使用 MacOS 标志性的蓝色 */
 .n-dropdown-option-body:hover {
-  background-color: var(--brand-primary) !important;
-  color: white !important;
+  background-color: var(--macos-accent-blue) !important;
+  color: #fff !important;
+}
+
+.n-dropdown-option-body:hover .n-dropdown-option-column {
+  color: #fff !important;
+}
+
+/* 兼容 Naive UI 的 pending 状态（键盘导航或某些交互态） */
+.n-dropdown-option-body--pending {
+  background-color: var(--macos-accent-blue) !important;
+  color: #fff !important;
 }
 
 .n-dropdown-divider {

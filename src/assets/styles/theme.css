@@ -8,6 +8,8 @@
   --bg-card: rgba(255, 255, 255, 0.02);
   --bg-input: #070a10;
   --bg-modal: rgba(11, 15, 25, 0.85);
+  --bg-terminal: #05070c;
+  --text-terminal: #cbd5e1;
   --brand-primary: #10b981;
   --brand-warn: #f59e0b;
   --brand-danger: #ef4444;
@@ -17,6 +19,10 @@
   --border-color: rgba(255, 255, 255, 0.04);
   --shadow-color: rgba(0, 0, 0, 0.4);
   --shadow-modal: rgba(0, 0, 0, 0.5);
+  
+  /* MacOS 风格适配变量 */
+  --macos-accent-blue: #007AFF;
+  --macos-border-color: rgba(255, 255, 255, 0.1);
 }
 
 [data-theme='zed-gray'] {
@@ -28,6 +34,8 @@
   --bg-card: rgba(255, 255, 255, 0.03);
   --bg-input: #121212;
   --bg-modal: rgba(24, 24, 24, 0.85);
+  --bg-terminal: #121212;
+  --text-terminal: #cccccc;
   --brand-primary: #4ade80;
   --brand-warn: #fbbf24;
   --brand-danger: #f87171;
@@ -37,6 +45,10 @@
   --border-color: rgba(255, 255, 255, 0.06);
   --shadow-color: rgba(0, 0, 0, 0.5);
   --shadow-modal: rgba(0, 0, 0, 0.6);
+
+  /* MacOS 风格适配变量 */
+  --macos-accent-blue: #007AFF;
+  --macos-border-color: rgba(255, 255, 255, 0.12);
 }
 
 [data-theme='light-apple'] {
@@ -48,6 +60,8 @@
   --bg-card: #f5f5f7;
   --bg-input: #ffffff;
   --bg-modal: rgba(255, 255, 255, 0.9);
+  --bg-terminal: #f5f5f7;
+  --text-terminal: #424245;
   --brand-primary: #0071e3;
   --brand-warn: #f56300;
   --brand-danger: #ff030b;
@@ -57,9 +71,17 @@
   --border-color: rgba(0, 0, 0, 0.1);
   --shadow-color: rgba(0, 0, 0, 0.08);
   --shadow-modal: rgba(0, 0, 0, 0.12);
+
+  /* MacOS 风格适配变量 */
+  --macos-accent-blue: #007AFF;
+  --macos-border-color: rgba(0, 0, 0, 0.1);
 }
 
 /* 全局基础设置 */
+* {
+  box-sizing: border-box;
+}
+
 body {
   background-color: var(--bg-main);
   color: var(--text-body);

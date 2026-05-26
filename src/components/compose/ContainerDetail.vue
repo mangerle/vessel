@@ -17,6 +17,7 @@
             :class="{ active: activeTab === t.value }"
             @click="activeTab = t.value"
           >
+            <n-icon :component="t.icon" size="14" class="tab-icon" />
             <span>{{ t.label }}</span>
             <div class="tab-indicator"></div>
           </div>
@@ -31,10 +32,12 @@
             <span class="container-id">{{ (container.id || container.Id || '').substring(0, 8) }}</span>
             <div class="vertical-divider"></div>
             <span class="meta-badge image-badge" :title="container.image || container.Config?.Image">
-              💿 {{ (container.image || container.Config?.Image || '').split('@')[0] }}
+              <n-icon :component="DiscOutline" size="12" />
+              {{ (container.image || container.Config?.Image || '').split('@')[0] }}
             </span>
             <span class="meta-badge project-badge">
-              🔋 {{ container.compose_project || 'Standalone' }}
+              <n-icon :component="FlashOutline" size="12" />
+              {{ container.compose_project || 'Standalone' }}
             </span>
           </div>
 
@@ -46,24 +49,26 @@
               :class="isUp ? 'stop-border' : 'start-border'"
               @click="togglePower"
             >
-              {{ isUp ? '⏹️ 停止' : '▶️ 启动' }}
+              <n-icon :component="isUp ? StopOutline : PlayOutline" size="14" />
+              {{ isUp ? '停止' : '启动' }}
             </button>
 
-            <!-- 🖥️ 终端 组合分裂按钮 (Split Button) - 原位切换 -->
+            <!-- 终端 组合分裂按钮 (Split Button) - 原位切换 -->
             <div class="split-btn-group">
               <button 
                 class="split-main-btn" 
                 :class="{ active: activeTab === 'terminal' }"
                 @click="triggerTerminal"
               >
-                🖥️ 终端{{ selectedUser === 'root' ? ' (root)' : '' }}
+                <n-icon :component="TerminalOutline" size="14" />
+                终端{{ selectedUser === 'root' ? ' (root)' : '' }}
               </button>
               <button 
                 class="split-arrow-btn" 
                 :class="{ highlighted: selectedUser === 'root' }" 
                 @click.stop="showUserMenu = !showUserMenu"
               >
-                ▼
+                <n-icon :component="ChevronDownOutline" size="12" />
               </button>
               <!-- 身份下拉菜单 -->
               <transition name="fade-in">
@@ -73,14 +78,16 @@
                     :class="{ active: selectedUser === 'default' }"
                     @click="selectUser('default')"
                   >
-                    👤 default (默认用户)
+                    <n-icon :component="PersonOutline" size="14" />
+                    default (默认用户)
                   </div>
                   <div 
                     class="user-option" 
                     :class="{ active: selectedUser === 'root' }"
                     @click="selectUser('root')"
                   >
-                    👤 root (超级管理员)
+                    <n-icon :component="PersonOutline" size="14" />
+                    root (超级管理员)
                   </div>
                 </div>
               </transition>
@@ -118,12 +125,22 @@
           </div>
 
           <!-- 右栏: 极窄飞梭动作纽扣控制带 -->
-          <div class="飞梭控制带">
-            <button class="shuttle-btn" title="上移" @mousedown="startScroll('up')" @mouseup="stopScroll" @mouseleave="stopScroll">🔼</button>
-            <button class="shuttle-btn" title="下移" @mousedown="startScroll('down')" @mouseup="stopScroll" @mouseleave="stopScroll">🔽</button>
-            <button class="shuttle-btn" :class="{ active: wordWrap }" title="自动换行" @click="wordWrap = !wordWrap">↩️</button>
-            <button class="shuttle-btn" :class="{ active: tailFollow }" title="锚定末尾" @click="toggleTailFollow">⚓</button>
-            <button class="shuttle-btn danger-btn" title="清空缓冲区" @click="$emit('clean-logs')">🗑️</button>
+          <div class="shuttle-controls">
+            <button class="shuttle-btn" title="上移" @mousedown="startScroll('up')" @mouseup="stopScroll" @mouseleave="stopScroll">
+              <n-icon :component="ChevronUpOutline" />
+            </button>
+            <button class="shuttle-btn" title="下移" @mousedown="startScroll('down')" @mouseup="stopScroll" @mouseleave="stopScroll">
+              <n-icon :component="ChevronDownOutline" />
+            </button>
+            <button class="shuttle-btn" :class="{ active: wordWrap }" title="自动换行" @click="wordWrap = !wordWrap">
+              <n-icon :component="ReturnDownBackOutline" />
+            </button>
+            <button class="shuttle-btn" :class="{ active: tailFollow }" title="锚定末尾" @click="toggleTailFollow">
+              <n-icon :component="PinOutline" />
+            </button>
+            <button class="shuttle-btn danger-btn" title="清空缓冲区" @click="$emit('clean-logs')">
+              <n-icon :component="TrashOutline" />
+            </button>
           </div>
         </div>
 
@@ -191,7 +208,9 @@
     </template>
 
     <div v-else class="empty-state" key="empty-state-pane">
-      <div class="empty-logo">🐳</div>
+      <div class="empty-logo">
+        <n-icon :component="LogoDocker" />
+      </div>
       <div class="empty-title">欢迎使用 Vessel</div>
       <div class="empty-sub">请在左侧选择一个项目或容器，开始高效微服务管控</div>
     </div>
@@ -200,7 +219,25 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { NSpin, NScrollbar } from 'naive-ui'
+import { NSpin, NScrollbar, NIcon } from 'naive-ui'
+import { 
+  PlayOutline, 
+  StopOutline, 
+  TerminalOutline, 
+  DocumentTextOutline, 
+  BarChartOutline, 
+  ClipboardOutline,
+  TrashOutline,
+  PersonOutline,
+  ChevronUpOutline,
+  ChevronDownOutline,
+  ReturnDownBackOutline,
+  PinOutline,
+  DiscOutline,
+  FlashOutline,
+  LogoDocker
+} from '@vicons/ionicons5'
+import { useSettingsStore } from '../../store/settings'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -213,17 +250,35 @@ const props = defineProps<{
   logsList: string[]
 }>()
 
+const settingsStore = useSettingsStore()
 const emit = defineEmits(['start', 'stop', 'restart', 'clean-logs'])
 
 const activeTab = ref('logs')
+
+const getTerminalTheme = () => {
+  const theme = settingsStore.theme
+  if (theme === 'zed-gray') {
+    return { background: '#121212', foreground: '#cccccc' }
+  } else if (theme === 'light-apple') {
+    return { background: '#f5f5f7', foreground: '#424245' }
+  }
+  return { background: '#05070c', foreground: '#cbd5e1' }
+}
+
+// 监听全局主题变化，实时同步给 xterm
+watch(() => settingsStore.theme, () => {
+  if (term) {
+    term.options.theme = getTerminalTheme()
+  }
+})
 const showUserMenu = ref(false)
 const selectedUser = ref<'default' | 'root'>('default')
 
 const tabs = [
-  { label: '📄 运行日志', value: 'logs' },
-  { label: '🖥️ 交互终端', value: 'terminal' },
-  { label: '📊 性能仪表盘', value: 'stats' },
-  { label: '📋 元数据详情', value: 'inspect' }
+  { label: '运行日志', value: 'logs', icon: DocumentTextOutline },
+  { label: '交互终端', value: 'terminal', icon: TerminalOutline },
+  { label: '性能仪表盘', value: 'stats', icon: BarChartOutline },
+  { label: '元数据详情', value: 'inspect', icon: ClipboardOutline }
 ]
 
 // 容器是否运行中
@@ -276,7 +331,7 @@ const initTerminal = async () => {
 
   term = new Terminal({
     cursorBlink: true,
-    theme: { background: '#05070c', foreground: '#cbd5e1' },
+    theme: getTerminalTheme(),
     fontFamily: 'JetBrains Mono, Consolas, monospace',
     fontSize: 11
   })
@@ -597,11 +652,21 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
   height: 100%;
   display: flex;
   align-items: center;
+  gap: 6px;
+  padding: 0 16px;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
   cursor: pointer;
   transition: color 0.15s ease;
+}
+
+.tab-icon {
+  opacity: 0.7;
+}
+
+.obs-tab.active .tab-icon {
+  opacity: 1;
 }
 
 .obs-tab:hover {
@@ -839,9 +904,9 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
   flex: 1;
   height: 100%;
   overflow-y: scroll;
-  background-color: #05070c;
-  color: var(--text-body);
-  padding: 12px;
+  background-color: var(--bg-terminal);
+  color: var(--text-terminal);
+  padding: 12px 12px 24px 12px;
   font-size: 11px;
   line-height: 1.5;
   white-space: pre;
@@ -872,14 +937,14 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
 /* 2. 原位交互式终端面板 */
 .terminal-pane {
   height: 100%;
-  background-color: #05070c;
+  background-color: var(--bg-terminal);
   padding: 8px;
 }
 
 .pty-terminal-container {
   width: 100%;
   height: 100%;
-  background-color: #05070c;
+  background-color: var(--bg-terminal);
 }
 
 /* 中栏: 独立垂直滚动条 */
@@ -902,7 +967,7 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
 }
 
 /* 右栏: 极窄飞梭动作纽扣控制带 */
-.飞梭控制带 {
+.shuttle-controls {
   width: 32px;
   height: 100%;
   background-color: var(--bg-sidebar);

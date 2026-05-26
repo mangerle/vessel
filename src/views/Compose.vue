@@ -10,12 +10,27 @@ import {
   NDropdown,
   NGi,
   NGrid,
+  NIcon,
   NInput,
   NModal,
   NSpace,
   NTag,
   useMessage
 } from 'naive-ui'
+import {
+  FolderOpenOutline,
+  PlayOutline,
+  StopOutline,
+  SyncOutline,
+  SaveOutline,
+  HammerOutline,
+  TrashOutline,
+  TerminalOutline,
+  BarChartOutline,
+  CheckmarkCircleOutline,
+  LogoDocker,
+  FileTrayFullOutline
+} from '@vicons/ionicons5'
 
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -42,7 +57,7 @@ const loadingDetails = ref(false)
 
 // 悬浮复制 Toast 状态
 const showCopyToast = ref(false)
-const copyToastText = ref('[📋 已复制]')
+const copyToastText = ref('已复制到剪贴板')
 
 // 彻底删除阻断模态框
 const showDeleteConfirm = ref(false)
@@ -172,7 +187,7 @@ const handleMenuSelect = async (key: string) => {
 // 复制文本辅助函数
 const copyText = (text: string) => {
   navigator.clipboard.writeText(text)
-  copyToastText.value = '[📋 已复制]'
+  copyToastText.value = '已复制到剪贴板'
   showCopyToast.value = true
   setTimeout(() => {
     showCopyToast.value = false
@@ -593,22 +608,38 @@ onUnmounted(() => {
       <div v-else-if="selectedType === 'project'" key="compose-project-workspace" class="project-workspace">
         <div class="workspace-header">
           <div class="project-title-area">
-            <h2 class="project-title">📂 {{ selectedProject?.name }}</h2>
+            <h2 class="project-title">
+              <n-icon :component="FolderOpenOutline" style="margin-right: 8px; vertical-align: middle;" />
+              {{ selectedProject?.name }}
+            </h2>
             <n-space size="small">
               <n-tag :type="selectedProject?.status === 'running' ? 'success' : 'default'" round size="small">
                 {{ selectedProject?.status === 'running' ? '运行中' : '已停止' }}
               </n-tag>
               <span class="project-summary-text">
+                <n-icon :component="FlashOutline" size="10" />
                 {{ selectedProject?.running_count }} / {{ selectedProject?.container_count }} 容器在跑
               </span>
             </n-space>
           </div>
           <div class="project-actions">
             <n-button-group round size="small">
-              <n-button :loading="composeStore.executing" type="primary" @click="handleProjectUp">🚀 启动 (Up)</n-button>
-              <n-button :loading="composeStore.executing" @click="handleProjectDown">⏹️ 停止 (Down)</n-button>
-              <n-button :loading="composeStore.executing" @click="handleProjectRestart">🔄 重启</n-button>
-              <n-button @click="handleSaveConfig">💾 保存</n-button>
+              <n-button :loading="composeStore.executing" type="primary" @click="handleProjectUp">
+                <template #icon><n-icon :component="PlayOutline" /></template>
+                启动 (Up)
+              </n-button>
+              <n-button :loading="composeStore.executing" @click="handleProjectDown">
+                <template #icon><n-icon :component="StopOutline" /></template>
+                停止 (Down)
+              </n-button>
+              <n-button :loading="composeStore.executing" @click="handleProjectRestart">
+                <template #icon><n-icon :component="SyncOutline" /></template>
+                重启
+              </n-button>
+              <n-button @click="handleSaveConfig">
+                <template #icon><n-icon :component="SaveOutline" /></template>
+                保存
+              </n-button>
             </n-button-group>
           </div>
         </div>
@@ -631,7 +662,10 @@ onUnmounted(() => {
 
           <!-- 命令输出控制台 -->
           <div class="console-panel">
-            <div class="console-header">🔧 CLI 执行输出</div>
+            <div class="console-header">
+              <n-icon :component="HammerOutline" style="margin-right: 6px" />
+              CLI 执行输出
+            </div>
             <div class="console-body">
               <div v-for="(line, idx) in composeStore.commandOutput" :key="idx" class="console-line">
                 {{ line }}
@@ -646,7 +680,9 @@ onUnmounted(() => {
 
       <!-- 空选择状态 -->
       <div v-else key="compose-empty-state" class="empty-state">
-        <div class="empty-logo">🐳</div>
+        <div class="empty-logo">
+          <n-icon :component="LogoDocker" />
+        </div>
         <div class="empty-title">欢迎使用 Vessel</div>
         <div class="empty-sub">请在左侧选择一个 Compose 服务或项目以进行深度精细化操作。</div>
       </div>
@@ -655,8 +691,11 @@ onUnmounted(() => {
 
 
 
-  <!-- 2. 💥 彻底删除项目阻断警告模态框 -->
-  <n-modal v-model:show="showDeleteConfirm" preset="card" style="width: 420px; border-top: 4px solid var(--brand-danger);" title="💥 确认强力彻底删除项目？">
+  <!-- 2. 彻底删除项目阻断警告模态框 -->
+  <n-modal v-model:show="showDeleteConfirm" preset="card" style="width: 420px; border-top: 4px solid var(--brand-danger);" title="确认强力彻底删除项目？">
+    <template #header-extra>
+      <n-icon :component="TrashOutline" color="var(--brand-danger)" />
+    </template>
     <div class="warning-modal-body">
       <p class="warning-highlight-text">警告：此操作不可逆！</p>
       <p>软件将调用后台执行 <strong>docker compose down -v</strong> 命令：</p>
@@ -667,14 +706,17 @@ onUnmounted(() => {
     </div>
     <template #footer>
       <div class="warning-modal-footer">
-        <n-button type="error" @click="handleConfirmDownDestroy">💥 确认强力删除</n-button>
+        <n-button type="error" @click="handleConfirmDownDestroy">确认强力删除</n-button>
         <n-button quaternary @click="showDeleteConfirm = false">取消</n-button>
       </div>
     </template>
   </n-modal>
 
   <!-- 3. Exec 快速执行命令弹窗 -->
-  <n-modal v-model:show="showExecModal" preset="card" style="width: 500px;" title="🚀 快速执行单行命令">
+  <n-modal v-model:show="showExecModal" preset="card" style="width: 500px;" title="快速执行单行命令">
+    <template #header-extra>
+      <n-icon :component="TerminalOutline" />
+    </template>
     <div class="exec-modal-body">
       <div class="modal-field-title">命令输入 (以 container_user 执行)</div>
       <n-input v-model:value="execCmdText" type="textarea" placeholder="例如: ls -la /var/www" />
@@ -688,7 +730,10 @@ onUnmounted(() => {
   </n-modal>
 
   <!-- 4. Top 内部进程查看弹窗 -->
-  <n-modal v-model:show="showTopModal" preset="card" style="width: 600px;" :title="`📊 内部活跃进程 (${topContainerName})`">
+  <n-modal v-model:show="showTopModal" preset="card" style="width: 600px;" :title="`内部活跃进程 (${topContainerName})`">
+    <template #header-extra>
+      <n-icon :component="BarChartOutline" />
+    </template>
     <div class="top-modal-body">
       <table class="top-table">
         <thead>
@@ -714,7 +759,10 @@ onUnmounted(() => {
   </n-modal>
 
   <!-- 5. 导入现有项目弹窗 -->
-  <n-modal v-model:show="showImportModal" preset="card" style="width: 500px;" title="📂 导入现有 Compose 项目">
+  <n-modal v-model:show="showImportModal" preset="card" style="width: 500px;" title="导入现有 Compose 项目">
+    <template #header-extra>
+      <n-icon :component="FileTrayFullOutline" />
+    </template>
     <div class="exec-modal-body">
       <div class="modal-field-title">选择 docker-compose.yml 绝对路径</div>
       <n-input v-model:value="importPath" placeholder="例如: D:/coding/rust/vessel/docker-compose.yml" />
@@ -727,9 +775,10 @@ onUnmounted(() => {
     </template>
   </n-modal>
 
-  <!-- 📋 已复制 悬浮轻量 Toast 胶囊 -->
+  <!-- 已复制 悬浮轻量 Toast 胶囊 -->
   <transition name="fade-in">
     <div v-if="showCopyToast" class="copy-float-toast">
+      <n-icon :component="CheckmarkCircleOutline" style="margin-right: 6px" />
       {{ copyToastText }}
     </div>
   </transition>
@@ -872,13 +921,13 @@ onUnmounted(() => {
   height: 100%;
   border: none !important;
   border-radius: 0;
-  background-color: #05070c !important;
+  background-color: var(--bg-terminal) !important;
 }
 
 /* 底部执行控制台 */
 .console-panel {
   height: 140px;
-  background-color: #05070c;
+  background-color: var(--bg-terminal);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -900,10 +949,11 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 8px 16px;
+  background-color: var(--bg-terminal);
 }
 
 .console-line {
-  color: var(--text-body);
+  color: var(--text-terminal);
   font-family: monospace;
   font-size: 11px;
   white-space: pre-wrap;
@@ -919,7 +969,7 @@ onUnmounted(() => {
 /* 交互式终端容器 */
 .pty-terminal-box {
   height: 60vh;
-  background-color: #05070c;
+  background-color: var(--bg-terminal);
   padding: 8px;
   border-radius: 4px;
 }

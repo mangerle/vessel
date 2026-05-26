@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useImageStore } from '../store/image'
 import { Command } from '@tauri-apps/plugin-shell'
@@ -18,9 +18,27 @@ import {
   NProgress
 } from 'naive-ui'
 import {
-  Star,
-  ShieldCheckmark,
-  PlayOutline
+  StarOutline,
+  ShieldCheckmarkOutline,
+  PlayOutline,
+  SearchOutline,
+  TrashOutline,
+  FlashOutline,
+  ReturnDownBackOutline,
+  CheckmarkCircleOutline,
+  CloseCircleOutline,
+  SparklesOutline,
+  DiscOutline,
+  HelpCircleOutline,
+  LayersOutline,
+  CloudDownloadOutline,
+  DocumentTextOutline,
+  LogoTux,
+  LogoDocker,
+  ChevronUpOutline,
+  ChevronDownOutline,
+  CubeOutline,
+  FileTrayFullOutline
 } from '@vicons/ionicons5'
 import { useTaskStore } from '../store/task'
 
@@ -31,7 +49,7 @@ const taskStore = useTaskStore()
 const message = useMessage()
 
 // 防止静态检测对 h 函数里引用过的组件报未使用警告
-const _unused = [NIcon, NSpace, NTag, Star, ShieldCheckmark, PlayOutline]
+const _unused = [NIcon, NSpace, NTag, StarOutline, ShieldCheckmarkOutline, PlayOutline]
 if (_unused.length < 0) console.log(_unused)
 
 // --- 状态控制 ---
@@ -279,9 +297,9 @@ const y = ref(0)
 const menuTarget = ref<any>(null)
 
 const menuOptions = [
-  { label: '🔍 详情', key: 'detail' },
-  { label: '🚀 快速运行 (Run)', key: 'run' },
-  { label: '🗑️ 彻底删除', key: 'delete' }
+  { label: '详情', key: 'detail', icon: () => h(NIcon, null, { default: () => h(SearchOutline) }) },
+  { label: '快速运行 (Run)', key: 'run', icon: () => h(NIcon, null, { default: () => h(PlayOutline) }) },
+  { label: '彻底删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }
 ]
 
 const handleContextMenu = (e: MouseEvent, item: any) => {
@@ -346,7 +364,9 @@ onMounted(() => {
         >
           <div class="item-left-meta">
             <div class="item-tag-title">
-              <span v-if="isDangling(item)" class="dangling-label">🆔 (虚悬镜像)</span>
+              <span v-if="isDangling(item)" class="dangling-label">
+                <n-icon :component="HelpCircleOutline" /> (虚悬镜像)
+              </span>
               <span v-else class="normal-tag-label">{{ item.tags?.[0] }}</span>
             </div>
             <div class="item-sub-meta">
@@ -367,7 +387,8 @@ onMounted(() => {
             :class="{ active: activeTab === 'pull' }" 
             @click="activeTab = 'pull'"
           >
-            <span>🔍 镜像仓库</span>
+            <n-icon :component="SearchOutline" />
+            <span>镜像仓库</span>
             <div class="tab-indicator"></div>
           </div>
           <div 
@@ -376,7 +397,8 @@ onMounted(() => {
             :class="{ active: activeTab === 'layers' }" 
             @click="activeTab = 'layers'"
           >
-            <span>🔀 层级结构</span>
+            <n-icon :component="LayersOutline" />
+            <span>层级结构</span>
             <div class="tab-indicator"></div>
           </div>
           <div 
@@ -385,7 +407,8 @@ onMounted(() => {
             :class="{ active: activeTab === 'inspect' }" 
             @click="activeTab = 'inspect'"
           >
-            <span>📋 镜像详情 (Inspect)</span>
+            <n-icon :component="DocumentTextOutline" />
+            <span>镜像详情 (Inspect)</span>
             <div class="tab-indicator"></div>
           </div>
         </div>
@@ -396,15 +419,20 @@ onMounted(() => {
             <span class="image-meta-sub">{{ (selectedDetails.id.split(':')[1] || selectedDetails.id).substring(0, 12) }}</span>
             <div class="vertical-divider"></div>
             <span class="badge size-badge">{{ formatBytes(selectedDetails.size || 0) }}</span>
-            <span class="badge os-badge">🖥️ {{ selectedDetails.os || 'linux' }}/{{ selectedDetails.architecture || 'amd64' }}</span>
+            <span class="badge os-badge">
+              <n-icon :component="LogoTux" />
+              {{ selectedDetails.os || 'linux' }}/{{ selectedDetails.architecture || 'amd64' }}
+            </span>
           </div>
 
           <div class="meta-right">
             <button class="run-image-gold-btn" @click="openRunModal(selectedDetails.tags?.[0] || selectedDetails.id)">
-              🚀 运行 (Run)
+              <n-icon :component="PlayOutline" />
+              运行 (Run)
             </button>
             <button class="delete-btn" @click="handleDelete(selectedDetails.id)">
-              🗑️ 删除
+              <n-icon :component="TrashOutline" />
+              删除
             </button>
           </div>
         </div>
@@ -428,7 +456,8 @@ onMounted(() => {
                 :clearable="true"
               />
               <n-button type="primary" secondary @click="handleSearch(pullImageName)">
-                🔍 搜索
+                <template #icon><n-icon :component="SearchOutline" /></template>
+                搜索
               </n-button>
             </div>
 
@@ -436,17 +465,19 @@ onMounted(() => {
             <div v-if="selectedHubImage" class="hub-image-detail-card">
               <div class="hub-detail-header">
                 <div class="hub-detail-name">
-                  🐧 {{ selectedHubImage.name || selectedHubImage.label }}
+                  <n-icon :component="LogoDocker" style="margin-right: 6px" />
+                  {{ selectedHubImage.name || selectedHubImage.label }}
                   <n-tag v-if="selectedHubImage.is_official" type="success" size="tiny" round style="margin-left: 8px">官方</n-tag>
                 </div>
                 <div class="hub-detail-stats">
-                  <span class="stars">⭐ {{ selectedHubImage.star_count }}</span>
+                  <span class="stars"><n-icon :component="StarOutline" /> {{ selectedHubImage.star_count }}</span>
                 </div>
               </div>
               <div class="hub-detail-desc">{{ selectedHubImage.description }}</div>
               <div class="hub-detail-actions">
                 <n-button type="primary" :loading="imageStore.pulling" @click="handlePull(selectedHubImage.name || selectedHubImage.label)">
-                  📥 立即拉取镜像
+                  <template #icon><n-icon :component="CloudDownloadOutline" /></template>
+                  立即拉取镜像
                 </n-button>
                 <n-button @click="selectedHubImage = null">取消选择</n-button>
               </div>
@@ -454,7 +485,10 @@ onMounted(() => {
 
             <!-- 搜索列表 -->
             <div v-else-if="imageStore.searchResults.length > 0" class="search-results-radar">
-              <div class="radar-title">🔍 匹配的 Hub 资产 (点击查看详情):</div>
+              <div class="radar-title">
+                <n-icon :component="SearchOutline" />
+                匹配的 Hub 资产 (点击查看详情):
+              </div>
               <div class="radar-list">
                 <div 
                   v-for="res in imageStore.searchResults.slice(0, 10)" 
@@ -464,13 +498,14 @@ onMounted(() => {
                 >
                   <div class="radar-item-left">
                     <div class="radar-item-name">
-                      🐧 {{ res.name }}
+                      <n-icon :component="LogoDocker" style="margin-right: 4px" />
+                      {{ res.name }}
                       <n-tag v-if="res.is_official" type="success" size="tiny" round style="margin-left: 4px">官方</n-tag>
                     </div>
                     <div class="radar-item-desc">{{ res.description }}</div>
                   </div>
                   <div class="radar-item-right">
-                    <span class="stars">⭐ {{ res.star_count }}</span>
+                    <span class="stars"><n-icon :component="StarOutline" /> {{ res.star_count }}</span>
                   </div>
                 </div>
               </div>
@@ -478,7 +513,10 @@ onMounted(() => {
 
             <!-- 任务进度 -->
             <div v-if="activePullTasks.length > 0" class="active-pull-panel">
-              <div class="panel-title">⚡ 拉取任务状态:</div>
+              <div class="panel-title">
+                <n-icon :component="FlashOutline" />
+                拉取任务状态:
+              </div>
               <div v-for="task in activePullTasks" :key="task.id" class="pull-task-card">
                 <div class="task-info">
                   <span class="task-name">{{ task.name }}</span>
@@ -512,14 +550,18 @@ onMounted(() => {
             <div v-for="(layer, idx) in imageStore.imageHistory" :key="idx" class="history-layer-row">
               <span class="layer-bullet">├─</span>
               <span class="layer-id" :class="{ missing: layer.id === '<missing>' }">
-                {{ layer.id === '<missing>' ? '📦 [Layer Missing]' : `📦 Layer: ${layer.id.substring(0, 12)}` }}
+                <n-icon :component="FileTrayFullOutline" v-if="layer.id === '<missing>'" />
+                <n-icon :component="CubeOutline" v-else />
+                {{ layer.id === '<missing>' ? ' [Layer Missing]' : ` Layer: ${layer.id.substring(0, 12)}` }}
               </span>
               <span class="layer-size-badge">{{ formatBytes(layer.size) }}</span>
               <span class="layer-cmd-text">➔ {{ layer.created_by }}</span>
             </div>
           </div>
           <div class="shuttle-control-bar">
-            <button class="shuttle-btn" :class="{ active: wrapLayers }" title="自动换行" @click="wrapLayers = !wrapLayers">↩️</button>
+            <button class="shuttle-btn" :class="{ active: wrapLayers }" title="自动换行" @click="wrapLayers = !wrapLayers">
+              <n-icon :component="ReturnDownBackOutline" />
+            </button>
           </div>
         </div>
 
@@ -1092,8 +1134,8 @@ onMounted(() => {
   flex: 1;
   height: 100%;
   overflow-y: auto;
-  background-color: #05070c;
-  color: var(--text-body);
+  background-color: var(--bg-terminal);
+  color: var(--text-terminal);
   padding: 16px;
   font-size: 11px;
   line-height: 1.5;

@@ -8,10 +8,17 @@ import {
   NDropdown,
   NGi,
   NGrid,
+  NIcon,
   NInput,
   NModal,
   useMessage
 } from 'naive-ui'
+import {
+  TerminalOutline,
+  BarChartOutline,
+  CheckmarkCircleOutline,
+  LogoDocker
+} from '@vicons/ionicons5'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
@@ -34,7 +41,7 @@ const loadingDetails = ref(false)
 
 // 悬浮复制 Toast 状态
 const showCopyToast = ref(false)
-const copyToastText = ref('[📋 已复制]')
+const copyToastText = ref('已复制到剪贴板')
 
 // Exec 命令弹窗
 const showExecModal = ref(false)
@@ -136,7 +143,7 @@ const handleMenuSelect = async (key: string) => {
 // 复制文本辅助函数
 const copyText = (text: string) => {
   navigator.clipboard.writeText(text)
-  copyToastText.value = '[📋 已复制]'
+  copyToastText.value = '已复制到剪贴板'
   showCopyToast.value = true
   setTimeout(() => {
     showCopyToast.value = false
@@ -465,7 +472,10 @@ onUnmounted(() => {
   </div>
 
   <!-- 2. Exec 快速执行命令弹窗 -->
-  <n-modal v-model:show="showExecModal" preset="card" style="width: 500px;" title="🚀 快速执行单行命令">
+  <n-modal v-model:show="showExecModal" preset="card" style="width: 500px;" title="快速执行单行命令">
+    <template #header-extra>
+      <n-icon :component="TerminalOutline" />
+    </template>
     <div class="exec-modal-body">
       <div class="modal-field-title">命令输入 (以 default 默认用户执行)</div>
       <n-input v-model:value="execCmdText" type="textarea" placeholder="例如: ls -la /var/www" />
@@ -479,7 +489,10 @@ onUnmounted(() => {
   </n-modal>
 
   <!-- 3. Top 内部进程查看弹窗 -->
-  <n-modal v-model:show="showTopModal" preset="card" style="width: 600px;" :title="`📊 内部活跃进程 (${topContainerName})`">
+  <n-modal v-model:show="showTopModal" preset="card" style="width: 600px;" :title="`内部活跃进程 (${topContainerName})`">
+    <template #header-extra>
+      <n-icon :component="BarChartOutline" />
+    </template>
     <div class="top-modal-body">
       <table class="top-table">
         <thead>
@@ -504,9 +517,10 @@ onUnmounted(() => {
     </div>
   </n-modal>
 
-  <!-- 📋 已复制 悬浮轻量 Toast 胶囊 -->
+  <!-- 已复制 悬浮轻量 Toast 胶囊 -->
   <transition name="fade-in">
     <div v-if="showCopyToast" class="copy-float-toast">
+      <n-icon :component="CheckmarkCircleOutline" style="margin-right: 6px" />
       {{ copyToastText }}
     </div>
   </transition>
@@ -582,7 +596,7 @@ onUnmounted(() => {
 /* 交互式终端容器 */
 .pty-terminal-box {
   height: 60vh;
-  background-color: #05070c;
+  background-color: var(--bg-terminal);
   padding: 8px;
   border-radius: 4px;
 }

@@ -12,13 +12,15 @@
       <!-- 状态快筛 -->
       <div class="filter-dropdown-wrapper">
         <button class="toolbar-btn" @click.stop="showFilterMenu = !showFilterMenu">
-          🌐 状态 ▼
+          <n-icon :component="FilterOutline" />
+          状态
+          <n-icon :component="ChevronDownOutline" size="10" />
         </button>
         <transition name="fade-in">
           <div v-if="showFilterMenu" class="dropdown-popover filter-popover" @click.stop>
             <div class="popover-item" :class="{ active: statusFilter === 'all' }" @click="selectFilter('all')">全部</div>
-            <div class="popover-item" :class="{ active: statusFilter === 'running' }" @click="selectFilter('running')">🟢 运行中</div>
-            <div class="popover-item" :class="{ active: statusFilter === 'stopped' }" @click="selectFilter('stopped')">🔴 已停止</div>
+            <div class="popover-item" :class="{ active: statusFilter === 'running' }" @click="selectFilter('running')">运行中</div>
+            <div class="popover-item" :class="{ active: statusFilter === 'stopped' }" @click="selectFilter('stopped')">已停止</div>
           </div>
         </transition>
       </div>
@@ -30,13 +32,24 @@
           :disabled="selectedIds.length === 0" 
           @click.stop="selectedIds.length > 0 && (showBatchMenu = !showBatchMenu)"
         >
-          📦 批量 ({{ selectedIds.length }}) ▼
+          <n-icon :component="LayersOutline" />
+          批量 ({{ selectedIds.length }})
+          <n-icon :component="ChevronDownOutline" size="10" />
         </button>
         <transition name="fade-in">
           <div v-if="showBatchMenu" class="dropdown-popover batch-popover" @click.stop>
-            <div class="popover-item primary" @click="triggerBatch('start')">▶️ 批量启动</div>
-            <div class="popover-item warn" @click="triggerBatch('stop')">⏹️ 批量停止</div>
-            <div class="popover-item danger" @click="triggerBatch('delete')">🗑️ 批量删除</div>
+            <div class="popover-item primary" @click="triggerBatch('start')">
+              <n-icon :component="PlayOutline" />
+              批量启动
+            </div>
+            <div class="popover-item warn" @click="triggerBatch('stop')">
+              <n-icon :component="StopOutline" />
+              批量停止
+            </div>
+            <div class="popover-item danger" @click="triggerBatch('delete')">
+              <n-icon :component="TrashOutline" />
+              批量删除
+            </div>
           </div>
         </transition>
       </div>
@@ -92,7 +105,15 @@
 
 <script lang="ts" setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { NScrollbar } from 'naive-ui'
+import { NScrollbar, NIcon } from 'naive-ui'
+import { 
+  FilterOutline, 
+  LayersOutline, 
+  PlayOutline, 
+  StopOutline, 
+  TrashOutline,
+  ChevronDownOutline
+} from '@vicons/ionicons5'
 
 const props = defineProps<{
   items: any[]
@@ -329,8 +350,8 @@ onUnmounted(() => {
 }
 
 .container-item.active {
-  background-color: var(--bg-active) !important;
-  color: var(--text-title);
+  background-color: var(--macos-accent-blue) !important;
+  color: #fff;
   font-weight: 600;
 }
 
