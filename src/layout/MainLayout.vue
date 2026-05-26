@@ -214,10 +214,16 @@ const selectWslDistro = async (distro: string) => {
   showSwitcher.value = false
   message.info(`正在切回本地 WSL: ${distro} 连接...`)
   
-  // 强制刷新连接
+  // 1. 同步给后端 Rust 环境
+  try {
+    await invoke('update_connection_config', { mode: 'wsl', distro })
+  } catch (e) {
+    console.error('后端连接同步失败:', e)
+  }
+
+  // 2. 强制刷新连接
   try {
     connecting.value = true
-    // 假设调用后端更新连接的逻辑，在第一阶段我们调用 list 并刷新
     await checkDockerConnection()
     message.success(`已连接到 WSL: ${distro}`)
   } catch (e) {
@@ -245,6 +251,12 @@ const handleAutoConnect = async () => {
   // 模拟拉起过程（根据轻量化环境自愈技术）
   setTimeout(async () => {
     try {
+      // 同步给后端
+      await invoke('update_connection_config', { 
+        mode: settingsStore.connectionMode, 
+        distro: settingsStore.wslDistro 
+      })
+      
       isConnected.value = true
       connecting.value = false
       message.success('WSL 管道已成功拉起，数据已点亮！')

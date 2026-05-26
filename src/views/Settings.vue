@@ -111,7 +111,17 @@ const isDirty = computed(() => {
 })
 
 const handleSave = async () => {
-  // 保存到 store 状态中并自动持久化
+  // 1. 同步给后端 Rust 环境 (核心：两栖执行环境切换)
+  try {
+    await invoke('update_connection_config', { 
+      mode: draft.value.connectionMode, 
+      distro: draft.value.wslDistro 
+    })
+  } catch (e) {
+    console.error('后端配置同步失败:', e)
+  }
+
+  // 2. 保存到 store 状态中并自动持久化
   settingsStore.theme = draft.value.theme as any
   settingsStore.closeToTray = draft.value.closeToTray
   settingsStore.refreshInterval = draft.value.refreshInterval

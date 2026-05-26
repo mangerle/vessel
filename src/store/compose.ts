@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { useSettingsStore } from './settings'
 
 /**
  * Docker Compose 项目接口
@@ -55,8 +56,13 @@ export const useComposeStore = defineStore('compose', {
     async fetchComposeFile(path: string) {
       this.loading = true
       this.error = null
+      const settingsStore = useSettingsStore()
       try {
-        this.currentProjectFile = await invoke<string>('read_compose_file', { path })
+        this.currentProjectFile = await invoke<string>('read_compose_file', { 
+          path,
+          mode: settingsStore.connectionMode,
+          distro: settingsStore.wslDistro
+        })
       } catch (err) {
         console.error('读取 Compose 文件失败:', err)
         this.error = String(err)
@@ -72,8 +78,14 @@ export const useComposeStore = defineStore('compose', {
     async saveComposeFile(path: string, content: string) {
       this.loading = true
       this.error = null
+      const settingsStore = useSettingsStore()
       try {
-        await invoke('write_compose_file', { path, content })
+        await invoke('write_compose_file', { 
+          path, 
+          content,
+          mode: settingsStore.connectionMode,
+          distro: settingsStore.wslDistro
+        })
         this.currentProjectFile = content
       } catch (err) {
         console.error('保存 Compose 文件失败:', err)
@@ -91,6 +103,7 @@ export const useComposeStore = defineStore('compose', {
       this.executing = true
       this.commandOutput = []
       this.error = null
+      const settingsStore = useSettingsStore()
 
       const unlistenList: UnlistenFn[] = []
 
@@ -120,7 +133,12 @@ export const useComposeStore = defineStore('compose', {
         })
         unlistenList.push(unlistenError)
 
-        await invoke('run_compose_command', { projectDir, args })
+        await invoke('run_compose_command', { 
+          projectDir, 
+          args,
+          mode: settingsStore.connectionMode,
+          distro: settingsStore.wslDistro
+        })
       } catch (err) {
         console.error('执行 Compose 命令失败:', err)
         this.error = String(err)

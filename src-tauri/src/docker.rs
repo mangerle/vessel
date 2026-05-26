@@ -954,17 +954,68 @@ pub async fn resize_container_terminal(
 }
 
 #[tauri::command]
-pub async fn read_compose_file(path: String) -> Result<String, String> {
-    tokio::fs::read_to_string(path)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn read_compose_file(
+    path: String,
+    mode: String,
+    distro: Option<String>,
+) -> Result<String, String> {
+    if mode == "wsl" {
+        let mut cmd = tokio::process::Command::new("wsl");
+        if let Some(d) = distro {
+            if !d.is_empty() {
+                cmd.args(["-d", &d]);
+            }
+        }
+        cmd.args(["-u", "root", "--", "cat", &path]);
+        
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+
+        let out = cmd.output().await.map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(String::from_utf8_lossy(&out.stdout).to_string())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).to_string())
+        }
+    } else {
+        tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
-pub async fn write_compose_file(path: String, content: String) -> Result<(), String> {
-    tokio::fs::write(path, content)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn write_compose_file(
+    path: String, 
+    content: String,
+    mode: String,
+    distro: Option<String>,
+) -> Result<(), String> {
+    if mode == "wsl" {
+        let mut cmd = tokio::process::Command::new("wsl");
+        if let Some(d) = distro {
+            if !d.is_empty() {
+                cmd.args(["-d", &d]);
+            }
+        }
+        // 使用 HEREDOC 写入内容，避免复杂的转义
+        let shell_cmd = format!("cat << 'EOF' > \"{}\"\n{}\nEOF", path, content);
+        cmd.args(["-u", "root", "--", "sh", "-c", &shell_cmd]);
+
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+
+        let out = cmd.output().await.map_err(|e| e.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&out.stderr).to_string())
+        }
+    } else {
+        tokio::fs::write(path, content)
+            .await
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -972,12 +1023,29 @@ pub async fn run_compose_command(
     app: AppHandle,
     project_dir: String,
     args: Vec<String>,
+    mode: String,
+    distro: Option<String>,
 ) -> Result<(), String> {
-    let mut cmd = tokio::process::Command::new("docker");
-    cmd.arg("compose")
-        .args(args)
-        .current_dir(project_dir)
-        .stdout(std::process::Stdio::piped())
+    let mut cmd = if mode == "wsl" {
+        let mut c = tokio::process::Command::new("wsl");
+        if let Some(d) = distro {
+            if !d.is_empty() {
+                c.args(["-d", &d]);
+            }
+        }
+        let args_str = args.join(" ");
+        // 进入目录并执行 compose
+        c.args(["sh", "-c", &format!("cd \"{}\" && docker compose {}", project_dir, args_str)]);
+        c
+    } else {
+        let mut c = tokio::process::Command::new("docker");
+        c.arg("compose")
+            .args(args)
+            .current_dir(project_dir);
+        c
+    };
+
+    cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
     #[cfg(windows)]

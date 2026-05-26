@@ -122,6 +122,7 @@ pub fn run() {
             docker::prune_volumes,
             docker::list_wsl_distros,
             docker::open_config_dir,
+            connection::update_connection_config,
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用程序时出错");

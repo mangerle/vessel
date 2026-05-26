@@ -2,6 +2,7 @@
 import { onMounted, computed } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { exit } from '@tauri-apps/plugin-process'
+import { invoke } from '@tauri-apps/api/core'
 import { useSettingsStore } from './store/settings'
 import { 
   NConfigProvider, 
@@ -125,6 +126,16 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
 
 onMounted(async () => {
   await settingsStore.loadSettings()
+  
+  // 初始化后端连接上下文
+  try {
+    await invoke('update_connection_config', { 
+      mode: settingsStore.connectionMode, 
+      distro: settingsStore.wslDistro 
+    })
+  } catch (e) {
+    console.error('初始化后端配置失败:', e)
+  }
   
   // 监听窗口关闭事件
   const appWindow = getCurrentWindow()
