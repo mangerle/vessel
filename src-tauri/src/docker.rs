@@ -328,7 +328,13 @@ pub async fn get_image_history(id: String) -> Result<Vec<ImageHistoryInfo>, Stri
 
 /// 拉取镜像
 #[tauri::command]
-pub async fn pull_image(app: AppHandle, image_name: String) -> Result<(), String> {
+pub async fn pull_image(
+    app: AppHandle,
+    image_name: String,
+    username: Option<String>,
+    password: Option<String>,
+    server_address: Option<String>,
+) -> Result<(), String> {
     let docker = get_docker_client().await?;
     
     // 确保镜像名包含标签，默认为 latest
@@ -340,13 +346,26 @@ pub async fn pull_image(app: AppHandle, image_name: String) -> Result<(), String
 
     println!("开始拉取镜像: {}", full_image_name);
 
+    // 如果提供了用户名和密码，则配置仓库凭证进行认证拉取
+    let mut credentials = None;
+    if let (Some(u), Some(p)) = (username, password) {
+        if !u.is_empty() && !p.is_empty() {
+            credentials = Some(bollard::auth::DockerCredentials {
+                username: Some(u),
+                password: Some(p),
+                serveraddress: server_address,
+                ..Default::default()
+            });
+        }
+    }
+
     let mut stream = docker.create_image(
         Some(CreateImageOptions {
             from_image: full_image_name.clone(),
             ..Default::default()
         }),
         None,
-        None,
+        credentials,
     );
 
     let app_handle = app.clone();

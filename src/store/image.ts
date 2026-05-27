@@ -122,7 +122,7 @@ export const useImageStore = defineStore('image', {
         this.loading = false
       }
     },
-    async pullImage(imageName: string) {
+    async pullImage(imageName: string, auth?: { username?: string; password?: string; serverAddress?: string }) {
       // 调试：确保 imageName 是字符串
       if (typeof imageName !== 'string') {
         throw new TypeError('参数 imageName 必须是字符串')
@@ -201,8 +201,13 @@ export const useImageStore = defineStore('image', {
         })
         unlistenList.push(unlistenFinished)
 
-        // 调用后端，参数名 imageName
-        await invoke('pull_image', { imageName })
+        // 调用后端，传递 imageName 已经可能包含的登录凭证
+        await invoke('pull_image', { 
+          imageName,
+          username: auth?.username || null,
+          password: auth?.password || null,
+          serverAddress: auth?.serverAddress || null
+        })
       } catch (err) {
         this.error = String(err)
         cleanup('error', String(err))

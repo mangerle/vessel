@@ -5,6 +5,10 @@ use tokio::process::Command;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// WSL 桥接驱动
 #[derive(Default)]
@@ -78,20 +82,49 @@ impl WslBridge {
                         let mut stdin = child.stdin.take().unwrap();
                         let mut stdout = child.stdout.take().unwrap();
 
-                        let (mut client_reader, mut client_writer) = client_socket.split();
+                        let (client_reader, client_writer) = client_socket.split();
 
-                        // 双向转发流，不再使用空闲超时，以支持长时间的日志和统计流
-                        let _ = tokio::select! {
-                            _ = tokio::io::copy(&mut client_reader, &mut stdin) => {},
-                            _ = tokio::io::copy(&mut stdout, &mut client_writer) => {},
+                        let last_activity = Arc::new(AtomicU64::new(get_elapsed_seconds()));
+
+                        let mut reader = TimeoutIO {
+                            inner: client_reader,
+                            last_activity: last_activity.clone(),
                         };
+                        let mut writer = TimeoutIO {
+                            inner: client_writer,
+                            last_activity: last_activity.clone(),
+                        };
+
+                        let last_activity_clone = last_activity.clone();
+                        let timeout_task = async move {
+                            loop {
+                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                                let now = get_elapsed_seconds();
+                                let last = last_activity_clone.load(Ordering::Relaxed);
+                                if now - last > 15 {
+                                    // 超过 15 秒无任何数据收发，则判定为空闲，主动断开连接
+                                    break;
+                                }
+                            }
+                        };
+
+                        let copy_task = async {
+                            let _ = tokio::select! {
+                                _ = tokio::io::copy(&mut reader, &mut stdin) => {},
+                                _ = tokio::io::copy(&mut stdout, &mut writer) => {},
+                            };
+                        };
+
+                        tokio::select! {
+                            _ = copy_task => {},
+                            _ = timeout_task => {},
+                        }
                         
                         // 显式释放所有 IO 句柄与管道，向 wsl 发送 EOF，引导其自动关闭
                         drop(stdin);
                         drop(stdout);
-                        drop(client_reader);
-                        drop(client_writer);
-                        drop(client_socket);
+                        drop(reader);
+                        drop(writer);
 
                         // 强行终止子进程并带有超时保护地等待其退出，防止发生协程卡死
                         let _ = child.kill().await;
@@ -106,5 +139,65 @@ impl WslBridge {
 
         *port_lock = Some(port);
         Ok(port)
+    }
+}
+
+// ================== WSL 进程与连接空闲清理辅助组件 ==================
+
+static START_INSTANT: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
+
+/// 获取应用启动后的累计秒数，用于防 NTP 时钟回拨的单调递增时间戳
+fn get_elapsed_seconds() -> u64 {
+    START_INSTANT.elapsed().as_secs()
+}
+
+/// 包装 TcpStream 读写端口，通过拦截 poll 读写事件更新最后活跃时间
+struct TimeoutIO<T> {
+    inner: T,
+    last_activity: Arc<AtomicU64>,
+}
+
+impl<T: AsyncRead + Unpin> AsyncRead for TimeoutIO<T> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        match Pin::new(&mut self.inner).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) => {
+                if buf.filled().len() > before {
+                    self.last_activity.store(get_elapsed_seconds(), Ordering::Relaxed);
+                }
+                Poll::Ready(Ok(()))
+            }
+            p => p,
+        }
+    }
+}
+
+impl<T: AsyncWrite + Unpin> AsyncWrite for TimeoutIO<T> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        match Pin::new(&mut self.inner).poll_write(cx, buf) {
+            Poll::Ready(Ok(n)) => {
+                if n > 0 {
+                    self.last_activity.store(get_elapsed_seconds(), Ordering::Relaxed);
+                }
+                Poll::Ready(Ok(n))
+            }
+            p => p,
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }

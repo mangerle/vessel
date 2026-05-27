@@ -40,10 +40,12 @@ import {
   AddOutline
 } from '@vicons/ionicons5'
 import { useTaskStore } from '../store/task'
+import { useSettingsStore } from '../store/settings'
 
 const router = useRouter()
 const imageStore = useImageStore()
 const taskStore = useTaskStore()
+const settingsStore = useSettingsStore()
 const message = useMessage()
 
 // 防止静态检测对 h 函数里引用过的组件报未使用警告
@@ -358,15 +360,55 @@ const handleSelectPull = (val: string) => {
   }
 }
 
+// 镜像仓库选择环境
+const selectedRegistryId = ref(settingsStore.currentRegistryId)
+
+watch(() => settingsStore.currentRegistryId, (newId) => {
+  selectedRegistryId.value = newId
+})
+
+const registryOptions = computed(() => {
+  return settingsStore.registries.map(r => ({
+    label: r.name,
+    value: r.id
+  }))
+})
+
 const handlePull = async (name?: string) => {
-  const targetName = typeof name === 'string' ? name : pullImageName.value
+  let targetName = typeof name === 'string' ? name : pullImageName.value
   if (!targetName) {
     message.warning('请输入镜像名称')
     return
   }
+  
+  // 查找选中的镜像仓库配置
+  const registry = settingsStore.registries.find(r => r.id === selectedRegistryId.value)
+  let auth = undefined
+  
+  if (registry && !registry.isDefault) {
+    // 移除协议前缀和末尾斜杠
+    let cleanUrl = registry.url.replace(/^(https?:\/\/)?/, '').replace(/\/$/, '')
+    
+    if (cleanUrl) {
+      // 自动拼接仓库前缀 (如果镜像名中尚未包含此域名)
+      if (!targetName.startsWith(cleanUrl + '/')) {
+        targetName = `${cleanUrl}/${targetName}`
+      }
+      
+      // 若配置了私有库的账号和密码，则一并传递进行鉴权拉取
+      if (registry.username && registry.password) {
+        auth = {
+          username: registry.username,
+          password: registry.password,
+          serverAddress: cleanUrl
+        }
+      }
+    }
+  }
+
   try {
     message.warning(`正在拉取镜像 ${targetName}...`)
-    await imageStore.pullImage(targetName)
+    await imageStore.pullImage(targetName, auth)
     message.info('镜像后台拉取中，请稍候在侧边栏刷新列表查看')
   } catch (err) {
     message.error('拉取失败: ' + err)
@@ -544,6 +586,12 @@ onMounted(() => {
           <div class="search-pull-box-v2">
             <div class="search-title">探索 Docker Hub 官方与社区镜像</div>
             <div class="search-input-group">
+              <n-select
+                v-model:value="selectedRegistryId"
+                :options="registryOptions"
+                placeholder="镜像仓库环境"
+                style="width: 180px; flex-shrink: 0;"
+              />
               <n-auto-complete
                 v-model:value="pullImageName"
                 :options="autoCompleteOptions"

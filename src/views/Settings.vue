@@ -12,6 +12,9 @@ import {
   NCheckbox,
   NCheckboxGroup,
   NIcon,
+  NModal,
+  NButton,
+  NSpace,
   useMessage
 } from 'naive-ui'
 import {
@@ -55,11 +58,57 @@ const themeOptions = [
 // 本地 WSL 分发版备选项
 const wslOptions = ref<{ label: string; value: string }[]>([])
 
-// 私有 Harbor 加速器模拟数据
-const registries = ref([
-  { name: '公司内部 Harbor', url: 'https://harbor.sk-tech.com', username: 'arch_admin', password: 'my_harbor_password_123' },
-  { name: '网易蜂巢镜像加速器', url: 'https://hub-mirror.c.163.com', username: '', password: '' }
-])
+// 新增镜像仓库弹窗控制与临时表单
+const showAddModal = ref(false)
+const newRegistry = ref({
+  name: '',
+  url: '',
+  username: '',
+  password: ''
+})
+
+const openAddModal = () => {
+  newRegistry.value = {
+    name: '',
+    url: '',
+    username: '',
+    password: ''
+  }
+  showAddModal.value = true
+}
+
+const handleAddRegistry = () => {
+  if (!newRegistry.value.name.trim()) {
+    message.warning('请输入仓库名称')
+    return
+  }
+  
+  // 生成随机 ID
+  const id = 'reg_' + Math.random().toString(36).substring(2, 11)
+  draft.value.registries.push({
+    id,
+    name: newRegistry.value.name.trim(),
+    url: newRegistry.value.url.trim(),
+    username: newRegistry.value.username.trim(),
+    password: newRegistry.value.password.trim(),
+    isDefault: false
+  })
+  
+  showAddModal.value = false
+  message.success('已添加到草稿列表，请点击保存配置使其落盘')
+}
+
+const handleDeleteRegistry = (id: string) => {
+  const idx = draft.value.registries.findIndex(r => r.id === id)
+  if (idx !== -1) {
+    if (draft.value.registries[idx].isDefault) {
+      message.error('默认环境不能删除')
+      return
+    }
+    draft.value.registries.splice(idx, 1)
+    message.info('已从列表中移除，请点击保存配置使其落盘')
+  }
+}
 
 // 草稿配置 (Draft Settings) 实现即改即生效
 const draft = ref({
@@ -73,7 +122,8 @@ const draft = ref({
   sshHost: '192.168.1.105',
   sshPort: 22,
   sshUser: 'root',
-  sshPassword: 'my_ssh_root_password'
+  sshPassword: 'my_ssh_root_password',
+  registries: [] as any[]
 })
 
 // 初始化草稿
@@ -89,7 +139,8 @@ const syncDraftFromStore = () => {
     sshHost: settingsStore.sshHost || '192.168.1.105',
     sshPort: settingsStore.sshPort,
     sshUser: settingsStore.sshUser || 'root',
-    sshPassword: settingsStore.sshPassword || ''
+    sshPassword: settingsStore.sshPassword || '',
+    registries: settingsStore.registries.map(r => ({ ...r }))
   }
 }
 
@@ -106,7 +157,8 @@ const isDirty = computed(() => {
     draft.value.sshHost !== (settingsStore.sshHost || '192.168.1.105') ||
     draft.value.sshPort !== settingsStore.sshPort ||
     draft.value.sshUser !== (settingsStore.sshUser || 'root') ||
-    draft.value.sshPassword !== (settingsStore.sshPassword || '')
+    draft.value.sshPassword !== (settingsStore.sshPassword || '') ||
+    JSON.stringify(draft.value.registries) !== JSON.stringify(settingsStore.registries)
   )
 })
 
@@ -132,6 +184,7 @@ const handleSave = async () => {
   settingsStore.sshPort = draft.value.sshPort
   settingsStore.sshUser = draft.value.sshUser
   settingsStore.sshPassword = draft.value.sshPassword
+  settingsStore.registries = draft.value.registries.map(r => ({ ...r }))
   
   await settingsStore.setAutoStart(draft.value.autoStart) // 会触发自启动插件并保存
   settingsStore.saveSettings()
@@ -339,7 +392,12 @@ onMounted(async () => {
 
           <!-- 🌐 镜像仓库 (Registries) -->
           <div v-show="activeTab === 'registries'" class="form-section">
-            <div class="section-title">镜像仓库加速器与私有 Harbor 列表</div>
+            <div class="section-title flex-between">
+              <span>镜像仓库加速器与私有 Harbor 列表</span>
+              <button class="form-action-btn border-btn" @click="openAddModal">
+                ➕ 新增私有仓/加速器
+              </button>
+            </div>
             <div class="registries-table-box">
               <table class="geek-settings-table">
                 <thead>
@@ -348,14 +406,26 @@ onMounted(async () => {
                     <th>Harbor URL</th>
                     <th>用户名</th>
                     <th>密码 (明文)</th>
+                    <th style="width: 80px; text-align: center;">操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="reg in registries" :key="reg.name">
+                  <tr v-for="reg in draft.registries" :key="reg.id">
                     <td><strong>{{ reg.name }}</strong></td>
-                    <td class="monospace">{{ reg.url }}</td>
+                    <td class="monospace">{{ reg.url || '-' }}</td>
                     <td>{{ reg.username || '-' }}</td>
                     <td class="monospace masked">{{ reg.password ? '••••••••' : '-' }}</td>
+                    <td style="text-align: center;">
+                      <button 
+                        v-if="!reg.isDefault" 
+                        class="action-delete-btn" 
+                        @click="handleDeleteRegistry(reg.id)"
+                        title="删除该镜像仓库"
+                      >
+                        🗑️ 删除
+                      </button>
+                      <span v-else class="system-tag">系统默认</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -426,6 +496,38 @@ onMounted(async () => {
       </button>
     </div>
   </div>
+
+  <!-- 新增仓库弹窗 -->
+  <n-modal
+    v-model:show="showAddModal"
+    preset="card"
+    title="➕ 新增镜像仓库"
+    style="width: 450px"
+  >
+    <div class="add-registry-form">
+      <div class="form-field-item">
+        <span class="field-label">仓库名称 *</span>
+        <n-input v-model:value="newRegistry.name" placeholder="例如: 腾讯云镜像源" size="small" />
+      </div>
+      <div class="form-field-item">
+        <span class="field-label">仓库 URL * (不带协议前缀，如: harbor.sk-tech.com)</span>
+        <n-input v-model:value="newRegistry.url" placeholder="例如: harbor.sk-tech.com" size="small" />
+      </div>
+      <div class="form-field-item">
+        <span class="field-label">用户名 (可选，私有仓鉴权使用)</span>
+        <n-input v-model:value="newRegistry.username" placeholder="请输入用户名" size="small" />
+      </div>
+      <div class="form-field-item">
+        <span class="field-label">密码 / Token (可选)</span>
+        <n-input v-model:value="newRegistry.password" type="password" placeholder="请输入密码" size="small" />
+      </div>
+      
+      <div class="form-modal-actions">
+        <n-button type="primary" size="small" @click="handleAddRegistry">确定添加</n-button>
+        <n-button size="small" @click="showAddModal = false">取消</n-button>
+      </div>
+    </div>
+  </n-modal>
 </template>
 
 <style scoped>
@@ -797,5 +899,48 @@ onMounted(async () => {
 .fade-in-enter-from,
 .fade-in-leave-to {
   opacity: 0;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.action-delete-btn {
+  background: transparent;
+  border: 1px solid var(--brand-danger);
+  color: var(--brand-danger);
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s ease;
+  outline: none;
+}
+.action-delete-btn:hover {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+.system-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.add-registry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.form-field-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.form-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
 }
 </style>

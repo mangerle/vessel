@@ -2,6 +2,15 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 
+export interface Registry {
+  id: string
+  name: string
+  url: string
+  username?: string
+  password?: string
+  isDefault?: boolean
+}
+
 export const useSettingsStore = defineStore('settings', () => {
   const autoStart = ref(false)
   const closeToTray = ref(true)
@@ -14,6 +23,19 @@ export const useSettingsStore = defineStore('settings', () => {
   const sshPort = ref(22)
   const sshUser = ref('')
   const sshPassword = ref('')
+  
+  // 镜像仓库配置列表，默认包含宿主机环境
+  const registries = ref<Registry[]>([
+    {
+      id: 'default',
+      name: '使用宿主机环境',
+      url: '',
+      username: '',
+      password: '',
+      isDefault: true
+    }
+  ])
+  const currentRegistryId = ref('default')
   
   // 监听主题变化，更新 HTML 属性
   watch(theme, (newTheme) => {
@@ -37,6 +59,11 @@ export const useSettingsStore = defineStore('settings', () => {
         sshPort.value = parsed.sshPort ?? 22
         sshUser.value = parsed.sshUser ?? ''
         sshPassword.value = parsed.sshPassword ?? ''
+        // 加载镜像仓库配置，并确保默认项存在
+        if (parsed.registries && Array.isArray(parsed.registries)) {
+          registries.value = parsed.registries
+        }
+        currentRegistryId.value = parsed.currentRegistryId ?? 'default'
       }
     } catch (e) {
       console.error('加载设置失败:', e)
@@ -54,6 +81,10 @@ export const useSettingsStore = defineStore('settings', () => {
         sshPort.value = parsed.sshPort ?? 22
         sshUser.value = parsed.sshUser ?? ''
         sshPassword.value = parsed.sshPassword ?? ''
+        if (parsed.registries && Array.isArray(parsed.registries)) {
+          registries.value = parsed.registries
+        }
+        currentRegistryId.value = parsed.currentRegistryId ?? 'default'
       }
     }
   }
@@ -94,7 +125,9 @@ export const useSettingsStore = defineStore('settings', () => {
       sshHost: sshHost.value,
       sshPort: sshPort.value,
       sshUser: sshUser.value,
-      sshPassword: sshPassword.value
+      sshPassword: sshPassword.value,
+      registries: registries.value,
+      currentRegistryId: currentRegistryId.value
     }))
   }
   
@@ -110,6 +143,8 @@ export const useSettingsStore = defineStore('settings', () => {
     sshPort,
     sshUser,
     sshPassword,
+    registries,
+    currentRegistryId,
     loadSettings,
     setAutoStart,
     setCloseToTray,
