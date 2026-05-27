@@ -31,6 +31,7 @@ tokio = { version = "1", features = ["full"] }
 bollard = "0.17"
 winapi = { version = "0.3", features = ["winerror"] }
 tauri-plugin-store = "2.0"
+tauri-plugin-updater = "2.0.0"
 uuid = { version = "1", features = ["v4", "serde"] }
 anyhow = "1.0.102"
 once_cell = "1.19"

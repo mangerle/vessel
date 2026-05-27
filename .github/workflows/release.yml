@@ -1,0 +1,42 @@
+name: "自动加签发布 Release"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build and release Tauri app
+        uses: tauri-apps/tauri-action@v2
+        env:
+          # 使用具有公开分发仓库写入权限的 PAT
+          GITHUB_TOKEN: ${{ secrets.CROSS_REPO_RELEASE_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "Vessel v__VERSION__"
+          releaseBody: "Vessel 自动加签构建版本"
+          releaseDraft: false
+          prerelease: false
+          owner: mangerle
+          repo: vesselApp

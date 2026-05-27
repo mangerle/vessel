@@ -2,6 +2,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useSettingsStore } from '../store/settings'
 import { invoke } from '@tauri-apps/api/core'
+import { getVersion } from '@tauri-apps/api/app'
+import { check } from '@tauri-apps/plugin-updater'
+import { relaunch } from '@tauri-apps/plugin-process'
 import {
   NSelect,
   NSwitch,
@@ -23,7 +26,10 @@ import {
   SaveOutline,
   FlashOutline,
   TrashOutline,
-  AddOutline
+  AddOutline,
+  InformationCircleOutline,
+  SparklesOutline,
+  SyncOutline
 } from '@vicons/ionicons5'
 
 const settingsStore = useSettingsStore()
@@ -37,7 +43,8 @@ const tabs = [
   { label: 'Docker 引擎', value: 'docker', icon: LogoDocker },
   { label: '镜像仓库', value: 'registries', icon: GlobeOutline },
   { label: '账户凭证', value: 'credentials', icon: ShieldCheckmarkOutline },
-  { label: '数据备份', value: 'backup', icon: SaveOutline }
+  { label: '数据备份', value: 'backup', icon: SaveOutline },
+  { label: '关于 Vessel', value: 'about', icon: InformationCircleOutline }
 ]
 
 // 菜单显示项
@@ -330,10 +337,112 @@ const handleResetFactory = async () => {
   }, 1000)
 }
 
+// 关于及检查更新相关状态
+const appVersion = ref('v0.1.0')
+const checkingUpdate = ref(false)
+const showUpdateModal = ref(false)
+const updateProgress = ref(0)
+const updateStep = ref<'idle' | 'found' | 'downloading' | 'ready'>('idle')
+const updateError = ref('')
+
+// 当前获取到的更新对象
+const activeUpdate = ref<any>(null)
+const updateInfo = ref({
+  version: '',
+  date: '',
+  body: ''
+})
+
+// 真正检查更新
+const handleCheckUpdate = async () => {
+  if (checkingUpdate.value) return
+  checkingUpdate.value = true
+  updateError.value = ''
+  
+  try {
+    const updateResult = await check()
+    if (updateResult) {
+      activeUpdate.value = updateResult
+      updateInfo.value = {
+        version: updateResult.version,
+        date: updateResult.date || '',
+        body: updateResult.body || '包含多引擎管理与稳定性修复'
+      }
+      updateStep.value = 'found'
+      showUpdateModal.value = true
+    } else {
+      message.info('当前已是最新版本')
+    }
+  } catch (e: any) {
+    console.error('检查更新失败:', e)
+    message.error('检查更新失败: ' + e)
+    updateError.value = String(e)
+  } finally {
+    checkingUpdate.value = false
+  }
+}
+
+// 真正执行下载与安装
+const handleStartDownload = async () => {
+  if (!activeUpdate.value || updateStep.value === 'downloading') return
+  updateStep.value = 'downloading'
+  updateProgress.value = 0
+  
+  try {
+    let downloadedBytes = 0
+    await activeUpdate.value.downloadAndInstall((event: any) => {
+      switch (event.event) {
+        case 'Started':
+          console.log('开始下载更新...')
+          break
+        case 'Progress':
+          if (event.data && event.data.chunkLength) {
+            downloadedBytes += event.data.chunkLength
+            // 如果含有完整的长度，则算百分比
+            if (event.data.contentLength) {
+              updateProgress.value = Math.round((downloadedBytes / event.data.contentLength) * 100)
+            } else {
+              if (updateProgress.value < 95) {
+                updateProgress.value += 5
+              }
+            }
+          }
+          break
+        case 'Finished':
+          console.log('下载完成并成功安装更新')
+          updateProgress.value = 100
+          updateStep.value = 'ready'
+          break
+      }
+    })
+  } catch (e: any) {
+    console.error('下载安装更新失败:', e)
+    message.error('更新下载失败: ' + e)
+    updateStep.value = 'found'
+  }
+}
+
+// 立即重启应用
+const handleRelaunch = async () => {
+  try {
+    await relaunch()
+  } catch (e) {
+    console.error('重启应用失败:', e)
+    message.error('重启应用失败，请手动重启')
+  }
+}
+
 onMounted(async () => {
   await settingsStore.loadSettings()
   syncDraftFromStore()
   await handleRefreshWsl(true) // 冷启动静默探测
+  
+  // 动态拉取当前真实版本号
+  try {
+    appVersion.value = 'v' + await getVersion()
+  } catch (e) {
+    console.error('获取应用版本号失败:', e)
+  }
 })
 </script>
 
@@ -565,6 +674,37 @@ onMounted(async () => {
               </div>
             </div>
           </div>
+
+          <!-- ℹ️ 关于 Vessel (About) -->
+          <div v-show="activeTab === 'about'" class="form-section about-section">
+            <div class="about-logo-wrapper">
+              <div class="about-logo-icon-bg">
+                <n-icon :component="LogoDocker" size="40" class="about-logo-icon" />
+              </div>
+              <div class="about-app-name">Vessel</div>
+              <div class="about-app-version">{{ appVersion }}</div>
+            </div>
+
+            <div class="about-description-card">
+              <p>Vessel 是一款面向现代云原生极客打造的<strong>轻量级、两栖式 Docker 桌面容器管理客户端</strong>。</p>
+              <p>系统支持本地 WSL 管道侧载直连、远程 SSH 密码多节点调度，并在本版本中全面升级了引擎多连接切换与全通道加签安全升级技术。</p>
+            </div>
+
+            <div class="about-action-row">
+              <button 
+                class="form-action-btn border-btn flex-center-btn update-check-btn" 
+                :disabled="checkingUpdate"
+                @click="handleCheckUpdate"
+              >
+                <n-icon :component="checkingUpdate ? SyncOutline : SparklesOutline" :class="{ 'rotating-icon': checkingUpdate }" style="margin-right: 6px;" />
+                {{ checkingUpdate ? '正在检查更新...' : '检查更新' }}
+              </button>
+            </div>
+
+            <div class="about-copyright">
+              Copyright &copy; 2026 Vessel Dev Team. All Rights Reserved.
+            </div>
+          </div>
         </n-scrollbar>
       </div>
     </div>
@@ -675,6 +815,76 @@ onMounted(async () => {
       <div class="form-modal-actions">
         <n-button type="primary" size="small" @click="handleAddConnection">确定添加</n-button>
         <n-button size="small" @click="showAddConnModal = false">取消</n-button>
+      </div>
+    </div>
+  </n-modal>
+
+  <!-- 软件更新弹窗 -->
+  <n-modal
+    v-model:show="showUpdateModal"
+    preset="card"
+    title="🚀 发现新版本更新"
+    style="width: 450px"
+    :closable="updateStep !== 'downloading'"
+    :mask-closable="updateStep !== 'downloading'"
+  >
+    <div class="add-registry-form">
+      <div class="update-info-header">
+        <div class="update-version-label">新版本: <strong>{{ updateInfo.version }}</strong></div>
+        <div class="update-date-label" v-if="updateInfo.date">发布时间: {{ updateInfo.date }}</div>
+      </div>
+      
+      <div class="update-logs-box">
+        <div class="update-logs-title">更新日志:</div>
+        <div class="update-logs-content" style="white-space: pre-wrap; font-size: 11px; line-height: 1.5; color: var(--text-body);">{{ updateInfo.body }}</div>
+      </div>
+
+      <!-- 进度条（当正在下载或准备就绪时展示） -->
+      <div v-if="updateStep === 'downloading' || updateStep === 'ready'" class="update-progress-area">
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" :style="{ width: updateProgress + '%' }"></div>
+        </div>
+        <div class="progress-text-row">
+          <span class="progress-status-text">
+            {{ updateStep === 'ready' ? '🎉 安装成功！等待重启' : '正在下载更新包...' }}
+          </span>
+          <span class="progress-percent-text">{{ updateProgress }}%</span>
+        </div>
+      </div>
+
+      <div class="form-modal-actions">
+        <n-button 
+          v-if="updateStep === 'found'" 
+          type="primary" 
+          size="small" 
+          @click="handleStartDownload"
+        >
+          立即下载并升级
+        </n-button>
+        <n-button 
+          v-else-if="updateStep === 'downloading'" 
+          type="primary" 
+          size="small" 
+          disabled
+        >
+          正在下载中...
+        </n-button>
+        <n-button 
+          v-else-if="updateStep === 'ready'" 
+          type="success" 
+          size="small" 
+          @click="handleRelaunch"
+        >
+          立即重启应用
+        </n-button>
+
+        <n-button 
+          v-if="updateStep === 'found'" 
+          size="small" 
+          @click="showUpdateModal = false"
+        >
+          以后再说
+        </n-button>
       </div>
     </div>
   </n-modal>
@@ -1148,5 +1358,199 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   gap: 4px;
+}
+
+/* About Section styles */
+.about-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 10px 10px 10px;
+  gap: 20px;
+}
+
+.about-logo-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.about-logo-icon-bg {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.15), inset 0 2px 4px rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+.about-logo-icon-bg:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.25), inset 0 2px 4px rgba(255, 255, 255, 0.1);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.about-logo-icon {
+  color: var(--brand-primary);
+  filter: drop-shadow(0 2px 8px rgba(16, 185, 129, 0.4));
+}
+
+.about-app-name {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text-title);
+  letter-spacing: 1px;
+  background: linear-gradient(120deg, var(--text-title) 30%, var(--brand-primary) 90%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.about-app-version {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+  background-color: rgba(255, 255, 255, 0.04);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.about-description-card {
+  max-width: 460px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-body);
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.about-description-card p {
+  margin: 0 0 8px 0;
+}
+.about-description-card p:last-child {
+  margin-bottom: 0;
+}
+
+.about-action-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.update-check-btn {
+  padding: 6px 18px !important;
+  height: 30px !important;
+  font-size: 11px !important;
+  font-weight: bold;
+}
+
+.about-copyright {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 15px;
+}
+
+.rotating-icon {
+  animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Update Modal & Progress styles */
+.update-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 12px;
+}
+
+.update-version-label {
+  font-size: 12px;
+  color: var(--text-title);
+}
+
+.update-date-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.update-logs-box {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 16px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.update-logs-title {
+  font-size: 10px;
+  font-weight: bold;
+  color: var(--text-title);
+  margin-bottom: 6px;
+}
+
+.update-logs-content {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.update-progress-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: rgba(16, 185, 129, 0.02);
+  border: 1px solid rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981 0%, #3b82f6 100%);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  border-radius: 3px;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-text-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+}
+
+.progress-status-text {
+  color: var(--text-body);
+}
+
+.progress-percent-text {
+  font-weight: bold;
+  color: var(--brand-primary);
+  font-family: monospace;
 }
 </style>
