@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, shallowRef, computed, onMounted } from 'vue'
 import { useSettingsStore } from '../store/settings'
 import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
@@ -346,7 +346,7 @@ const updateStep = ref<'idle' | 'found' | 'downloading' | 'ready'>('idle')
 const updateError = ref('')
 
 // 当前获取到的更新对象
-const activeUpdate = ref<any>(null)
+const activeUpdate = shallowRef<any>(null)
 const updateInfo = ref({
   version: '',
   date: '',
