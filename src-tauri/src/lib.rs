@@ -4,7 +4,7 @@ pub mod docker;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,6 +19,15 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // 检测到新实例启动，将已有窗口显示并聚焦
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            // 发送自定义事件给前端
+            let _ = app.emit("single-instance-detected", ());
+        }))
         .setup(|app| {
             // 设置托盘
             let quit_i = MenuItem::with_id(app, "quit", "退出 Vessel", true, None::<&str>)?;

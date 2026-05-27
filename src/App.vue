@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { exit } from '@tauri-apps/plugin-process'
 import { invoke } from '@tauri-apps/api/core'
 import { useSettingsStore } from './store/settings'
+import SingleInstanceListener from './components/common/SingleInstanceListener.vue'
 import { 
   NConfigProvider, 
   NMessageProvider, 
@@ -155,6 +156,7 @@ onMounted(async () => {
         <n-notification-provider>
           <n-global-style />
           <router-view />
+          <SingleInstanceListener />
         </n-notification-provider>
       </n-dialog-provider>
     </n-message-provider>
