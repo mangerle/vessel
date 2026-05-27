@@ -26,7 +26,7 @@ jobs:
         run: npm install
 
       - name: Build and release Tauri app
-        uses: tauri-apps/tauri-action@v2
+        uses: tauri-apps/tauri-action@v0
         env:
           # 使用具有公开分发仓库写入权限的 PAT
           GITHUB_TOKEN: ${{ secrets.CROSS_REPO_RELEASE_TOKEN }}
