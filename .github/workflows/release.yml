@@ -1,9 +1,9 @@
 name: "自动加签发布 Release"
 
-# on:
-#   push:
-#     tags:
-#       - "v*"
+on:
+  push:
+    tags:
+      - "disabled-v*"
 
 jobs:
   publish-tauri:
