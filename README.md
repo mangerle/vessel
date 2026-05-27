@@ -42,7 +42,7 @@ Vessel 是一款为现代开发者打造的极致简约、两栖式 Docker 桌�
 - **UI 组件**：[Naive UI](https://www.naiveui.com/) + [@vicons/ionicons5](https://github.com/07akioni/xicons)
 - **状态管理**：[Pinia](https://pinia.vuejs.org/)
 - **数据可视化**：[Apache ECharts](https://echarts.apache.org/) (使用 vue-echarts 桥接)
-- **数据库**：[SQLite](https://www.sqlite.org/) (通过 SQLx 异步持久化)
+- **配置持久化**：`tauri-plugin-store` (轻量级本地键值对扁平持久化)
 
 ---
 
