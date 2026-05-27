@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           git remote add target https://oauth2:${{ secrets.CROSS_REPO_RELEASE_TOKEN }}@github.com/mangerle/vesselApp.git
-          git push target ${{ github.ref_name }}
+          git -c http.extraheader="" push -f target ${{ github.ref_name }}
 
       - name: Build and release Tauri app
         uses: tauri-apps/tauri-action@v0
