@@ -40,3 +40,4 @@ jobs:
           prerelease: false
           owner: mangerle
           repo: vesselApp
+          targetCommitish: 'main'
