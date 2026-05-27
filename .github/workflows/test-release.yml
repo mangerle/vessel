@@ -13,8 +13,9 @@ jobs:
 
       - name: 测试同步 Tag 到公开仓库
         run: |
+          git config --local --unset http.https://github.com/.extraheader || true
           git remote add target https://oauth2:${{ secrets.CROSS_REPO_RELEASE_TOKEN }}@github.com/mangerle/vesselApp.git
-          git -c http.extraheader="" push -f target ${{ github.ref_name }}
+          git push -f target ${{ github.ref_name }}
 
       - name: 测试创建 Release API
         uses: softprops/action-gh-release@v1

@@ -28,8 +28,9 @@ jobs:
       - name: Sync Git Tag to Public Repo
         shell: bash
         run: |
+          git config --local --unset http.https://github.com/.extraheader || true
           git remote add target https://oauth2:${{ secrets.CROSS_REPO_RELEASE_TOKEN }}@github.com/mangerle/vesselApp.git
-          git -c http.extraheader="" push -f target ${{ github.ref_name }}
+          git push -f target ${{ github.ref_name }}
 
       - name: Build and release Tauri app
         uses: tauri-apps/tauri-action@v0
