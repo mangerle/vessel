@@ -1,0 +1,27 @@
+{
+  "header": "# Changelog\n",
+  "releaseCommitMessageFormat": "chore(release): 升级项目版本为 v{{currentTag}}",
+  "bumpFiles": [
+    {
+      "filename": "package.json",
+      "type": "json"
+    },
+    {
+      "filename": "src-tauri/tauri.conf.json",
+      "type": "json"
+    },
+    {
+      "filename": "src-tauri/Cargo.toml",
+      "updater": "scripts/cargo-updater.cjs"
+    }
+  ],
+  "types": [
+    { "type": "feat", "section": "🚀 新增功能 (Features)" },
+    { "type": "fix", "section": "🐛 Bug 修复 (Bug Fixes)" },
+    { "type": "perf", "section": "⚡ 性能优化 (Performance)" },
+    { "type": "chore", "hidden": true },
+    { "type": "docs", "hidden": true },
+    { "type": "style", "hidden": true },
+    { "type": "refactor", "hidden": true }
+  ]
+}

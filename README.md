@@ -80,6 +80,45 @@ Vessel 是一款为现代开发者打造的极致简约、两栖式 Docker 桌�
 
 ---
 
+## 📦 版本发布与更新
+
+本项目集成了 `standard-version` 与 GitHub Actions，实现了**本地一键升级**与**云端自动打包发布**的完整极客工作流。
+
+### 本地发版流程
+
+当您准备发布新版本时，只需在本地执行以下步骤：
+
+1. **自动计算版本并生成日志**：
+   在项目根目录下运行以下命令：
+   ```bash
+   npm run release
+   ```
+   此命令会全自动：
+   - 扫描自上个版本以来的规范 Commit（如 `feat:` 或 `fix:`），自动计算出下一个推荐的语义化版本号。
+   - 同步修改本地 3 个版本配置文件：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`。
+   - 自动生成或更新本地的 `CHANGELOG.md` 更新日志（汉化排版且自动过滤次要提交）。
+   - 自动在本地进行 Git 提交并打上对应的版本 Tag（如 `v0.1.4`）。
+
+   *提示：如果您想手动指定版本号（例如强行发布 `0.1.5`），可以运行：*
+   ```bash
+   npm run release -- --release-as 0.1.5
+   ```
+
+2. **推送至 GitHub 触发云端自动打包**：
+   运行以下命令，将代码和 Tag 一起推送到远端：
+   ```bash
+   git push --follow-tags
+   ```
+
+### 云端 CI 打包与日志过滤
+
+当 GitHub 接收到推送的 Tag 后，会全自动运行 `.github/workflows/release.yml` 构建发布流水线：
+- **自动抓取 Release Notes**：CI 会调用 GitHub API 生成最新的发布说明。
+- **纯净日志过滤**：CI 在将日志写入发布仓库前，会自动将 `chore(release):` 这一行剥离，只保留真正的 Bug 修复与新功能描述，使用户在软件更新提示弹窗中看到的日志保持干净、专业。
+- **打包上传**：自动加签并跨仓库将安装包发布至公开的 Releases 分发仓库中。
+
+---
+
 ## 🏗️ 架构说明
 
 Vessel 采用了一种独特的 **WSL 桥接模式**。在 Windows 环境下，它不会直接尝试连接 TCP 端口，而是通过 `wsl docker system dial-stdio` 与 Linux 内部的 Docker 守护进程建立双向流。这种方式比传统的 TCP 转发更安全、更快速，且能完美处理权限问题。而在远程部署模式中，它会基于 SSH 协议打通与 Docker Socket 守护进程的连接，实现极简的免 agent 容器跨端控制。

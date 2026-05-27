@@ -25,6 +25,27 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Generate Release Notes
+        id: release_notes
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. 尝试获取当前源码仓库针对本次 Tag 自动生成的 Release Notes
+          body=$(gh api repos/${{ github.repository }}/releases/generate-notes -f tag_name=${{ github.ref_name }} --jq .body 2>/dev/null)
+          
+          # 2. 如果获取成功，过滤掉包含 "chore(release):" 的版本升级行；如果失败，使用默认文本兜底
+          if [ -n "$body" ]; then
+            body=$(echo "$body" | grep -v -E "chore\(release\):")
+          else
+            body="Vessel 自动加签构建版本"
+          fi
+          
+          # 3. 将多行文本安全写入 GitHub 环境变量输出
+          echo "BODY<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$body" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Build and release Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -35,7 +56,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Vessel ${{ github.ref_name }}"
-          releaseBody: "Vessel 自动加签构建版本"
+          releaseBody: ${{ steps.release_notes.outputs.BODY }}
           releaseDraft: false
           prerelease: false
           owner: mangerle
