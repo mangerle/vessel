@@ -7,8 +7,6 @@ import {
   NSwitch,
   NInput,
   NInputNumber,
-  NRadio,
-  NRadioGroup,
   NCheckbox,
   NCheckboxGroup,
   NIcon,
@@ -22,7 +20,10 @@ import {
   LogoDocker,
   GlobeOutline,
   ShieldCheckmarkOutline,
-  SaveOutline
+  SaveOutline,
+  FlashOutline,
+  TrashOutline,
+  AddOutline
 } from '@vicons/ionicons5'
 
 const settingsStore = useSettingsStore()
@@ -117,12 +118,8 @@ const draft = ref({
   closeToTray: true,
   refreshInterval: 3,
   visibleMenus: ['compose', 'containers', 'images', 'networks', 'volumes'],
-  connectionMode: 'wsl',
-  wslDistro: 'Ubuntu',
-  sshHost: '192.168.1.105',
-  sshPort: 22,
-  sshUser: 'root',
-  sshPassword: 'my_ssh_root_password',
+  connections: [] as any[],
+  activeConnectionId: '',
   registries: [] as any[]
 })
 
@@ -134,14 +131,23 @@ const syncDraftFromStore = () => {
     closeToTray: settingsStore.closeToTray,
     refreshInterval: settingsStore.refreshInterval,
     visibleMenus: [...settingsStore.visibleMenus],
-    connectionMode: settingsStore.connectionMode,
-    wslDistro: settingsStore.wslDistro || 'Ubuntu',
-    sshHost: settingsStore.sshHost || '192.168.1.105',
-    sshPort: settingsStore.sshPort,
-    sshUser: settingsStore.sshUser || 'root',
-    sshPassword: settingsStore.sshPassword || '',
+    connections: settingsStore.connections.map(c => ({ ...c })),
+    activeConnectionId: settingsStore.activeConnectionId,
     registries: settingsStore.registries.map(r => ({ ...r }))
   }
+}
+
+// 规整连接列表，过滤 undefined 属性以确保 JSON 序列化对比一致
+const cleanConnections = (conns: any[]) => {
+  return conns.map(c => {
+    const clean: any = { id: c.id, name: c.name, type: c.type }
+    if (c.wslDistro !== undefined && c.wslDistro !== null) clean.wslDistro = c.wslDistro
+    if (c.sshHost !== undefined && c.sshHost !== null) clean.sshHost = c.sshHost
+    if (c.sshPort !== undefined && c.sshPort !== null) clean.sshPort = c.sshPort
+    if (c.sshUser !== undefined && c.sshUser !== null) clean.sshUser = c.sshUser
+    if (c.sshPassword !== undefined && c.sshPassword !== null) clean.sshPassword = c.sshPassword
+    return clean
+  })
 }
 
 // 探测配置是否被篡改过 (Dirty 检测)
@@ -152,25 +158,24 @@ const isDirty = computed(() => {
     draft.value.closeToTray !== settingsStore.closeToTray ||
     draft.value.refreshInterval !== settingsStore.refreshInterval ||
     JSON.stringify(draft.value.visibleMenus) !== JSON.stringify(settingsStore.visibleMenus) ||
-    draft.value.connectionMode !== settingsStore.connectionMode ||
-    draft.value.wslDistro !== (settingsStore.wslDistro || 'Ubuntu') ||
-    draft.value.sshHost !== (settingsStore.sshHost || '192.168.1.105') ||
-    draft.value.sshPort !== settingsStore.sshPort ||
-    draft.value.sshUser !== (settingsStore.sshUser || 'root') ||
-    draft.value.sshPassword !== (settingsStore.sshPassword || '') ||
+    JSON.stringify(cleanConnections(draft.value.connections)) !== JSON.stringify(cleanConnections(settingsStore.connections)) ||
+    draft.value.activeConnectionId !== settingsStore.activeConnectionId ||
     JSON.stringify(draft.value.registries) !== JSON.stringify(settingsStore.registries)
   )
 })
 
 const handleSave = async () => {
-  // 1. 同步给后端 Rust 环境 (核心：两栖执行环境切换)
-  try {
-    await invoke('update_connection_config', { 
-      mode: draft.value.connectionMode, 
-      distro: draft.value.wslDistro 
-    })
-  } catch (e) {
-    console.error('后端配置同步失败:', e)
+  // 1. 同步给后端 Rust 环境 (核心：连接引擎切换)
+  const activeConn = draft.value.connections.find(c => c.id === draft.value.activeConnectionId)
+  if (activeConn) {
+    try {
+      await invoke('update_connection_config', { 
+        mode: activeConn.type, 
+        distro: activeConn.wslDistro || null 
+      })
+    } catch (e) {
+      console.error('后端配置同步失败:', e)
+    }
   }
 
   // 2. 保存到 store 状态中并自动持久化
@@ -178,16 +183,15 @@ const handleSave = async () => {
   settingsStore.closeToTray = draft.value.closeToTray
   settingsStore.refreshInterval = draft.value.refreshInterval
   settingsStore.visibleMenus = [...draft.value.visibleMenus]
-  settingsStore.connectionMode = draft.value.connectionMode as any
-  settingsStore.wslDistro = draft.value.wslDistro
-  settingsStore.sshHost = draft.value.sshHost
-  settingsStore.sshPort = draft.value.sshPort
-  settingsStore.sshUser = draft.value.sshUser
-  settingsStore.sshPassword = draft.value.sshPassword
+  settingsStore.connections = draft.value.connections.map(c => ({ ...c }))
+  settingsStore.activeConnectionId = draft.value.activeConnectionId
   settingsStore.registries = draft.value.registries.map(r => ({ ...r }))
   
   await settingsStore.setAutoStart(draft.value.autoStart) // 会触发自启动插件并保存
-  settingsStore.saveSettings()
+  await settingsStore.saveSettings()
+  
+  // 3. 重新同步草稿，使 isDirty 变为 false，按钮自动退去高亮
+  syncDraftFromStore()
   
   message.success('配置已成功落盘，系统通信管道已重载！')
 }
@@ -207,8 +211,13 @@ const handleRefreshWsl = async (silent = false) => {
         label: distro,
         value: distro
       }))
-      if (!draft.value.wslDistro || !list.includes(draft.value.wslDistro)) {
-        draft.value.wslDistro = list[0]
+      
+      // 更新当前选中的 WSL 连接的默认分发版
+      const activeConn = draft.value.connections.find(c => c.id === draft.value.activeConnectionId)
+      if (activeConn && activeConn.type === 'wsl') {
+        if (!activeConn.wslDistro || !list.includes(activeConn.wslDistro)) {
+          activeConn.wslDistro = list[0]
+        }
       }
       if (!silent) message.success('扫描完毕！已重新装载 WSL 分发版列表。')
     } else {
@@ -219,6 +228,82 @@ const handleRefreshWsl = async (silent = false) => {
     console.error('扫描分发版失败:', err)
     if (!silent) message.error('扫描分发版失败')
   }
+}
+
+// 新增连接弹窗状态与临时表单
+const showAddConnModal = ref(false)
+const newConnection = ref({
+  name: '',
+  type: 'desktop' as 'wsl' | 'ssh' | 'desktop',
+  wslDistro: '',
+  sshHost: '192.168.1.105',
+  sshPort: 22,
+  sshUser: 'root',
+  sshPassword: ''
+})
+
+const openAddConnModal = () => {
+  newConnection.value = {
+    name: '',
+    type: 'desktop',
+    wslDistro: wslOptions.value[0]?.value || 'Ubuntu',
+    sshHost: '192.168.1.105',
+    sshPort: 22,
+    sshUser: 'root',
+    sshPassword: ''
+  }
+  showAddConnModal.value = true
+}
+
+const handleAddConnection = () => {
+  if (!newConnection.value.name.trim()) {
+    message.warning('请输入连接名称')
+    return
+  }
+  if (newConnection.value.type === 'ssh') {
+    if (!newConnection.value.sshHost.trim()) {
+      message.warning('请输入 SSH 主机地址')
+      return
+    }
+    if (!newConnection.value.sshUser.trim()) {
+      message.warning('请输入 SSH 用户名')
+      return
+    }
+  }
+  
+  const id = 'conn_' + Math.random().toString(36).substring(2, 11)
+  draft.value.connections.push({
+    id,
+    name: newConnection.value.name.trim(),
+    type: newConnection.value.type,
+    wslDistro: newConnection.value.type === 'wsl' ? newConnection.value.wslDistro : undefined,
+    sshHost: newConnection.value.type === 'ssh' ? newConnection.value.sshHost.trim() : undefined,
+    sshPort: newConnection.value.type === 'ssh' ? newConnection.value.sshPort : undefined,
+    sshUser: newConnection.value.type === 'ssh' ? newConnection.value.sshUser.trim() : undefined,
+    sshPassword: newConnection.value.type === 'ssh' ? newConnection.value.sshPassword.trim() : undefined
+  })
+
+  // 默认激活新增的连接
+  draft.value.activeConnectionId = id
+  
+  showAddConnModal.value = false
+  message.success('已添加到草稿列表，请点击保存配置使其落盘')
+}
+
+const handleDeleteConnection = (id: string) => {
+  const idx = draft.value.connections.findIndex(c => c.id === id)
+  if (idx !== -1) {
+    if (draft.value.connections[idx].id === draft.value.activeConnectionId) {
+      message.error('当前活动中的连接引擎不能删除，请先切换到其他引擎')
+      return
+    }
+    draft.value.connections.splice(idx, 1)
+    message.info('已从列表中移除，请点击保存配置使其落盘')
+  }
+}
+
+const handleSelectConnection = (id: string) => {
+  draft.value.activeConnectionId = id
 }
 
 // 打开本地配置文件目录
@@ -323,66 +408,66 @@ onMounted(async () => {
 
           <!-- 🐳 Docker 引擎 (Docker Engine) -->
           <div v-show="activeTab === 'docker'" class="form-section">
-            <div class="section-title">Docker 引擎两栖通信设置</div>
-
-            <div class="form-row">
-              <div class="row-label-area">
-                <div class="row-title">引擎连接模式</div>
-                <div class="row-desc">选择通过本地 WSL 管道侧载拉起还是通过 SSH 连接远程主机 Docker。</div>
-              </div>
-              <div class="row-value-area">
-                <n-radio-group v-model:value="draft.connectionMode" name="conn-mode">
-                  <n-space>
-                    <n-radio value="wsl">本地 WSL 管道侧载</n-radio>
-                    <n-radio value="ssh">远程 SSH 密码连接</n-radio>
-                  </n-space>
-                </n-radio-group>
-              </div>
+            <div class="section-title flex-between">
+              <span>Docker 引擎连接设置</span>
+              <button class="form-action-btn border-btn flex-center-btn" @click="openAddConnModal">
+                <n-icon :component="AddOutline" style="margin-right: 4px;" />
+                新增连接引擎
+              </button>
             </div>
 
-            <!-- 本地 WSL 管道侧载模式配置 -->
-            <transition name="fade-in">
-              <div v-if="draft.connectionMode === 'wsl'" class="nested-mode-card">
-                <div class="nested-title">🐧 本地 WSL 管道侧载配置</div>
-                <div class="form-row borderless">
-                  <div class="row-label-area">
-                    <div class="row-title">WSL Linux 分发版</div>
-                    <div class="row-desc">选择安装了 Docker 守护进程的默认 WSL 系统。</div>
-                  </div>
-                  <div class="row-value-area flex-row">
-                    <n-select v-model:value="draft.wslDistro" :options="wslOptions" class="select-field select-wsl" size="small" />
-                    <button class="form-action-btn" @click="() => handleRefreshWsl()">🔄 重新扫描</button>
-                  </div>
-                </div>
-              </div>
-            </transition>
+            <!-- 连接引擎列表 -->
+            <div class="registries-table-box">
+              <table class="geek-settings-table">
+                <thead>
+                  <tr>
+                    <th>连接名称</th>
+                    <th>连接类型</th>
+                    <th>配置信息</th>
+                    <th style="width: 140px; text-align: center;">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="conn in draft.connections" :key="conn.id" :class="{ 'active-row': draft.activeConnectionId === conn.id }">
+                    <td>
+                      <span class="active-indicator-dot" v-if="draft.activeConnectionId === conn.id"></span>
+                      <strong>{{ conn.name }}</strong>
+                    </td>
+                    <td>
+                      <span class="type-tag" :class="conn.type">{{ conn.type.toUpperCase() }}</span>
+                    </td>
+                    <td class="monospace">
+                      <span v-if="conn.type === 'wsl'">分发版: {{ conn.wslDistro || '-' }}</span>
+                      <span v-else-if="conn.type === 'ssh'">{{ conn.sshUser }}@{{ conn.sshHost }}:{{ conn.sshPort }}</span>
+                      <span v-else>默认本地命名管道</span>
+                    </td>
+                    <td style="text-align: center;">
+                      <n-space justify="center" :size="4">
+                        <button 
+                          v-if="draft.activeConnectionId !== conn.id"
+                          class="action-activate-btn flex-center-btn"
+                          @click="handleSelectConnection(conn.id)"
+                        >
+                          <n-icon :component="FlashOutline" style="margin-right: 2px;" />
+                          激活
+                        </button>
+                        <button 
+                          v-if="draft.activeConnectionId !== conn.id"
+                          class="action-delete-btn flex-center-btn" 
+                          @click="handleDeleteConnection(conn.id)"
+                        >
+                          <n-icon :component="TrashOutline" style="margin-right: 2px;" />
+                          删除
+                        </button>
+                        <span v-else class="active-tag">活动中</span>
+                      </n-space>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-            <!-- 远程 SSH 密码连接模式配置 -->
-            <transition name="fade-in">
-              <div v-if="draft.connectionMode === 'ssh'" class="nested-mode-card">
-                <div class="nested-title">🌐 远程 SSH 密码连接配置</div>
-                
-                <div class="grid-form-fields">
-                  <div class="field-item">
-                    <span class="field-label">主机地址 (Host)</span>
-                    <n-input v-model:value="draft.sshHost" size="small" placeholder="例如: 192.168.1.105" />
-                  </div>
-                  <div class="field-item">
-                    <span class="field-label">端口 (Port)</span>
-                    <n-input-number v-model:value="draft.sshPort" size="small" :min="1" :max="65535" />
-                  </div>
-                  <div class="field-item">
-                    <span class="field-label">用户名 (Username)</span>
-                    <n-input v-model:value="draft.sshUser" size="small" placeholder="root" />
-                  </div>
-                  <div class="field-item">
-                    <span class="field-label">登录密码 (Password)</span>
-                    <n-input v-model:value="draft.sshPassword" type="password" size="small" placeholder="my_ssh_root_password" />
-                  </div>
-                </div>
-              </div>
-            </transition>
-
+            <!-- 数据自动刷新周期（全局） -->
             <div class="form-row">
               <div class="row-label-area">
                 <div class="row-title">数据自动刷新周期</div>
@@ -399,8 +484,9 @@ onMounted(async () => {
           <div v-show="activeTab === 'registries'" class="form-section">
             <div class="section-title flex-between">
               <span>镜像仓库加速器与私有 Harbor 列表</span>
-              <button class="form-action-btn border-btn" @click="openAddModal">
-                ➕ 新增私有仓/加速器
+              <button class="form-action-btn border-btn flex-center-btn" @click="openAddModal">
+                <n-icon :component="AddOutline" style="margin-right: 4px;" />
+                新增私有仓/加速器
               </button>
             </div>
             <div class="registries-table-box">
@@ -423,11 +509,12 @@ onMounted(async () => {
                     <td style="text-align: center;">
                       <button 
                         v-if="!reg.isDefault" 
-                        class="action-delete-btn" 
+                        class="action-delete-btn flex-center-btn" 
                         @click="handleDeleteRegistry(reg.id)"
                         title="删除该镜像仓库"
                       >
-                        🗑️ 删除
+                        <n-icon :component="TrashOutline" style="margin-right: 2px;" />
+                        删除
                       </button>
                       <span v-else class="system-tag">系统默认</span>
                     </td>
@@ -530,6 +617,64 @@ onMounted(async () => {
       <div class="form-modal-actions">
         <n-button type="primary" size="small" @click="handleAddRegistry">确定添加</n-button>
         <n-button size="small" @click="showAddModal = false">取消</n-button>
+      </div>
+    </div>
+  </n-modal>
+
+  <!-- 新增连接引擎弹窗 -->
+  <n-modal
+    v-model:show="showAddConnModal"
+    preset="card"
+    title="新增连接引擎"
+    style="width: 450px"
+  >
+    <div class="add-registry-form">
+      <div class="form-field-item">
+        <span class="field-label">连接名称 *</span>
+        <n-input v-model:value="newConnection.name" placeholder="例如: 本地 WSL Ubuntu" size="small" />
+      </div>
+      <div class="form-field-item">
+        <span class="field-label">连接类型 *</span>
+        <n-select 
+          v-model:value="newConnection.type" 
+          :options="[
+            { label: '本地 WSL 管道侧载', value: 'wsl' },
+            { label: '远程 SSH 密码连接', value: 'ssh' },
+            { label: 'Docker Desktop (本地默认)', value: 'desktop' }
+          ]" 
+          size="small" 
+        />
+      </div>
+      
+      <!-- 如果选了 WSL 类型，直接在新增时提供默认发行版选择 -->
+      <div v-if="newConnection.type === 'wsl'" class="form-field-item">
+        <span class="field-label">默认 WSL 发行版</span>
+        <n-select v-model:value="newConnection.wslDistro" :options="wslOptions" size="small" />
+      </div>
+
+      <!-- 如果选了 SSH 类型，提供主机地址、端口、用户名和密码输入 -->
+      <div v-if="newConnection.type === 'ssh'" class="grid-form-fields" style="margin-top: 4px;">
+        <div class="field-item">
+          <span class="field-label">主机地址 (Host) *</span>
+          <n-input v-model:value="newConnection.sshHost" size="small" placeholder="例如: 192.168.1.105" />
+        </div>
+        <div class="field-item">
+          <span class="field-label">端口 (Port) *</span>
+          <n-input-number v-model:value="newConnection.sshPort" size="small" :min="1" :max="65535" />
+        </div>
+        <div class="field-item">
+          <span class="field-label">用户名 (Username) *</span>
+          <n-input v-model:value="newConnection.sshUser" size="small" placeholder="root" />
+        </div>
+        <div class="field-item">
+          <span class="field-label">登录密码 (Password)</span>
+          <n-input v-model:value="newConnection.sshPassword" type="password" size="small" placeholder="密码" />
+        </div>
+      </div>
+
+      <div class="form-modal-actions">
+        <n-button type="primary" size="small" @click="handleAddConnection">确定添加</n-button>
+        <n-button size="small" @click="showAddConnModal = false">取消</n-button>
       </div>
     </div>
   </n-modal>
@@ -947,5 +1092,61 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 12px;
+}
+
+.active-row {
+  background-color: rgba(16, 185, 129, 0.02);
+}
+.active-indicator-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--brand-primary);
+  margin-right: 6px;
+  box-shadow: 0 0 8px var(--brand-primary);
+}
+.type-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.type-tag.wsl {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+.type-tag.ssh {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+.type-tag.desktop {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+.action-activate-btn {
+  background: transparent;
+  border: 1px solid var(--brand-primary);
+  color: var(--brand-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s ease;
+  outline: none;
+}
+.action-activate-btn:hover {
+  background-color: rgba(16, 185, 129, 0.15);
+}
+.active-tag {
+  font-size: 10px;
+  color: var(--brand-primary);
+  font-weight: 700;
+}
+.flex-center-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 </style>

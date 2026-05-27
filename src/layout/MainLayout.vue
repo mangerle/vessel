@@ -30,8 +30,8 @@
         >
           <div class="tab-content">
             <n-icon :component="SwapHorizontalOutline" size="22" />
-            <span class="tab-label switcher-label" :class="{ remote: settingsStore.connectionMode === 'ssh' }">
-              {{ settingsStore.connectionMode === 'wsl' ? (settingsStore.wslDistro || 'WSL') : 'RM' }}
+            <span class="tab-label switcher-label" :class="{ remote: currentConnectionMode === 'ssh' }">
+              {{ currentConnectionShortName }}
             </span>
           </div>
         </div>
@@ -86,46 +86,28 @@
       </div>
     </div>
 
-    <!-- 两栖切换悬浮上下文菜单 -->
+    <!-- 引擎切换悬浮上下文菜单 -->
     <transition name="fade-in">
       <div v-if="showSwitcher" class="switcher-menu" @click.stop>
-        <div class="switcher-header">连接切换</div>
-        <div class="switcher-section-title">本地 WSL 发行版</div>
+        <div class="switcher-header">切换连接引擎</div>
         <div class="switcher-options">
           <div 
-            v-for="distro in wslDistros" 
-            :key="distro" 
+            v-for="conn in settingsStore.connections" 
+            :key="conn.id" 
             class="switcher-option"
-            :class="{ active: settingsStore.connectionMode === 'wsl' && settingsStore.wslDistro === distro }"
-            @click="selectWslDistro(distro)"
+            :class="{ active: settingsStore.activeConnectionId === conn.id }"
+            @click="selectConnection(conn)"
           >
             <span>
-              <n-icon :component="LogoTux" style="margin-right: 6px" />
-              {{ distro }}
+              <n-icon v-if="conn.type === 'wsl'" :component="LogoTux" style="margin-right: 6px" />
+              <n-icon v-else-if="conn.type === 'ssh'" :component="GlobeOutline" style="margin-right: 6px" />
+              <n-icon v-else :component="LogoDocker" style="margin-right: 6px" />
+              {{ conn.name }}
             </span>
-            <span v-if="settingsStore.connectionMode === 'wsl' && settingsStore.wslDistro === distro" class="active-dot"></span>
+            <span v-if="settingsStore.activeConnectionId === conn.id" class="active-dot"></span>
           </div>
-          <div v-if="wslDistros.length === 0" class="empty-wsl-text">
-            未探测到已安装的 WSL 发行版
-          </div>
-        </div>
-
-        <div class="switcher-section-title">远程 SSH 节点</div>
-        <div class="switcher-options">
-          <div 
-            v-if="settingsStore.sshHost"
-            class="switcher-option"
-            :class="{ active: settingsStore.connectionMode === 'ssh' }"
-            @click="selectSsh"
-          >
-            <span>
-              <n-icon :component="GlobeOutline" style="margin-right: 6px" />
-              {{ settingsStore.sshUser }}@{{ settingsStore.sshHost }}
-            </span>
-            <span v-if="settingsStore.connectionMode === 'ssh'" class="active-dot"></span>
-          </div>
-          <div v-else class="empty-ssh-text">
-            暂无配置，请前往设置配置 SSH
+          <div v-if="settingsStore.connections.length === 0" class="empty-wsl-text">
+            未配置任何连接引擎
           </div>
         </div>
       </div>
@@ -148,6 +130,7 @@ import {
   AlertCircleOutline,
   SyncOutline,
   LogoTux,
+  LogoDocker,
   FlashOutline
 } from '@vicons/ionicons5'
 import { useSettingsStore } from '../store/settings'
@@ -163,7 +146,69 @@ const showSwitcher = ref(false)
 const isConnected = ref(true) // 默认假设已连接，稍后通过轮询探测
 const connecting = ref(false)
 
-const wslDistros = ref<string[]>([])
+const currentConnectionShortName = computed(() => {
+  const activeConn = settingsStore.connections.find(c => c.id === settingsStore.activeConnectionId)
+  if (!activeConn) return 'DKP'
+  if (activeConn.type === 'wsl') return activeConn.wslDistro || 'WSL'
+  if (activeConn.type === 'ssh') return 'SSH'
+  return 'DKP'
+})
+
+const currentConnectionMode = computed(() => {
+  const activeConn = settingsStore.connections.find(c => c.id === settingsStore.activeConnectionId)
+  return activeConn?.type || 'desktop'
+})
+
+const selectConnection = async (conn: any) => {
+  settingsStore.activeConnectionId = conn.id
+  await settingsStore.saveSettings()
+  showSwitcher.value = false
+  message.info(`正在切换连接至: ${conn.name}...`)
+  
+  // 1. 同步给后端 Rust 环境
+  try {
+    await invoke('update_connection_config', { 
+      mode: conn.type, 
+      distro: conn.wslDistro || null 
+    })
+  } catch (e) {
+    console.error('后端连接同步失败:', e)
+  }
+
+  // 2. 强制刷新连接
+  try {
+    connecting.value = true
+    await checkDockerConnection()
+    message.success(`已连接到: ${conn.name}`)
+  } catch (e) {
+    isConnected.value = false
+  } finally {
+    connecting.value = false
+  }
+}
+
+const handleAutoConnect = async () => {
+  connecting.value = true
+  // 模拟拉起过程（根据轻量化环境自愈技术）
+  setTimeout(async () => {
+    try {
+      // 同步给后端
+      await invoke('update_connection_config', { 
+        mode: settingsStore.connectionMode, 
+        distro: settingsStore.wslDistro 
+      })
+      
+      isConnected.value = true
+      connecting.value = false
+      message.success('WSL 管道已成功拉起，数据已点亮！')
+      // 触发刷新
+      router.go(0)
+    } catch (e) {
+      connecting.value = false
+      message.error('拉起失败，请手动启动 WSL Docker 守护进程')
+    }
+  }, 1500)
+}
 
 const tabs = [
   { key: 'compose', label: '项目', icon: CubeOutline },
@@ -207,87 +252,6 @@ const toggleSwitcher = () => {
   showSwitcher.value = !showSwitcher.value
 }
 
-const selectWslDistro = async (distro: string) => {
-  settingsStore.connectionMode = 'wsl'
-  settingsStore.wslDistro = distro
-  settingsStore.saveSettings()
-  showSwitcher.value = false
-  message.info(`正在切回本地 WSL: ${distro} 连接...`)
-  
-  // 1. 同步给后端 Rust 环境
-  try {
-    await invoke('update_connection_config', { mode: 'wsl', distro })
-  } catch (e) {
-    console.error('后端连接同步失败:', e)
-  }
-
-  // 2. 强制刷新连接
-  try {
-    connecting.value = true
-    await checkDockerConnection()
-    message.success(`已连接到 WSL: ${distro}`)
-  } catch (e) {
-    isConnected.value = false
-  } finally {
-    connecting.value = false
-  }
-}
-
-const selectSsh = () => {
-  settingsStore.connectionMode = 'ssh'
-  settingsStore.saveSettings()
-  showSwitcher.value = false
-  message.info(`正在切回远程 SSH: ${settingsStore.sshHost} 节点...`)
-  
-  // SSH 切换模拟或执行
-  setTimeout(() => {
-    isConnected.value = true
-    message.success(`SSH 登录成功: 亮起荧光绿并完成侧载！`)
-  }, 1000)
-}
-
-const handleAutoConnect = async () => {
-  connecting.value = true
-  // 模拟拉起过程（根据轻量化环境自愈技术）
-  setTimeout(async () => {
-    try {
-      // 同步给后端
-      await invoke('update_connection_config', { 
-        mode: settingsStore.connectionMode, 
-        distro: settingsStore.wslDistro 
-      })
-      
-      isConnected.value = true
-      connecting.value = false
-      message.success('WSL 管道已成功拉起，数据已点亮！')
-      // 触发刷新
-      router.go(0)
-    } catch (e) {
-      connecting.value = false
-      message.error('拉起失败，请手动启动 WSL Docker 守护进程')
-    }
-  }, 1500)
-}
-
-// 获取本地安装的 WSL 发行版列表
-const fetchWslDistros = async () => {
-  try {
-    const list = await invoke<string[]>('list_wsl_distros')
-    if (list && list.length > 0) {
-      wslDistros.value = list
-      if (!settingsStore.wslDistro || !list.includes(settingsStore.wslDistro)) {
-        settingsStore.wslDistro = list[0]
-        settingsStore.saveSettings()
-      }
-    } else {
-      wslDistros.value = []
-    }
-  } catch (err) {
-    console.error('获取 WSL 发行版列表失败:', err)
-    wslDistros.value = []
-  }
-}
-
 // 点击空白关闭切换菜单
 const closeSwitcher = () => {
   showSwitcher.value = false
@@ -295,7 +259,6 @@ const closeSwitcher = () => {
 
 onMounted(() => {
   document.addEventListener('click', closeSwitcher)
-  fetchWslDistros() // 动态加载本地已注册的 WSL 实例列表
   checkDockerConnection()
   // 每 8 秒进行一次轻量心跳检测
   statusTimer = setInterval(checkDockerConnection, 8000)

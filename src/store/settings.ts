@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { Store } from '@tauri-apps/plugin-store'
 
@@ -21,19 +21,62 @@ export interface Registry {
   isDefault?: boolean
 }
 
+export interface DockerConnection {
+  id: string
+  name: string
+  type: 'wsl' | 'ssh' | 'desktop'
+  wslDistro?: string
+  sshHost?: string
+  sshPort?: number
+  sshUser?: string
+  sshPassword?: string
+}
+
 export const useSettingsStore = defineStore('settings', () => {
   const autoStart = ref(false)
   const closeToTray = ref(true)
   const theme = ref<'deep-black' | 'zed-gray' | 'light-apple'>('deep-black')
   const refreshInterval = ref(3) // 默认 3 秒
   const visibleMenus = ref<string[]>(['compose', 'containers', 'images', 'networks', 'volumes'])
-  const connectionMode = ref<'wsl' | 'ssh'>('wsl')
+  const connectionMode = ref<'wsl' | 'ssh' | 'desktop'>('wsl')
   const wslDistro = ref('')
   const sshHost = ref('')
   const sshPort = ref(22)
   const sshUser = ref('')
   const sshPassword = ref('')
-  
+
+  // 多引擎连接配置
+  const connections = ref<DockerConnection[]>([
+    {
+      id: 'conn_default_desktop',
+      name: 'Docker Desktop',
+      type: 'desktop'
+    },
+    {
+      id: 'conn_default_wsl',
+      name: 'WSL (Ubuntu)',
+      type: 'wsl',
+      wslDistro: 'Ubuntu'
+    }
+  ])
+  const activeConnectionId = ref<string>('conn_default_desktop')
+
+  const activeConnection = computed(() => {
+    return connections.value.find(c => c.id === activeConnectionId.value) || connections.value[0]
+  })
+
+  // 当 activeConnection 改变时，同步旧字段以维护向下兼容
+  watch(activeConnection, (newVal) => {
+    if (newVal) {
+      connectionMode.value = newVal.type as any
+      wslDistro.value = newVal.wslDistro || ''
+      sshHost.value = newVal.sshHost || ''
+      sshPort.value = newVal.sshPort || 22
+      sshUser.value = newVal.sshUser || ''
+      sshPassword.value = newVal.sshPassword || ''
+    }
+  }, { immediate: true, deep: true })
+
   // 镜像仓库配置列表，默认包含宿主机环境
   const registries = ref<Registry[]>([
     {
@@ -64,13 +107,57 @@ export const useSettingsStore = defineStore('settings', () => {
         closeToTray.value = (await store.get<boolean>('closeToTray')) ?? true
         refreshInterval.value = (await store.get<number>('refreshInterval')) ?? 3
         visibleMenus.value = (await store.get<string[]>('visibleMenus')) ?? ['compose', 'containers', 'images', 'networks', 'volumes']
-        connectionMode.value = (await store.get<'wsl' | 'ssh'>('connectionMode')) ?? 'wsl'
+        connectionMode.value = (await store.get<'wsl' | 'ssh' | 'desktop'>('connectionMode')) ?? 'wsl'
         wslDistro.value = (await store.get<string>('wslDistro')) ?? ''
         sshHost.value = (await store.get<string>('sshHost')) ?? ''
         sshPort.value = (await store.get<number>('sshPort')) ?? 22
         sshUser.value = (await store.get<string>('sshUser')) ?? ''
         sshPassword.value = (await store.get<string>('sshPassword')) ?? ''
         
+        // 加载多连接引擎配置
+        const savedConnections = await store.get<DockerConnection[]>('connections')
+        const savedActiveConnectionId = await store.get<string>('activeConnectionId')
+        if (savedConnections && Array.isArray(savedConnections) && savedConnections.length > 0) {
+          connections.value = savedConnections
+          activeConnectionId.value = savedActiveConnectionId || savedConnections[0].id
+        } else {
+          // 兼容旧配置转换
+          if (connectionMode.value === 'wsl') {
+            connections.value = [
+              {
+                id: 'conn_default_wsl',
+                name: `WSL (${wslDistro.value || 'Ubuntu'})`,
+                type: 'wsl',
+                wslDistro: wslDistro.value || 'Ubuntu'
+              },
+              {
+                id: 'conn_default_desktop',
+                name: 'Docker Desktop (命名管道)',
+                type: 'desktop'
+              }
+            ]
+            activeConnectionId.value = 'conn_default_wsl'
+          } else {
+            connections.value = [
+              {
+                id: 'conn_default_ssh',
+                name: `SSH (${sshUser.value || 'root'}@${sshHost.value || 'localhost'})`,
+                type: 'ssh',
+                sshHost: sshHost.value,
+                sshPort: sshPort.value,
+                sshUser: sshUser.value,
+                sshPassword: sshPassword.value
+              },
+              {
+                id: 'conn_default_desktop',
+                name: 'Docker Desktop (命名管道)',
+                type: 'desktop'
+              }
+            ]
+            activeConnectionId.value = 'conn_default_ssh'
+          }
+        }
+
         const savedRegistries = await store.get<Registry[]>('registries')
         if (savedRegistries && Array.isArray(savedRegistries)) {
           registries.value = savedRegistries
@@ -124,6 +211,8 @@ export const useSettingsStore = defineStore('settings', () => {
       await store.set('sshPort', sshPort.value)
       await store.set('sshUser', sshUser.value)
       await store.set('sshPassword', sshPassword.value)
+      await store.set('connections', connections.value)
+      await store.set('activeConnectionId', activeConnectionId.value)
       await store.set('registries', registries.value)
       await store.set('currentRegistryId', currentRegistryId.value)
       
@@ -157,6 +246,8 @@ export const useSettingsStore = defineStore('settings', () => {
     sshPort,
     sshUser,
     sshPassword,
+    connections,
+    activeConnectionId,
     registries,
     currentRegistryId,
     loadSettings,
