@@ -25,15 +25,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Sync Git Tag to Public Repo
-        shell: bash
-        env:
-          CROSS_REPO_TOKEN: ${{ secrets.CROSS_REPO_RELEASE_TOKEN }}
-        run: |
-          git config --local --unset http.https://github.com/.extraheader || true
-          git remote add target https://oauth2:${CROSS_REPO_TOKEN}@github.com/mangerle/vesselApp.git
-          git -c credential.helper= push -f target ${{ github.ref_name }}
-
       - name: Build and release Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -49,3 +40,4 @@ jobs:
           prerelease: false
           owner: mangerle
           repo: vesselApp
+          releaseCommitish: 'main'

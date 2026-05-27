@@ -11,14 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 测试同步 Tag 到公开仓库
-        env:
-          CROSS_REPO_TOKEN: ${{ secrets.CROSS_REPO_RELEASE_TOKEN }}
-        run: |
-          git config --local --unset http.https://github.com/.extraheader || true
-          git remote add target https://oauth2:${CROSS_REPO_TOKEN}@github.com/mangerle/vesselApp.git
-          git -c credential.helper= push -f target ${{ github.ref_name }}
-
       - name: 测试创建 Release API
         uses: softprops/action-gh-release@v1
         with:
@@ -26,6 +18,7 @@ jobs:
           repository: mangerle/vesselApp
           tag_name: ${{ github.ref_name }}
           name: "Test Release ${{ github.ref_name }}"
-          body: "这是一个极速测试跨仓库 API 创建的 Release，不包含二进制编译产物"
+          body: "这是一个极速测试跨仓库 API 创建 of Release，不包含二进制编译产物"
           draft: false
           prerelease: false
+          target_commitish: 'main'
