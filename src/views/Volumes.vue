@@ -17,11 +17,9 @@ import {
   DocumentTextOutline,
   SparklesOutline,
   TrashOutline,
-  HomeOutline,
   DocumentOutline,
   DiscOutline,
   ArrowBackOutline,
-  InformationCircleOutline,
   LockClosedOutline,
   FlashOutline,
   LeafOutline,
@@ -281,7 +279,7 @@ onMounted(() => {
             </div>
             <!-- 网关/驱动 -->
             <div class="item-sub-meta">
-              {{ item.driver }} · {{ item.scope }}
+              {{ item.driver }}
             </div>
           </div>
         </div>

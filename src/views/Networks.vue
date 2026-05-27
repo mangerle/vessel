@@ -16,7 +16,6 @@ import {
   FlashOutline,
   CloseCircleOutline,
   GlobeOutline,
-  LinkOutline,
   FileTrayFullOutline
 } from '@vicons/ionicons5'
 

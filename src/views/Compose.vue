@@ -29,7 +29,8 @@ import {
   BarChartOutline,
   CheckmarkCircleOutline,
   LogoDocker,
-  FileTrayFullOutline
+  FileTrayFullOutline,
+  FlashOutline
 } from '@vicons/ionicons5'
 
 import VChart from 'vue-echarts'
@@ -343,10 +344,7 @@ const handleRunExec = async () => {
   }
 }
 
-const handleImportProject = () => {
-  importPath.value = ''
-  showImportModal.value = true
-}
+
 
 const pickComposeFile = async () => {
   try {

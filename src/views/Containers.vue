@@ -16,8 +16,7 @@ import {
 import {
   TerminalOutline,
   BarChartOutline,
-  CheckmarkCircleOutline,
-  LogoDocker
+  CheckmarkCircleOutline
 } from '@vicons/ionicons5'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'

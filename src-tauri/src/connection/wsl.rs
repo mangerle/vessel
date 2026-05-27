@@ -86,9 +86,19 @@ impl WslBridge {
                             _ = tokio::io::copy(&mut stdout, &mut client_writer) => {},
                         };
                         
-                        // 确保进程结束并回收资源
+                        // 显式释放所有 IO 句柄与管道，向 wsl 发送 EOF，引导其自动关闭
+                        drop(stdin);
+                        drop(stdout);
+                        drop(client_reader);
+                        drop(client_writer);
+                        drop(client_socket);
+
+                        // 强行终止子进程并带有超时保护地等待其退出，防止发生协程卡死
                         let _ = child.kill().await;
-                        let _ = child.wait().await;
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_secs(1),
+                            child.wait()
+                        ).await;
                     }
                 });
             }
