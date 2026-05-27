@@ -1,5 +1,4 @@
 pub mod connection;
-pub mod db;
 pub mod docker;
 
 use tauri::{
@@ -15,6 +14,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
@@ -61,23 +61,6 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::block_on(async move {
-                let app_dir = app_handle
-                    .path()
-                    .app_data_dir()
-                    .map_err(|e| anyhow::anyhow!("无法获取应用数据目录: {}", e))?;
-
-                if !app_dir.exists() {
-                    std::fs::create_dir_all(&app_dir)
-                        .map_err(|e| anyhow::anyhow!("无法创建应用数据目录: {}", e))?;
-                }
-
-                let db_path = app_dir.join("docker-manager.sqlite");
-                let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
-                db::init_db(&db_url).await?;
-                Ok::<(), anyhow::Error>(())
-            })?;
             Ok(())
         })
         .on_window_event(|window, event| {

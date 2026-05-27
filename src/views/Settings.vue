@@ -232,9 +232,14 @@ const handleOpenConfigDir = async () => {
 }
 
 // 恢复出厂设置
-const handleResetFactory = () => {
+const handleResetFactory = async () => {
   localStorage.clear()
-  message.error('本地缓存已擦除！恢复出厂设置中...')
+  try {
+    await settingsStore.resetSettings()
+    message.error('本地物理配置已擦除！恢复出厂设置中...')
+  } catch (err) {
+    message.error('清除物理配置文件失败，仅清理本地缓存。')
+  }
   setTimeout(() => {
     window.location.reload()
   }, 1000)

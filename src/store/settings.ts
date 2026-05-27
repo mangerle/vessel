@@ -1,6 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
+import { Store } from '@tauri-apps/plugin-store'
+
+// 声明全局惰性 Store 实例
+let storeInstance: Store | null = null
+const getStore = async () => {
+  if (!storeInstance) {
+    storeInstance = await Store.load('settings.json')
+  }
+  return storeInstance
+}
 
 export interface Registry {
   id: string
@@ -42,50 +52,36 @@ export const useSettingsStore = defineStore('settings', () => {
     document.documentElement.setAttribute('data-theme', newTheme)
   }, { immediate: true })
 
+  // 异步加载本地配置文件中的设置
   const loadSettings = async () => {
     try {
       autoStart.value = await isEnabled()
       
-      const saved = localStorage.getItem('vessel-settings')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        closeToTray.value = parsed.closeToTray ?? true
-        theme.value = parsed.theme ?? 'deep-black'
-        refreshInterval.value = parsed.refreshInterval ?? 3
-        visibleMenus.value = parsed.visibleMenus ?? ['compose', 'containers', 'images', 'networks', 'volumes']
-        connectionMode.value = parsed.connectionMode ?? 'wsl'
-        wslDistro.value = parsed.wslDistro ?? ''
-        sshHost.value = parsed.sshHost ?? ''
-        sshPort.value = parsed.sshPort ?? 22
-        sshUser.value = parsed.sshUser ?? ''
-        sshPassword.value = parsed.sshPassword ?? ''
-        // 加载镜像仓库配置，并确保默认项存在
-        if (parsed.registries && Array.isArray(parsed.registries)) {
-          registries.value = parsed.registries
+      const store = await getStore()
+      const hasSavedTheme = await store.get<string>('theme')
+      if (hasSavedTheme !== null) {
+        theme.value = hasSavedTheme as any
+        closeToTray.value = (await store.get<boolean>('closeToTray')) ?? true
+        refreshInterval.value = (await store.get<number>('refreshInterval')) ?? 3
+        visibleMenus.value = (await store.get<string[]>('visibleMenus')) ?? ['compose', 'containers', 'images', 'networks', 'volumes']
+        connectionMode.value = (await store.get<'wsl' | 'ssh'>('connectionMode')) ?? 'wsl'
+        wslDistro.value = (await store.get<string>('wslDistro')) ?? ''
+        sshHost.value = (await store.get<string>('sshHost')) ?? ''
+        sshPort.value = (await store.get<number>('sshPort')) ?? 22
+        sshUser.value = (await store.get<string>('sshUser')) ?? ''
+        sshPassword.value = (await store.get<string>('sshPassword')) ?? ''
+        
+        const savedRegistries = await store.get<Registry[]>('registries')
+        if (savedRegistries && Array.isArray(savedRegistries)) {
+          registries.value = savedRegistries
         }
-        currentRegistryId.value = parsed.currentRegistryId ?? 'default'
+        currentRegistryId.value = (await store.get<string>('currentRegistryId')) ?? 'default'
+      } else {
+        // 若本地没有配置文件，则将当前的默认值保存落盘
+        await saveSettings()
       }
     } catch (e) {
-      console.error('加载设置失败:', e)
-      const saved = localStorage.getItem('vessel-settings')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        autoStart.value = parsed.autoStart || false
-        closeToTray.value = parsed.closeToTray ?? true
-        theme.value = parsed.theme ?? 'deep-black'
-        refreshInterval.value = parsed.refreshInterval ?? 3
-        visibleMenus.value = parsed.visibleMenus ?? ['compose', 'containers', 'images', 'networks', 'volumes']
-        connectionMode.value = parsed.connectionMode ?? 'wsl'
-        wslDistro.value = parsed.wslDistro ?? ''
-        sshHost.value = parsed.sshHost ?? ''
-        sshPort.value = parsed.sshPort ?? 22
-        sshUser.value = parsed.sshUser ?? ''
-        sshPassword.value = parsed.sshPassword ?? ''
-        if (parsed.registries && Array.isArray(parsed.registries)) {
-          registries.value = parsed.registries
-        }
-        currentRegistryId.value = parsed.currentRegistryId ?? 'default'
-      }
+      console.error('从 settings.json 加载配置失败:', e)
     }
   }
   
@@ -97,38 +93,56 @@ export const useSettingsStore = defineStore('settings', () => {
         await disable()
       }
       autoStart.value = value
-      saveSettings()
+      await saveSettings()
     } catch (e) {
       console.error('设置自启动失败:', e)
     }
   }
 
-  const setCloseToTray = (value: boolean) => {
+  const setCloseToTray = async (value: boolean) => {
     closeToTray.value = value
-    saveSettings()
+    await saveSettings()
   }
 
-  const setTheme = (value: 'deep-black' | 'zed-gray' | 'light-apple') => {
+  const setTheme = async (value: 'deep-black' | 'zed-gray' | 'light-apple') => {
     theme.value = value
-    saveSettings()
+    await saveSettings()
   }
   
-  const saveSettings = () => {
-    localStorage.setItem('vessel-settings', JSON.stringify({
-      autoStart: autoStart.value,
-      closeToTray: closeToTray.value,
-      theme: theme.value,
-      refreshInterval: refreshInterval.value,
-      visibleMenus: visibleMenus.value,
-      connectionMode: connectionMode.value,
-      wslDistro: wslDistro.value,
-      sshHost: sshHost.value,
-      sshPort: sshPort.value,
-      sshUser: sshUser.value,
-      sshPassword: sshPassword.value,
-      registries: registries.value,
-      currentRegistryId: currentRegistryId.value
-    }))
+  // 异步将当前的内存设置保存到本地物理 json 文件中
+  const saveSettings = async () => {
+    try {
+      const store = await getStore()
+      await store.set('autoStart', autoStart.value)
+      await store.set('closeToTray', closeToTray.value)
+      await store.set('theme', theme.value)
+      await store.set('refreshInterval', refreshInterval.value)
+      await store.set('visibleMenus', visibleMenus.value)
+      await store.set('connectionMode', connectionMode.value)
+      await store.set('wslDistro', wslDistro.value)
+      await store.set('sshHost', sshHost.value)
+      await store.set('sshPort', sshPort.value)
+      await store.set('sshUser', sshUser.value)
+      await store.set('sshPassword', sshPassword.value)
+      await store.set('registries', registries.value)
+      await store.set('currentRegistryId', currentRegistryId.value)
+      
+      // 执行物理落盘
+      await store.save()
+    } catch (e) {
+      console.error('保存配置到 settings.json 失败:', e)
+    }
+  }
+  
+  // 恢复出厂设置，直接清空本地配置文件
+  const resetSettings = async () => {
+    try {
+      const store = await getStore()
+      await store.clear()
+      await store.save()
+    } catch (e) {
+      console.error('清除 settings.json 失败:', e)
+    }
   }
   
   return {
@@ -149,7 +163,8 @@ export const useSettingsStore = defineStore('settings', () => {
     setAutoStart,
     setCloseToTray,
     setTheme,
-    saveSettings
+    saveSettings,
+    resetSettings
   }
 })
 
