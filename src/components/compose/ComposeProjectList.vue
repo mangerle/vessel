@@ -156,7 +156,7 @@ const handleImportProject = () => {
 /* 节点样式 */
 .project-node,
 .container-node {
-  height: 30px;
+  height: 32px;
   display: flex;
   align-items: center;
   margin: 2px 8px;
@@ -165,7 +165,7 @@ const handleImportProject = () => {
   cursor: pointer;
   color: var(--text-body);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .project-node:hover,
