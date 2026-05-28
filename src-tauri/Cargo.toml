@@ -28,6 +28,7 @@ tauri-plugin-single-instance = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 bollard = "0.17"
 winapi = { version = "0.3", features = ["winerror"] }
 tauri-plugin-store = "2.0"

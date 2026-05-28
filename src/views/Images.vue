@@ -30,6 +30,7 @@ import {
   HelpCircleOutline,
   LayersOutline,
   CloudDownloadOutline,
+  CloudUploadOutline,
   DocumentTextOutline,
   LogoTux,
   LogoDocker,
@@ -124,9 +125,12 @@ const filteredImages = computed(() => {
   })
 })
 
-// 监听当前正在拉取的后台任务
-const activePullTasks = computed(() => {
-  return taskStore.tasks.filter(t => t.name.startsWith('拉取镜像:') && (t.status === 'running' || t.status === 'error' || t.status === 'success'))
+// 监听当前镜像相关的后台任务 (拉取、导入、导出)
+const activeImageTasks = computed(() => {
+  return taskStore.tasks.filter(t => 
+    (t.name.startsWith('拉取镜像:') || t.name.startsWith('导入镜像:') || t.name.startsWith('导出镜像:')) && 
+    (t.status === 'running' || t.status === 'error' || t.status === 'success')
+  )
 })
 
 const viewHubImage = (image: any) => {
@@ -202,21 +206,63 @@ const isDangling = (item: any) => {
 }
 
 const pruneDanglingImages = async () => {
-  const dangling = imageStore.images.filter(isDangling)
-  if (dangling.length === 0) {
-    message.info('未检测到任何虚悬 (dangling) 垃圾镜像！')
-    return
-  }
-  
-  message.warning(`正在深度清理 ${dangling.length} 个虚悬镜像...`)
+  message.warning('正在深度清理虚悬垃圾镜像...')
   try {
-    await Promise.all(dangling.map(img => imageStore.removeImage(img.id)))
-    message.success('清理完毕！成功释放磁盘空间。')
+    const result = await imageStore.pruneDanglingImages()
+    const reclaimedMB = (result.space_reclaimed / (1024 * 1024)).toFixed(2)
+    message.success(`清理完毕！成功清理 ${result.deleted_count} 个镜像，释放了 ${reclaimedMB} MB 磁盘空间。`)
     selectedId.value = null
     selectedDetails.value = null
-    await imageStore.fetchImages()
   } catch (err: any) {
-    message.error(`部分清理失败: ${err}`)
+    message.error(`清理失败: ${err}`)
+  }
+}
+
+const showImportModal = ref(false)
+const importFilePath = ref('')
+const importCustomTag = ref('')
+
+const openImportModal = () => {
+  importFilePath.value = ''
+  importCustomTag.value = ''
+  showImportModal.value = true
+}
+
+const selectImportFile = async () => {
+  const { open } = await import('@tauri-apps/plugin-dialog')
+  const path = await open({
+    title: '选择要导入的镜像 Tar 包',
+    multiple: false,
+    filters: [{ name: 'Tar Archive', extensions: ['tar', 'tar.gz'] }]
+  })
+  if (path && typeof path === 'string') {
+    importFilePath.value = path
+  }
+}
+
+const handleImportImage = async () => {
+  if (!importFilePath.value) {
+    message.warning('请先选择要导入的镜像文件')
+    return
+  }
+  const path = importFilePath.value
+  const customTag = importCustomTag.value.trim()
+
+  showImportModal.value = false
+  message.info('正在启动镜像导入任务...')
+  try {
+    await imageStore.importImage(path, customTag || undefined)
+  } catch (err: any) {
+    message.error(`导入镜像失败: ${err}`)
+  }
+}
+
+const exportImage = async (id: string, tag: string) => {
+  try {
+    await imageStore.exportImage(id, tag)
+    message.info('镜像后台导出中，请稍候在任务面板查看进度')
+  } catch (err: any) {
+    message.error(`导出镜像失败: ${err}`)
   }
 }
 
@@ -440,6 +486,7 @@ const menuTarget = ref<any>(null)
 const menuOptions = [
   { label: '详情', key: 'detail', icon: () => h(NIcon, null, { default: () => h(SearchOutline) }) },
   { label: '快速运行 (Run)', key: 'run', icon: () => h(NIcon, null, { default: () => h(PlayOutline) }) },
+  { label: '导出镜像', key: 'export', icon: () => h(NIcon, null, { default: () => h(CloudUploadOutline) }) },
   { label: '彻底删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }
 ]
 
@@ -468,6 +515,9 @@ const handleMenuSelect = (key: string) => {
     case 'run':
       openRunModal(tag)
       break
+    case 'export':
+      exportImage(id, tag)
+      break
     case 'delete':
       handleDelete(id)
       break
@@ -489,8 +539,13 @@ onMounted(() => {
           class="local-search-input" 
           placeholder="过滤本地镜像..." 
         />
-        <button class="prune-btn-v3" @click="pruneDanglingImages" title="清理无标签垃圾镜像">
-          🧼 清理
+        <button class="action-btn-v3" @click="openImportModal" title="导入本地镜像 Tar 包">
+          <n-icon :component="CloudDownloadOutline" />
+          <span>导入</span>
+        </button>
+        <button class="action-btn-v3 prune-btn" @click="pruneDanglingImages" title="清理无标签垃圾镜像">
+          <n-icon :component="TrashOutline" />
+          <span>清理</span>
         </button>
       </div>
 
@@ -570,6 +625,10 @@ onMounted(() => {
             <button class="run-image-gold-btn" @click="openRunModal(selectedDetails.tags?.[0] || selectedDetails.id)">
               <n-icon :component="PlayOutline" />
               运行 (Run)
+            </button>
+            <button class="action-btn-v3 export-btn" @click="exportImage(selectedDetails.id, selectedDetails.tags?.[0] || selectedDetails.id)">
+              <n-icon :component="CloudUploadOutline" />
+              导出
             </button>
             <button class="delete-btn" @click="handleDelete(selectedDetails.id)">
               <n-icon :component="TrashOutline" />
@@ -659,12 +718,12 @@ onMounted(() => {
             </div>
 
             <!-- 任务进度 -->
-            <div v-if="activePullTasks.length > 0" class="active-pull-panel">
+            <div v-if="activeImageTasks.length > 0" class="active-pull-panel">
               <div class="panel-title">
                 <n-icon :component="FlashOutline" />
-                拉取任务状态:
+                镜像任务状态:
               </div>
-              <div v-for="task in activePullTasks" :key="task.id" class="pull-task-card">
+              <div v-for="task in activeImageTasks" :key="task.id" class="pull-task-card">
                 <div class="task-info">
                   <span class="task-name">{{ task.name }}</span>
                   <div class="task-right">
@@ -744,7 +803,7 @@ onMounted(() => {
                     size="small"
                     style="margin-right: 6px; margin-bottom: 6px;"
                   >
-                    ⚡ {{ p }}
+                    {{ p }}
                   </n-tag>
                 </div>
                 <div v-else class="empty-text">无对外暴露端口</div>
@@ -769,7 +828,7 @@ onMounted(() => {
   <n-modal
     v-model:show="showRunModal"
     preset="card"
-    title="🚀 运行新容器"
+    title="运行新容器"
     style="width: 600px"
   >
     <n-scrollbar style="max-height: 65vh; padding-right: 8px;">
@@ -923,6 +982,43 @@ onMounted(() => {
     trigger="manual"
     @select="handleMenuSelect"
   />
+
+  <!-- 导入镜像弹窗 -->
+  <n-modal
+    v-model:show="showImportModal"
+    preset="card"
+    title="导入本地镜像"
+    style="width: 500px"
+  >
+    <div class="run-modal-body">
+      <div class="field-section">
+        <div class="field-row">
+          <div class="field-label">镜像归档文件 (.tar)</div>
+          <div style="display: flex; gap: 8px;">
+            <n-input 
+              v-model:value="importFilePath" 
+              placeholder="选择本地 tar 或 tar.gz 镜像包..." 
+              readonly 
+            />
+            <n-button type="primary" secondary @click="selectImportFile">选择文件</n-button>
+          </div>
+        </div>
+
+        <div class="field-row" style="margin-top: 12px;">
+          <div class="field-label">自定义镜像标签 (选填)</div>
+          <n-input 
+            v-model:value="importCustomTag" 
+            placeholder="例如 nginx:1.21-alpine (留空则默认使用包内标签)" 
+          />
+        </div>
+      </div>
+      
+      <div class="warning-modal-footer" style="margin-top: 16px;">
+        <n-button @click="showImportModal = false">取消</n-button>
+        <n-button type="primary" :disabled="!importFilePath" @click="handleImportImage">开始导入</n-button>
+      </div>
+    </div>
+  </n-modal>
 </template>
 
 <style scoped>
@@ -934,7 +1030,7 @@ onMounted(() => {
 }
 
 .list-column {
-  width: 240px;
+  width: 280px;
   background-color: var(--bg-sidebar);
   border: 1px solid var(--border-color);
   border-radius: 4px;
@@ -970,7 +1066,7 @@ onMounted(() => {
   color: var(--text-muted);
 }
 
-.prune-btn-v3 {
+.action-btn-v3 {
   height: 22px;
   background: transparent;
   border: 1px solid var(--border-color);
@@ -982,8 +1078,16 @@ onMounted(() => {
   transition: all 0.15s ease;
   outline: none;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
-.prune-btn-v3:hover {
+.action-btn-v3:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--text-title);
+  color: var(--text-title);
+}
+.action-btn-v3.prune-btn:hover {
   background-color: rgba(239, 68, 68, 0.1);
   border-color: var(--brand-danger);
   color: var(--brand-danger);

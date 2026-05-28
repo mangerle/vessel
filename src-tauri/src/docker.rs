@@ -1,8 +1,9 @@
 use crate::connection::get_docker_client;
+use tokio_util::bytes::Bytes;
 use bollard::container::{Config, ListContainersOptions, LogsOptions, StatsOptions};
 use bollard::models::{HostConfig, PortBinding};
 use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults};
-use bollard::image::{CreateImageOptions, ListImagesOptions};
+use bollard::image::{CreateImageOptions, ListImagesOptions, ImportImageOptions, PruneImagesOptions, TagImageOptions};
 use bollard::network::InspectNetworkOptions;
 use futures_util::stream::StreamExt;
 use once_cell::sync::Lazy;
@@ -15,6 +16,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio_util::io::ReaderStream;
 
 /// 容器信息结构体
 #[derive(Serialize)]
@@ -1382,3 +1384,237 @@ pub async fn open_config_dir(app: AppHandle) -> Result<(), String> {
         .open_path(app_dir.to_string_lossy().to_string(), None::<String>)
         .map_err(|e| format!("无法打开目录: {}", e))
 }
+
+/// 导出镜像为 tar 文件 (Save Image)
+#[tauri::command]
+pub async fn export_image(
+    app: AppHandle,
+    image_id_or_name: String,
+    path: String,
+) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    let mut stream = docker.export_image(&image_id_or_name);
+
+    let app_handle = app.clone();
+    let path_clone = path.clone();
+    let name_clone = image_id_or_name.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let mut file = match tokio::fs::File::create(&path_clone).await {
+            Ok(f) => f,
+            Err(e) => {
+                let err_msg = format!("创建目标文件失败: {}", e);
+                eprintln!("{}", err_msg);
+                #[derive(Clone, serde::Serialize)]
+                struct ExportErrPayload {
+                    image: String,
+                    error: String,
+                }
+                let _ = app_handle.emit("image-export-error", ExportErrPayload {
+                    image: name_clone,
+                    error: err_msg,
+                });
+                return;
+            }
+        };
+
+        let mut total_bytes = 0i64;
+
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    total_bytes += bytes.len() as i64;
+                    if let Err(e) = file.write_all(&bytes).await {
+                        let err_msg = format!("写入镜像数据失败: {}", e);
+                        eprintln!("{}", err_msg);
+                        #[derive(Clone, serde::Serialize)]
+                        struct ExportErrPayload {
+                            image: String,
+                            error: String,
+                        }
+                        let _ = app_handle.emit("image-export-error", ExportErrPayload {
+                            image: name_clone,
+                            error: err_msg,
+                        });
+                        return;
+                    }
+
+                    // 广播进度事件，带上已导出大小的格式化信息
+                    #[derive(Clone, serde::Serialize)]
+                    struct ExportProgressPayload {
+                        image: String,
+                        bytes_written: i64,
+                    }
+                    let _ = app_handle.emit("image-export-progress", ExportProgressPayload {
+                        image: name_clone.clone(),
+                        bytes_written: total_bytes,
+                    });
+                }
+                Err(e) => {
+                    let err_msg = format!("读取镜像导出流失败: {}", e);
+                    eprintln!("{}", err_msg);
+                    #[derive(Clone, serde::Serialize)]
+                    struct ExportErrPayload {
+                        image: String,
+                        error: String,
+                    }
+                    let _ = app_handle.emit("image-export-error", ExportErrPayload {
+                        image: name_clone,
+                        error: err_msg,
+                    });
+                    return;
+                }
+            }
+        }
+
+        if let Err(e) = file.flush().await {
+            let err_msg = format!("刷新文件失败: {}", e);
+            eprintln!("{}", err_msg);
+            #[derive(Clone, serde::Serialize)]
+            struct ExportErrPayload {
+                image: String,
+                error: String,
+            }
+            let _ = app_handle.emit("image-export-error", ExportErrPayload {
+                image: name_clone,
+                error: err_msg,
+            });
+            return;
+        }
+
+        println!("镜像导出任务结束: {}", name_clone);
+        let _ = app_handle.emit("image-export-finished", name_clone);
+    });
+
+    Ok(())
+}
+
+/// 导入镜像文件 (Load Image)
+#[tauri::command]
+pub async fn import_image(
+    app: AppHandle,
+    path: String,
+) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+
+    let file = tokio::fs::File::open(&path)
+        .await
+        .map_err(|e| format!("无法打开镜像包文件: {}", e))?;
+
+    let byte_stream = ReaderStream::new(file)
+        .map(|res| {
+            res.unwrap_or_else(|e| {
+                eprintln!("读取 Tar 文件出错: {}", e);
+                Bytes::new()
+            })
+        });
+
+    let mut stream = docker.import_image_stream(
+        ImportImageOptions { quiet: false },
+        byte_stream,
+        None,
+    );
+
+    let app_handle = app.clone();
+    let path_clone = path.clone();
+
+    tauri::async_runtime::spawn(async move {
+        // 流式处理导入进度并发送事件
+        while let Some(msg) = stream.next().await {
+            match msg {
+                Ok(info) => {
+                    #[derive(Clone, serde::Serialize)]
+                    struct ImportProgressPayload {
+                        path: String,
+                        status: Option<String>,
+                        stream: Option<String>,
+                        error: Option<String>,
+                        progress: Option<String>,
+                    }
+                    let payload = ImportProgressPayload {
+                        path: path_clone.clone(),
+                        status: info.status,
+                        stream: info.stream,
+                        error: info.error,
+                        progress: info.progress,
+                    };
+                    if let Err(e) = app_handle.emit("image-import-progress", payload) {
+                        eprintln!("发送镜像导入进度事件失败: {}", e);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("导入镜像 {} 出错: {}", path_clone, e);
+                    #[derive(Clone, serde::Serialize)]
+                    struct ImportErrPayload {
+                        path: String,
+                        error: String,
+                    }
+                    let _ = app_handle.emit("image-import-error", ImportErrPayload {
+                        path: path_clone.clone(),
+                        error: e.to_string(),
+                    });
+                    return;
+                }
+            }
+        }
+        println!("镜像导入任务结束: {}", path_clone);
+        let _ = app_handle.emit("image-import-finished", path_clone);
+    });
+
+    Ok(())
+}
+
+/// 清理无用的虚悬镜像 (Prune Images)
+#[derive(serde::Serialize)]
+pub struct PruneImagesResult {
+    pub deleted_count: usize,
+    pub space_reclaimed: i64,
+}
+
+#[tauri::command]
+pub async fn prune_images() -> Result<PruneImagesResult, String> {
+    let docker = get_docker_client().await?;
+
+    // 构建过滤参数，仅清理虚悬镜像
+    let mut filters = HashMap::new();
+    filters.insert("dangling".to_string(), vec!["true".to_string()]);
+
+    let options = PruneImagesOptions { filters };
+    let response = docker
+        .prune_images(Some(options))
+        .await
+        .map_err(|e| format!("清理虚悬镜像失败: {}", e))?;
+
+    let deleted_count = response.images_deleted.as_ref().map(|v| v.len()).unwrap_or(0);
+    let space_reclaimed = response.space_reclaimed.unwrap_or(0);
+
+    Ok(PruneImagesResult {
+        deleted_count,
+        space_reclaimed,
+    })
+}
+
+/// 为镜像打标签 (Tag Image)
+#[tauri::command]
+pub async fn tag_image(
+    image_name: String,
+    repo: String,
+    tag: String,
+) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+
+    let options = TagImageOptions {
+        repo,
+        tag,
+    };
+
+    docker
+        .tag_image(&image_name, Some(options))
+        .await
+        .map_err(|e| format!("为镜像打标签失败: {}", e))?;
+
+    Ok(())
+}
+
+
