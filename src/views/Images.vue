@@ -222,6 +222,58 @@ const showImportModal = ref(false)
 const importFilePath = ref('')
 const importCustomTag = ref('')
 
+// 右键菜单防截断
+const adjustedY = computed(() => {
+  if (y.value > window.innerHeight - 300) {
+    return Math.max(10, y.value - 190)
+  }
+  return y.value
+})
+
+// 镜像打标签
+const showTagModal = ref(false)
+const tagTargetImageId = ref('')
+const tagRepo = ref('')
+const tagValue = ref('')
+
+const openTagModal = (id: string, currentTag?: string) => {
+  tagTargetImageId.value = id
+  if (currentTag && !currentTag.includes('<none>')) {
+    const parts = currentTag.split(':')
+    tagRepo.value = parts[0]
+    tagValue.value = parts[1] || 'latest'
+  } else {
+    tagRepo.value = ''
+    tagValue.value = 'latest'
+  }
+  showTagModal.value = true
+}
+
+const handleTagSubmit = async () => {
+  if (!tagRepo.value.trim()) {
+    message.warning('请输入镜像仓库名称')
+    return
+  }
+  const repo = tagRepo.value.trim()
+  const tag = tagValue.value.trim() || 'latest'
+  
+  try {
+    await invoke('tag_image', {
+      imageName: tagTargetImageId.value,
+      repo,
+      tag
+    })
+    message.success(`成功为镜像追加标签 ${repo}:${tag}`)
+    showTagModal.value = false
+    await imageStore.fetchImages()
+    if (selectedId.value === tagTargetImageId.value) {
+      await onSelect(selectedId.value)
+    }
+  } catch (err: any) {
+    message.error('追加标签失败: ' + err)
+  }
+}
+
 const openImportModal = () => {
   importFilePath.value = ''
   importCustomTag.value = ''
@@ -486,6 +538,7 @@ const menuTarget = ref<any>(null)
 const menuOptions = [
   { label: '详情', key: 'detail', icon: () => h(NIcon, null, { default: () => h(SearchOutline) }) },
   { label: '快速运行 (Run)', key: 'run', icon: () => h(NIcon, null, { default: () => h(PlayOutline) }) },
+  { label: '镜像打标签 (Tag)', key: 'tag', icon: () => h(NIcon, null, { default: () => h(AddOutline) }) },
   { label: '导出镜像', key: 'export', icon: () => h(NIcon, null, { default: () => h(CloudUploadOutline) }) },
   { label: '彻底删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }
 ]
@@ -514,6 +567,9 @@ const handleMenuSelect = (key: string) => {
       break
     case 'run':
       openRunModal(tag)
+      break
+    case 'tag':
+      openTagModal(id, tag)
       break
     case 'export':
       exportImage(id, tag)
@@ -625,6 +681,10 @@ onMounted(() => {
             <button class="run-image-gold-btn" @click="openRunModal(selectedDetails.tags?.[0] || selectedDetails.id)">
               <n-icon :component="PlayOutline" />
               运行 (Run)
+            </button>
+            <button class="action-btn-v3" @click="openTagModal(selectedDetails.id, selectedDetails.tags?.[0])">
+              <n-icon :component="AddOutline" />
+              打标签 (Tag)
             </button>
             <button class="action-btn-v3 export-btn" @click="exportImage(selectedDetails.id, selectedDetails.tags?.[0] || selectedDetails.id)">
               <n-icon :component="CloudUploadOutline" />
@@ -775,6 +835,17 @@ onMounted(() => {
         <div v-if="selectedDetails" v-show="activeTab === 'inspect'" class="inspect-pane">
           <n-scrollbar style="height: 100%">
             <div class="inspect-card-box">
+              <div class="inspect-row" style="align-items: flex-start;">
+                <span class="key" style="margin-top: 4px;">关联标签:</span>
+                <span class="val">
+                  <n-space size="small" v-if="selectedDetails.tags && selectedDetails.tags.length > 0">
+                    <n-tag v-for="tag in selectedDetails.tags" :key="tag" type="info" size="small" round>
+                      {{ tag }}
+                    </n-tag>
+                  </n-space>
+                  <span v-else style="color: var(--text-muted)">(无标签)</span>
+                </span>
+              </div>
               <div class="inspect-row"><span class="key">架构:</span> <span class="val">{{ selectedDetails.architecture }}</span></div>
               <div class="inspect-row"><span class="key">系统:</span> <span class="val">{{ selectedDetails.os }}</span></div>
               <div class="inspect-row"><span class="key">作者:</span> <span class="val">{{ selectedDetails.author || 'N/A' }}</span></div>
@@ -977,7 +1048,7 @@ onMounted(() => {
     :options="menuOptions"
     :show="showMenu"
     :x="x"
-    :y="y"
+    :y="adjustedY"
     placement="bottom-start"
     trigger="manual"
     @select="handleMenuSelect"
@@ -1016,6 +1087,35 @@ onMounted(() => {
       <div class="warning-modal-footer" style="margin-top: 16px;">
         <n-button @click="showImportModal = false">取消</n-button>
         <n-button type="primary" :disabled="!importFilePath" @click="handleImportImage">开始导入</n-button>
+      </div>
+    </div>
+  </n-modal>
+
+  <!-- 镜像打标签弹窗 -->
+  <n-modal
+    v-model:show="showTagModal"
+    preset="card"
+    title="镜像打标签 (Tag)"
+    style="width: 450px"
+  >
+    <div class="run-modal-body">
+      <div class="field-section">
+        <div class="modal-field-title" style="color: var(--text-muted); font-size: 11px; margin-bottom: 8px;">
+          镜像 ID: {{ tagTargetImageId.substring(0, 12) }}
+        </div>
+        <div class="field-row">
+          <div class="field-label">仓库名称 (Repository)</div>
+          <n-input v-model:value="tagRepo" placeholder="例如: myapp" />
+        </div>
+        <div class="field-row" style="margin-top: 12px;">
+          <div class="field-label">标签 (Tag)</div>
+          <n-input v-model:value="tagValue" placeholder="例如: latest" />
+        </div>
+      </div>
+      
+      <div class="warning-modal-footer" style="margin-top: 16px; display: flex; justify-content: flex-end; gap: 12px;">
+        <n-button quaternary @click="showTagModal = false">取消</n-button>
+        <n-button type="primary" @click="handleTagSubmit">确定</n-button>
       </div>
     </div>
   </n-modal>
