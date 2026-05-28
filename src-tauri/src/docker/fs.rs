@@ -115,11 +115,15 @@ pub async fn list_container_files(id: String, path: String) -> Result<Vec<Contai
                     let permissions_str = parts[0];
                     let is_dir = permissions_str.starts_with('d');
                     
-                    let name_index = match trimmed.find(parts[parts.len() - 1]) {
-                        Some(idx) => idx,
-                        None => continue,
-                    };
-                    let name = trimmed[name_index..].to_string();
+                    let mut current_idx = 0;
+                    for i in 0..8 {
+                        if let Some(pos) = trimmed[current_idx..].find(parts[i]) {
+                            current_idx += pos + parts[i].len();
+                        } else {
+                            break;
+                        }
+                    }
+                    let name = trimmed[current_idx..].trim().to_string();
                     if name == "." || name == ".." {
                         continue;
                     }
