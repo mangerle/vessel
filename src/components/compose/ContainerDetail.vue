@@ -397,6 +397,11 @@ const initTerminal = async () => {
 }
 
 const destroyTerminal = () => {
+  if (terminalExecId) {
+    invoke('close_container_terminal', { execId: terminalExecId }).catch(err => {
+      console.error('关闭终端连接失败:', err)
+    })
+  }
   if (term) {
     term.dispose()
     term = null

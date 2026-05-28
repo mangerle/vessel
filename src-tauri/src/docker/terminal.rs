@@ -153,3 +153,12 @@ pub async fn resize_container_terminal(
         .await
         .map_err(|e| format!("调整终端大小失败: {}", e))
 }
+
+/// 关闭容器终端会话
+#[tauri::command]
+pub async fn close_container_terminal(exec_id: String) -> Result<(), String> {
+    let mut sessions = TERMINAL_SESSIONS.lock().await;
+    sessions.remove(&exec_id);
+    Ok(())
+}
+

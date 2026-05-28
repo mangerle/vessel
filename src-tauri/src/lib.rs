@@ -114,6 +114,7 @@ pub fn run() {
             docker::stream_container_stats,
             docker::stream_container_logs,
             docker::create_container_terminal,
+            docker::close_container_terminal,
             docker::write_to_terminal,
             docker::resize_container_terminal,
             docker::list_images,
