@@ -43,9 +43,8 @@
             @click="handleSelect(container.id)"
             @contextmenu.stop="$emit('contextmenu', $event, 'container', container)"
           >
-            <n-icon :component="SettingsOutline" class="node-icon service-icon" />
-            <span class="node-label">{{ container.name }}</span>
             <span class="status-dot" :class="container.state"></span>
+            <span class="node-label">{{ container.name }}</span>
           </div>
         </div>
       </div>
@@ -58,7 +57,6 @@ import { ref, computed, watch } from 'vue'
 import { NScrollbar, NIcon } from 'naive-ui'
 import { 
   CubeOutline, 
-  SettingsOutline, 
   AddOutline,
   ChevronForwardOutline
 } from '@vicons/ionicons5'
@@ -242,35 +240,15 @@ const handleImportProject = () => {
   padding-left: 12px;
 }
 
-/* 容器运行状态下的齿轮图标颜色 */
-.container-node.is-up .service-icon {
-  color: #10b981;
-  opacity: 0.9;
-}
-
-.container-node.is-down .service-icon {
-  color: var(--text-muted);
-  opacity: 0.5;
-}
-
-/* 即使在选中时也保留其状态色，但增加亮度/不透明度 */
-.container-node.active .service-icon {
-  opacity: 1;
-}
-
-.service-icon {
-  font-size: 11px;
-  transition: all 0.2s ease;
-}
-
-/* 右侧指示小圆点 */
+/* 状态指示小圆点 */
 .status-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  margin-left: 6px;
+  margin-right: 8px;
   background-color: #8e8e93; /* 经典的已停止灰色 */
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .status-dot.running,
