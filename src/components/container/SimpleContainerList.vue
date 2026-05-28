@@ -344,28 +344,25 @@ onUnmounted(() => {
   height: 32px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  margin: 2px 8px;
+  padding: 0 8px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--text-body);
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-size: 11px;
 }
 
 .container-item:hover {
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: var(--bg-hover);
   color: var(--text-title);
 }
 
-.container-item.active.is-up {
-  background-color: #10b981 !important;
-  color: #fff;
+.container-item.active {
+  background-color: var(--bg-active) !important;
+  color: var(--text-title);
   font-weight: 600;
-}
-
-.container-item.active.is-down {
-  background-color: #64748b !important;
-  color: #fff;
-  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 /* 圆点 */

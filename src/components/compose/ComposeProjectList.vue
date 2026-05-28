@@ -45,6 +45,7 @@
           >
             <n-icon :component="SettingsOutline" class="node-icon service-icon" />
             <span class="node-label">{{ container.name }}</span>
+            <span class="status-dot" :class="container.state"></span>
           </div>
         </div>
       </div>
@@ -147,57 +148,59 @@ const handleImportProject = () => {
 
 .list-container {
   flex: 1;
+  padding: 4px 0;
 }
 
 .project-group {
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 /* 节点样式 */
 .project-node,
 .container-node {
-  height: 28px;
+  height: 30px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  margin: 2px 8px;
+  padding: 0 8px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--text-body);
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-size: 11px;
 }
 
 .project-node:hover,
 .container-node:hover {
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: var(--bg-hover);
   color: var(--text-title);
 }
 
-.project-node.active {
-  background-color: var(--macos-accent-blue) !important;
-  color: #fff;
+.project-node.active,
+.container-node.active {
+  background-color: var(--bg-active) !important;
+  color: var(--text-title);
   font-weight: 600;
-}
-
-.container-node.active.is-up {
-  background-color: #10b981 !important;
-  color: #fff;
-  font-weight: 600;
-}
-
-.container-node.active.is-down {
-  background-color: #64748b !important;
-  color: #fff;
-  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 /* 树箭头 */
 .tree-arrow {
-  display: inline-block;
-  font-size: 8px;
-  width: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  width: 14px;
+  height: 14px;
   color: var(--text-muted);
-  transition: transform 0.12s ease;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   margin-right: 4px;
+  border-radius: 3px;
+}
+
+.tree-arrow:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-title);
 }
 
 .tree-arrow.expanded {
@@ -205,10 +208,15 @@ const handleImportProject = () => {
 }
 
 .node-icon {
-  font-size: 12px;
-  margin-right: 6px;
+  font-size: 13px;
+  margin-right: 8px;
   display: flex;
   align-items: center;
+  color: var(--text-muted);
+}
+
+.project-node.active .node-icon {
+  color: var(--brand-primary);
 }
 
 .node-label {
@@ -216,34 +224,59 @@ const handleImportProject = () => {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  font-weight: 500;
 }
 
+/* 子树与垂向指引线 */
 .container-sub-tree {
   display: flex;
   flex-direction: column;
+  margin-left: 21px;
+  border-left: 1px solid var(--border-color);
+  padding-left: 2px;
+  margin-top: 2px;
+  margin-bottom: 4px;
 }
 
 .container-node {
-  padding-left: 20px;
+  padding-left: 12px;
 }
 
+/* 容器运行状态下的齿轮图标颜色 */
 .container-node.is-up .service-icon {
-  color: #10b981;
-  opacity: 1;
+  color: var(--brand-primary);
+  opacity: 0.9;
 }
 
 .container-node.is-down .service-icon {
-  color: #64748b;
-  opacity: 0.6;
+  color: var(--text-muted);
+  opacity: 0.5;
 }
 
+/* 即使在选中时也保留其状态色，但增加亮度/不透明度 */
 .container-node.active .service-icon {
-  color: #fff !important;
   opacity: 1;
 }
 
 .service-icon {
-  font-size: 10px;
-  transition: color 0.2s ease;
+  font-size: 11px;
+  transition: all 0.2s ease;
+}
+
+/* 右侧指示小圆点 */
+.status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-left: 6px;
+  background-color: var(--text-muted);
+  opacity: 0.4;
+  transition: all 0.2s ease;
+}
+
+.status-dot.running {
+  background-color: var(--brand-primary);
+  opacity: 1;
+  box-shadow: 0 0 4px var(--brand-primary);
 }
 </style>
