@@ -351,10 +351,11 @@ onUnmounted(() => {
   color: var(--text-body);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-size: 11px;
+  background-color: rgba(128, 128, 128, 0.03); /* 默认极淡背景显出成行 */
 }
 
 .container-item:hover {
-  background-color: var(--bg-hover);
+  background-color: rgba(128, 128, 128, 0.08); /* 悬浮时加重背景色 */
   color: var(--text-title);
 }
 
