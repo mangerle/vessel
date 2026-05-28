@@ -1,5 +1,20 @@
 # Changelog
 
+### [0.1.8](https://github.com/mangerle/vessel/compare/v0.1.7...v0.1.8) (2026-05-28)
+
+
+### 🚀 新增功能 (Features)
+
+* 实现容器挂起、活跃进程与Exec单次命令真实API，并修复右键菜单被截断的缺陷 ([c0db046](https://github.com/mangerle/vessel/commit/c0db0466e29e309e5b9e99cdbbeca1732d7e9172))
+* 为现有镜像增加修改/追加 Tag 的操作交互入口，并同步支持防截断算法 ([7be3864](https://github.com/mangerle/vessel/commit/7be386489cddfdbdccc9ddf34d4c74be8766975e))
+
+
+### 🐛 Bug 修复 (Bug Fixes)
+
+* 解决日志流与性能统计流在关闭/切换页面后未主动注销导致的后台协程和网络套接字泄漏问题 ([7b794e7](https://github.com/mangerle/vessel/commit/7b794e79eafd41323b44dbe5c958bc42fdb16e4e))
+* 修复交互终端关闭时后台协程与 Docker 长连接泄露的资源缺陷 ([9733cea](https://github.com/mangerle/vessel/commit/9733cea67a294b643a309468c92e8303abfa9338))
+* 修复LS兼容模式下带空格的文件名被截断解析的Bug ([d8bdac6](https://github.com/mangerle/vessel/commit/d8bdac62e9c7691650235503088313e62a0bc0df))
+
 ### [0.1.7](https://github.com/mangerle/vessel/compare/v0.1.6...v0.1.7) (2026-05-28)
 
 
