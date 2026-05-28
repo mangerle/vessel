@@ -353,6 +353,20 @@ const updateInfo = ref({
   body: ''
 })
 
+// 将 Markdown 文本格式化清洗为干净的纯文本
+const cleanMarkdown = (text: string) => {
+  if (!text) return ''
+  return text
+    .replace(/^(?:##|###)\s+(.+)$/gm, '$1:')
+    .replace(/^\*\s+/gm, '- ')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    // 抹去带外包圆括号的 Commit 链接，如 " ([80fec30](https://...))" -> ""
+    .replace(/\s*\(\[([^\]]+)\]\([^)]+\)\)/g, '')
+    // 兜底：若有普通 Markdown 链接则只保留文字
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\n{3,}/g, '\n\n')
+}
+
 // 真正检查更新
 const handleCheckUpdate = async () => {
   if (checkingUpdate.value) return
@@ -836,7 +850,7 @@ onMounted(async () => {
       
       <div class="update-logs-box">
         <div class="update-logs-title">更新日志:</div>
-        <div class="update-logs-content" style="white-space: pre-wrap; font-size: 11px; line-height: 1.5; color: var(--text-body);">{{ updateInfo.body }}</div>
+        <div class="update-logs-content" style="white-space: pre-wrap; font-size: 11px; line-height: 1.5; color: var(--text-body);">{{ cleanMarkdown(updateInfo.body) }}</div>
       </div>
 
       <!-- 进度条（当正在下载或准备就绪时展示） -->
