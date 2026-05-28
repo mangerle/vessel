@@ -83,6 +83,34 @@ export const useContainerStore = defineStore('container', {
       } finally {
         this.loading = false
       }
+    },
+    async pauseContainer(id: string) {
+      this.loading = true
+      this.error = null
+      try {
+        await invoke('pause_container', { id })
+        await this.fetchContainers()
+      } catch (err) {
+        console.error('暂停容器失败:', err)
+        this.error = String(err)
+        throw err
+      } finally {
+        this.loading = false
+      }
+    },
+    async unpauseContainer(id: string) {
+      this.loading = true
+      this.error = null
+      try {
+        await invoke('unpause_container', { id })
+        await this.fetchContainers()
+      } catch (err) {
+        console.error('恢复容器失败:', err)
+        this.error = String(err)
+        throw err
+      } finally {
+        this.loading = false
+      }
     }
   }
 })

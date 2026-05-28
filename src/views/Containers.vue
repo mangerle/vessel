@@ -46,10 +46,14 @@ const copyToastText = ref('已复制到剪贴板')
 const showExecModal = ref(false)
 const execCmdText = ref('echo "hello standalone container"')
 const execTargetContainerId = ref('')
+const execLoading = ref(false)
+const execResult = ref<string | null>(null)
+const execExitCode = ref<number | null>(null)
 
 // Top 进程列表弹窗
 const showTopModal = ref(false)
-const topProcesses = ref<any[]>([])
+const topTitles = ref<string[]>([])
+const topProcesses = ref<string[][]>([])
 const topContainerName = ref('')
 
 // 重命名容器弹窗
@@ -93,6 +97,13 @@ const {
   onClickOutside: closeMenu
 } = useContextMenu()
 
+const adjustedY = computed(() => {
+  if (y.value > window.innerHeight - 450) {
+    return Math.max(10, y.value - 410)
+  }
+  return y.value
+})
+
 const handleMenuSelect = async (key: string) => {
   const target = currentTarget.value
   closeMenu()
@@ -127,6 +138,9 @@ const handleMenuSelect = async (key: string) => {
       break
     case 'exec_cmd':
       execTargetContainerId.value = targetId
+      execResult.value = null
+      execExitCode.value = null
+      execLoading.value = false
       showExecModal.value = true
       break
     case 'terminal_user':
@@ -219,7 +233,7 @@ const handleRestart = async (id: string) => {
 
 const handlePause = async (id: string) => {
   try {
-    await invoke('stop_container', { id }) // 挂起模拟
+    await containerStore.pauseContainer(id)
     message.success('容器已挂起暂停')
     await fetchDetails(id)
   } catch (e: any) {
@@ -229,7 +243,7 @@ const handlePause = async (id: string) => {
 
 const handleUnpause = async (id: string) => {
   try {
-    await containerStore.startContainer(id)
+    await containerStore.unpauseContainer(id)
     message.success('容器已恢复运行')
     await fetchDetails(id)
   } catch (e: any) {
@@ -277,20 +291,46 @@ const handleBatchAction = async ({ action, ids }: { action: 'start' | 'stop' | '
   }
 }
 
-const handleShowTop = async (_id: string, name: string) => {
+const handleShowTop = async (id: string, name: string) => {
   topContainerName.value = name
   showTopModal.value = true
-  // Mock PID List
-  topProcesses.value = [
-    { pid: '1090', user: 'root', cpu: '0.0%', mem: '0.2%', cmd: 'nginx: master process nginx' },
-    { pid: '1092', user: 'nginx', cpu: '0.1%', mem: '1.2%', cmd: 'nginx: worker process' },
-    { pid: '4120', user: 'root', cpu: '0.0%', mem: '0.0%', cmd: 'sh' }
-  ]
+  topTitles.value = []
+  topProcesses.value = []
+  try {
+    const res = await invoke<{ titles: string[]; processes: string[][] }>('top_container', { id })
+    topTitles.value = res.titles
+    topProcesses.value = res.processes
+  } catch (e: any) {
+    message.error('获取进程列表失败: ' + e)
+  }
 }
 
 const handleRunExec = async () => {
-  showExecModal.value = false
-  message.success(`已发送 Exec 命令: "${execCmdText.value}"`)
+  if (!execCmdText.value.trim()) {
+    message.warning('请输入要执行的命令')
+    return
+  }
+  execLoading.value = true
+  execResult.value = null
+  execExitCode.value = null
+  try {
+    const res = await invoke<{ exit_code: number | null; output: string }>('exec_container', {
+      id: execTargetContainerId.value,
+      cmd: execCmdText.value.trim()
+    })
+    execResult.value = res.output || '[无输出]'
+    execExitCode.value = res.exit_code
+    if (res.exit_code === 0) {
+      message.success('命令执行完成')
+    } else {
+      message.warning(`命令执行完毕，退出码为 ${res.exit_code}`)
+    }
+  } catch (e: any) {
+    execResult.value = `执行错误: ${e}`
+    message.error('执行失败: ' + e)
+  } finally {
+    execLoading.value = false
+  }
 }
 
 const handleRenameSubmit = async () => {
@@ -551,45 +591,54 @@ onUnmounted(() => {
   </div>
 
   <!-- 2. Exec 快速执行命令弹窗 -->
-  <n-modal v-model:show="showExecModal" preset="card" style="width: 500px;" title="快速执行单行命令">
+  <n-modal v-model:show="showExecModal" preset="card" style="width: 600px;" title="快速执行单行命令">
     <template #header-extra>
       <n-icon :component="TerminalOutline" />
     </template>
-    <div class="exec-modal-body">
-      <div class="modal-field-title">命令输入 (以 default 默认用户执行)</div>
-      <n-input v-model:value="execCmdText" type="textarea" placeholder="例如: ls -la /var/www" />
+    <div class="exec-modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+      <div>
+        <div class="modal-field-title" style="margin-bottom: 6px;">命令输入 (通过 /bin/sh -c 执行)</div>
+        <n-input v-model:value="execCmdText" :disabled="execLoading" type="textarea" placeholder="例如: ls -la /var/www" />
+      </div>
+
+      <div v-if="execLoading || execResult !== null" class="exec-result-container" style="display: flex; flex-direction: column; gap: 6px;">
+        <div class="modal-field-title" style="display: flex; justify-content: space-between; align-items: center;">
+          <span>执行输出 <span v-if="execExitCode !== null" :style="{ color: execExitCode === 0 ? 'var(--brand-primary)' : '#ef4444' }">(退出码: {{ execExitCode }})</span></span>
+          <span v-if="execLoading" style="color: var(--brand-primary)">执行中...</span>
+        </div>
+        <pre class="exec-output-box" style="margin: 0; padding: 12px; background-color: #070a10; color: #cbd5e1; border-radius: 4px; max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 11px; white-space: pre-wrap; border: 1px solid var(--border-color);">{{ execResult || '正在执行并收集输出...' }}</pre>
+      </div>
     </div>
     <template #footer>
       <div class="warning-modal-footer">
-        <n-button type="primary" @click="handleRunExec">确定</n-button>
-        <n-button quaternary @click="showExecModal = false">取消</n-button>
+        <n-button type="primary" :loading="execLoading" @click="handleRunExec">
+          {{ execResult !== null ? '重新运行' : '运行' }}
+        </n-button>
+        <n-button quaternary :disabled="execLoading" @click="showExecModal = false">关闭</n-button>
       </div>
     </template>
   </n-modal>
 
   <!-- 3. Top 内部进程查看弹窗 -->
-  <n-modal v-model:show="showTopModal" preset="card" style="width: 600px;" :title="`内部活跃进程 (${topContainerName})`">
+  <n-modal v-model:show="showTopModal" preset="card" style="width: 700px;" :title="`内部活跃进程 (${topContainerName})`">
     <template #header-extra>
       <n-icon :component="BarChartOutline" />
     </template>
     <div class="top-modal-body">
-      <table class="top-table">
+      <div v-if="topProcesses.length === 0" style="padding: 20px; text-align: center; color: var(--text-muted);">
+        暂无活跃进程信息或加载中...
+      </div>
+      <table v-else class="top-table">
         <thead>
           <tr>
-            <th>PID</th>
-            <th>USER</th>
-            <th>%CPU</th>
-            <th>%MEM</th>
-            <th>COMMAND</th>
+            <th v-for="title in topTitles" :key="title">{{ title }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in topProcesses" :key="p.pid">
-            <td>{{ p.pid }}</td>
-            <td>{{ p.user }}</td>
-            <td class="primary-color">{{ p.cpu }}</td>
-            <td class="primary-color">{{ p.mem }}</td>
-            <td class="monospace-text">{{ p.cmd }}</td>
+          <tr v-for="(proc, idx) in topProcesses" :key="idx">
+            <td v-for="(val, vIdx) in proc" :key="vIdx" :class="{ 'monospace-text': vIdx === proc.length - 1 }">
+              {{ val }}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -655,7 +704,7 @@ onUnmounted(() => {
     :options="menuOptions"
     :show="showMenu"
     :x="x"
-    :y="y"
+    :y="adjustedY"
     placement="bottom-start"
     trigger="manual"
     @select="handleMenuSelect"
@@ -802,5 +851,13 @@ onUnmounted(() => {
 .fade-in-enter-from,
 .fade-in-leave-to {
   opacity: 0;
+}
+
+</style>
+
+<style>
+.n-dropdown-menu {
+  max-height: 420px !important;
+  overflow-y: auto !important;
 }
 </style>

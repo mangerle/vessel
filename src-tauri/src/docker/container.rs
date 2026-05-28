@@ -284,3 +284,108 @@ pub async fn commit_container(
 
     Ok(response.id.unwrap_or_default())
 }
+
+/// 暂停容器
+#[tauri::command]
+pub async fn pause_container(id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker
+        .pause_container(&id)
+        .await
+        .map_err(|e| format!("暂停容器失败: {}", e))
+}
+
+/// 恢复容器
+#[tauri::command]
+pub async fn unpause_container(id: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+    docker
+        .unpause_container(&id)
+        .await
+        .map_err(|e| format!("恢复容器失败: {}", e))
+}
+
+/// 进程 Top 响应结构
+#[derive(serde::Serialize)]
+pub struct TopResult {
+    pub titles: Vec<String>,
+    pub processes: Vec<Vec<String>>,
+}
+
+/// 获取容器进程列表
+#[tauri::command]
+pub async fn top_container(id: String) -> Result<TopResult, String> {
+    let docker = get_docker_client().await?;
+    let top_result = docker
+        .top_processes(&id, None::<bollard::container::TopOptions<String>>)
+        .await
+        .map_err(|e| format!("获取进程列表失败: {}", e))?;
+
+    Ok(TopResult {
+        titles: top_result.titles.unwrap_or_default(),
+        processes: top_result.processes.unwrap_or_default(),
+    })
+}
+
+/// Exec 执行结果
+#[derive(serde::Serialize)]
+pub struct ExecResult {
+    pub exit_code: Option<i64>,
+    pub output: String,
+}
+
+/// 在容器内执行单次命令
+#[tauri::command]
+pub async fn exec_container(id: String, cmd: String) -> Result<ExecResult, String> {
+    use bollard::container::LogOutput;
+    use bollard::exec::{CreateExecOptions, StartExecResults};
+
+    let docker = get_docker_client().await?;
+
+    let config = CreateExecOptions {
+        cmd: Some(vec!["sh", "-c", &cmd]),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        ..Default::default()
+    };
+
+    let exec = docker
+        .create_exec(&id, config)
+        .await
+        .map_err(|e| format!("创建 exec 失败: {}", e))?;
+
+    let start_exec_result = docker
+        .start_exec(&exec.id, None)
+        .await
+        .map_err(|e| format!("启动 exec 失败: {}", e))?;
+
+    let mut output_str = String::new();
+    if let StartExecResults::Attached { mut output, .. } = start_exec_result {
+        while let Some(msg) = output.next().await {
+            match msg {
+                Ok(LogOutput::StdOut { message }) => {
+                    output_str.push_str(&String::from_utf8_lossy(&message));
+                }
+                Ok(LogOutput::StdErr { message }) => {
+                    output_str.push_str(&String::from_utf8_lossy(&message));
+                }
+                Err(e) => {
+                    output_str.push_str(&format!("\n[读取输出错误: {}]\n", e));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let inspect_result = docker
+        .inspect_exec(&exec.id)
+        .await
+        .map_err(|e| format!("获取 exec 状态失败: {}", e))?;
+
+    Ok(ExecResult {
+        exit_code: inspect_result.exit_code,
+        output: output_str,
+    })
+}
+
