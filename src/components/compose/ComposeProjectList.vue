@@ -265,18 +265,23 @@ const handleImportProject = () => {
 
 /* 右侧指示小圆点 */
 .status-dot {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   margin-left: 6px;
-  background-color: var(--text-muted);
-  opacity: 0.4;
+  background-color: #8e8e93; /* 经典的已停止灰色 */
   transition: all 0.2s ease;
 }
 
-.status-dot.running {
-  background-color: #10b981;
-  opacity: 1;
-  box-shadow: 0 0 4px #10b981;
+.status-dot.running,
+.status-dot.up {
+  background-color: #34c759; /* 经典的健康运行绿色 */
+  box-shadow: 0 0 4px rgba(52, 199, 89, 0.6);
+}
+
+.status-dot.exited,
+.status-dot.stopped,
+.status-dot.created {
+  background-color: #8e8e93; /* 经典的已停止灰色 */
 }
 </style>
