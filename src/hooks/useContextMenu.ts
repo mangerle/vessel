@@ -11,7 +11,9 @@ import {
   PauseOutline,
   EyeOutline,
   FlashOutline,
-  ListOutline
+  ListOutline,
+  CreateOutline,
+  SaveOutline
 } from '@vicons/ionicons5'
 
 export function useContextMenu() {
@@ -52,7 +54,9 @@ export function useContextMenu() {
           },
           { type: 'divider', key: 'div1' },
           
-          // 组 2: 资产快捷搬运
+          // 组 2: 资产与属性管理
+          { label: '重命名容器...', key: 'rename_container', icon: renderIcon(CreateOutline) },
+          { label: '提交为新镜像...', key: 'commit_container', icon: renderIcon(SaveOutline) },
           { label: '查看对应镜像', key: 'view_image', icon: renderIcon(EyeOutline) },
           { label: '复制容器 ID', key: 'copy_id', icon: renderIcon(CopyOutline) },
           { label: '复制镜像 ID', key: 'copy_image_id', icon: renderIcon(CopyOutline) },

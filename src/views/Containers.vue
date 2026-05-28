@@ -52,6 +52,19 @@ const showTopModal = ref(false)
 const topProcesses = ref<any[]>([])
 const topContainerName = ref('')
 
+// 重命名容器弹窗
+const showRenameModal = ref(false)
+const renameContainerId = ref('')
+const renameNewName = ref('')
+
+// 提交容器弹窗
+const showCommitModal = ref(false)
+const commitContainerId = ref('')
+const commitRepo = ref('')
+const commitTag = ref('latest')
+const commitComment = ref('')
+const commitAuthor = ref('')
+
 // 过滤掉 Compose 服务容器，只留下独立测试容器
 const independentContainers = computed(() => {
   return containerStore.containers.filter(c => {
@@ -135,6 +148,19 @@ const handleMenuSelect = async (key: string) => {
       break
     case 'delete':
       await handleDelete(targetId)
+      break
+    case 'rename_container':
+      renameContainerId.value = targetId
+      renameNewName.value = target?.name || ''
+      showRenameModal.value = true
+      break
+    case 'commit_container':
+      commitContainerId.value = targetId
+      commitRepo.value = ''
+      commitTag.value = 'latest'
+      commitComment.value = ''
+      commitAuthor.value = ''
+      showCommitModal.value = true
       break
   }
 }
@@ -254,6 +280,49 @@ const handleShowTop = async (_id: string, name: string) => {
 const handleRunExec = async () => {
   showExecModal.value = false
   message.success(`已发送 Exec 命令: "${execCmdText.value}"`)
+}
+
+const handleRenameSubmit = async () => {
+  if (!renameNewName.value.trim()) {
+    message.error('容器名称不能为空')
+    return
+  }
+  try {
+    await invoke('rename_container', { 
+      id: renameContainerId.value, 
+      newName: renameNewName.value.trim() 
+    })
+    message.success('容器已成功重命名')
+    showRenameModal.value = false
+    // 重新获取容器列表并更新详情
+    await containerStore.fetchContainers()
+    if (selectedId.value === renameContainerId.value) {
+      await fetchDetails(renameContainerId.value)
+    }
+  } catch (e: any) {
+    message.error('重命名失败: ' + e)
+  }
+}
+
+const handleCommitSubmit = async () => {
+  if (!commitRepo.value.trim()) {
+    message.error('目标镜像仓库名称不能为空')
+    return
+  }
+  try {
+    message.info('正在提交容器，请稍候...')
+    const newImageId = await invoke<string>('commit_container', {
+      id: commitContainerId.value,
+      repo: commitRepo.value.trim(),
+      tag: commitTag.value.trim() || 'latest',
+      comment: commitComment.value.trim(),
+      author: commitAuthor.value.trim()
+    })
+    message.success(`容器提交成功！新镜像 ID: ${newImageId.substring(0, 12)}`)
+    showCommitModal.value = false
+  } catch (e: any) {
+    message.error('提交失败: ' + e)
+  }
 }
 
 const fetchDetails = async (id: string) => {
@@ -515,6 +584,51 @@ onUnmounted(() => {
       </table>
     </div>
   </n-modal>
+
+  <!-- 重命名容器弹窗 -->
+  <n-modal v-model:show="showRenameModal" preset="card" style="width: 400px;" title="重命名容器">
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+      <div>
+        <div class="modal-field-title" style="margin-bottom: 6px;">容器新名称</div>
+        <n-input v-model:value="renameNewName" placeholder="输入新的容器名称" />
+      </div>
+    </div>
+    <template #footer>
+      <div class="warning-modal-footer">
+        <n-button type="primary" @click="handleRenameSubmit">确定</n-button>
+        <n-button quaternary @click="showRenameModal = false">取消</n-button>
+      </div>
+    </template>
+  </n-modal>
+
+  <!-- 提交容器为新镜像弹窗 -->
+  <n-modal v-model:show="showCommitModal" preset="card" style="width: 500px;" title="提交容器为新镜像 (Commit)">
+    <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px;">
+      <div>
+        <div class="modal-field-title" style="margin-bottom: 6px;">镜像仓库名称 (Repository) *</div>
+        <n-input v-model:value="commitRepo" placeholder="例如: myapp" />
+      </div>
+      <div>
+        <div class="modal-field-title" style="margin-bottom: 6px;">镜像标签 (Tag)</div>
+        <n-input v-model:value="commitTag" placeholder="例如: latest" />
+      </div>
+      <div>
+        <div class="modal-field-title" style="margin-bottom: 6px;">提交描述 (Comment)</div>
+        <n-input v-model:value="commitComment" type="textarea" placeholder="输入提交说明" />
+      </div>
+      <div>
+        <div class="modal-field-title" style="margin-bottom: 6px;">作者 (Author)</div>
+        <n-input v-model:value="commitAuthor" placeholder="例如: developer <dev@example.com>" />
+      </div>
+    </div>
+    <template #footer>
+      <div class="warning-modal-footer">
+        <n-button type="primary" @click="handleCommitSubmit">提交</n-button>
+        <n-button quaternary @click="showCommitModal = false">取消</n-button>
+      </div>
+    </template>
+  </n-modal>
+
 
   <!-- 已复制 悬浮轻量 Toast 胶囊 -->
   <transition name="fade-in">

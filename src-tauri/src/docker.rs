@@ -1617,4 +1617,51 @@ pub async fn tag_image(
     Ok(())
 }
 
+/// 重命名容器 (Rename Container)
+#[tauri::command]
+pub async fn rename_container(id: String, new_name: String) -> Result<(), String> {
+    let docker = get_docker_client().await?;
+
+    let options = bollard::container::RenameContainerOptions {
+        name: new_name,
+    };
+
+    docker
+        .rename_container(&id, options)
+        .await
+        .map_err(|e| format!("重命名容器失败: {}", e))?;
+
+    Ok(())
+}
+
+/// 提交容器为新镜像 (Commit Container)
+#[tauri::command]
+pub async fn commit_container(
+    id: String,
+    repo: String,
+    tag: Option<String>,
+    comment: Option<String>,
+    author: Option<String>,
+) -> Result<String, String> {
+    let docker = get_docker_client().await?;
+
+    let options = bollard::image::CommitContainerOptions {
+        container: id.clone(),
+        repo: repo,
+        tag: tag.unwrap_or_else(|| "latest".to_string()),
+        comment: comment.unwrap_or_default(),
+        author: author.unwrap_or_default(),
+        pause: true,
+        changes: None,
+    };
+
+    let response = docker
+        .commit_container(options, bollard::container::Config::<String>::default())
+        .await
+        .map_err(|e| format!("提交容器失败: {}", e))?;
+
+    Ok(response.id.unwrap_or_default())
+}
+
+
 

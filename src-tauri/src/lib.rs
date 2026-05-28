@@ -104,6 +104,8 @@ pub fn run() {
             docker::stop_container,
             docker::restart_container,
             docker::remove_container,
+            docker::rename_container,
+            docker::commit_container,
             docker::inspect_container,
             docker::stream_container_stats,
             docker::stream_container_logs,
