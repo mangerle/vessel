@@ -346,7 +346,7 @@ pub async fn pull_image(
         format!("{}:latest", image_name)
     };
 
-    println!("开始拉取镜像: {}", full_image_name);
+    log::info!("开始拉取镜像: {}", full_image_name);
 
     // 如果提供了用户名和密码，则配置仓库凭证进行认证拉取
     let mut credentials = None;
@@ -387,12 +387,12 @@ pub async fn pull_image(
                         image: name_for_events.clone(),
                         info,
                     }) {
-                        eprintln!("发送拉取进度事件失败: {}", e);
+                        log::error!("发送拉取进度事件失败: {}", e);
                         break;
                     }
                 }
                 Err(e) => {
-                    eprintln!("拉取镜像 {} 出错: {}", name_for_events, e);
+                    log::error!("拉取镜像 {} 出错: {}", name_for_events, e);
                     #[derive(Serialize, Clone)]
                     struct ErrorPayload {
                         image: String,
@@ -407,7 +407,7 @@ pub async fn pull_image(
             }
         }
         // 拉取完成
-        println!("镜像拉取任务结束: {}", name_for_events);
+        log::info!("镜像拉取任务结束: {}", name_for_events);
         let _ = app_handle.emit("image-pull-finished", name_for_events);
     });
 
@@ -562,12 +562,12 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> Result<(), St
                     // 发送事件到前端，事件名为 container-stats-<id>
                     let event_name = format!("container-stats-{}", id);
                     if let Err(e) = app.emit(&event_name, stats) {
-                        eprintln!("发送统计事件失败: {}", e);
+                        log::error!("发送统计事件失败: {}", e);
                         break;
                     }
                 }
                 Err(e) => {
-                    eprintln!("获取统计数据失败: {}", e);
+                    log::error!("获取统计数据失败: {}", e);
                     break;
                 }
             }
@@ -599,12 +599,12 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> Result<(), Str
                 Ok(log) => {
                     let event_name = format!("container-logs-{}", id);
                     if let Err(e) = app.emit(&event_name, log.to_string()) {
-                        eprintln!("发送日志事件失败: {}", e);
+                        log::error!("发送日志事件失败: {}", e);
                         break;
                     }
                 }
                 Err(e) => {
-                    eprintln!("获取日志流出错: {}", e);
+                    log::error!("获取日志流出错: {}", e);
                     break;
                 }
             }
@@ -1404,7 +1404,7 @@ pub async fn export_image(
             Ok(f) => f,
             Err(e) => {
                 let err_msg = format!("创建目标文件失败: {}", e);
-                eprintln!("{}", err_msg);
+                log::error!("{}", err_msg);
                 #[derive(Clone, serde::Serialize)]
                 struct ExportErrPayload {
                     image: String,
@@ -1426,7 +1426,7 @@ pub async fn export_image(
                     total_bytes += bytes.len() as i64;
                     if let Err(e) = file.write_all(&bytes).await {
                         let err_msg = format!("写入镜像数据失败: {}", e);
-                        eprintln!("{}", err_msg);
+                        log::error!("{}", err_msg);
                         #[derive(Clone, serde::Serialize)]
                         struct ExportErrPayload {
                             image: String,
@@ -1452,7 +1452,7 @@ pub async fn export_image(
                 }
                 Err(e) => {
                     let err_msg = format!("读取镜像导出流失败: {}", e);
-                    eprintln!("{}", err_msg);
+                    log::error!("{}", err_msg);
                     #[derive(Clone, serde::Serialize)]
                     struct ExportErrPayload {
                         image: String,
@@ -1469,7 +1469,7 @@ pub async fn export_image(
 
         if let Err(e) = file.flush().await {
             let err_msg = format!("刷新文件失败: {}", e);
-            eprintln!("{}", err_msg);
+            log::error!("{}", err_msg);
             #[derive(Clone, serde::Serialize)]
             struct ExportErrPayload {
                 image: String,
@@ -1482,7 +1482,7 @@ pub async fn export_image(
             return;
         }
 
-        println!("镜像导出任务结束: {}", name_clone);
+        log::info!("镜像导出任务结束: {}", name_clone);
         let _ = app_handle.emit("image-export-finished", name_clone);
     });
 
@@ -1504,7 +1504,7 @@ pub async fn import_image(
     let byte_stream = ReaderStream::new(file)
         .map(|res| {
             res.unwrap_or_else(|e| {
-                eprintln!("读取 Tar 文件出错: {}", e);
+                log::error!("读取 Tar 文件出错: {}", e);
                 Bytes::new()
             })
         });
@@ -1539,12 +1539,12 @@ pub async fn import_image(
                         progress: info.progress,
                     };
                     if let Err(e) = app_handle.emit("image-import-progress", payload) {
-                        eprintln!("发送镜像导入进度事件失败: {}", e);
+                        log::error!("发送镜像导入进度事件失败: {}", e);
                         break;
                     }
                 }
                 Err(e) => {
-                    eprintln!("导入镜像 {} 出错: {}", path_clone, e);
+                    log::error!("导入镜像 {} 出错: {}", path_clone, e);
                     #[derive(Clone, serde::Serialize)]
                     struct ImportErrPayload {
                         path: String,
@@ -1558,7 +1558,7 @@ pub async fn import_image(
                 }
             }
         }
-        println!("镜像导入任务结束: {}", path_clone);
+        log::info!("镜像导入任务结束: {}", path_clone);
         let _ = app_handle.emit("image-import-finished", path_clone);
     });
 
