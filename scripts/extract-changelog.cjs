@@ -8,7 +8,7 @@ if (!fs.existsSync(changelogPath)) {
   process.exit(0);
 }
 
-const content = fs.readFileSync(changelogPath, 'utf8');
+const content = fs.readFileSync(changelogPath, 'utf8').replace(/\r\n/g, '\n');
 
 // 匹配第一个版本标题（## 或 ### 开头且包含 [X.Y.Z] 格式版本号）到下一个版本标题（或文件结尾）之间的所有日志
 const regex = /(?:##|###)\s+\[\d+\.\d+\.\d+\].*?\n([\s\S]*?)(?=(?:##|###)\s+\[\d+\.\d+\.\d+\]|$)/;
