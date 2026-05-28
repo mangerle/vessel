@@ -3,6 +3,21 @@ use bollard::container::{ListContainersOptions, StatsOptions, LogsOptions};
 use tauri::{AppHandle, Emitter};
 use futures_util::stream::StreamExt;
 use super::{ContainerInfo, PortMapping, MountInfo, ContainerDetails};
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::sync::oneshot;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+pub static STATS_STREAMS: Lazy<Arc<Mutex<HashMap<String, (oneshot::Sender<()>, u64)>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+pub static LOGS_STREAMS: Lazy<Arc<Mutex<HashMap<String, (oneshot::Sender<()>, u64)>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+static STREAM_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 
 /// 获取本地 Docker 容器列表的命令
 #[tauri::command]
@@ -181,24 +196,63 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> Result<(), St
         }),
     );
 
+    let (tx, mut rx) = oneshot::channel::<()>();
+    let token = STREAM_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    {
+        let mut streams = STATS_STREAMS.lock().await;
+        if let Some((old_tx, _)) = streams.insert(id.clone(), (tx, token)) {
+            let _ = old_tx.send(());
+        }
+    }
+
+    let id_clone = id.clone();
     tauri::async_runtime::spawn(async move {
-        while let Some(msg) = stream.next().await {
-            match msg {
-                Ok(stats) => {
-                    let event_name = format!("container-stats-{}", id);
-                    if let Err(e) = app.emit(&event_name, stats) {
-                        log::error!("发送统计事件失败: {}", e);
-                        break;
-                    }
-                }
-                Err(e) => {
-                    log::error!("获取统计数据失败: {}", e);
+        loop {
+            tokio::select! {
+                _ = &mut rx => {
+                    log::info!("收到停止信号，停止统计流: {}", id_clone);
                     break;
                 }
+                msg = stream.next() => {
+                    match msg {
+                        Some(Ok(stats)) => {
+                            let event_name = format!("container-stats-{}", id_clone);
+                            if let Err(e) = app.emit(&event_name, stats) {
+                                log::error!("发送统计事件失败: {}", e);
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            log::error!("获取统计数据失败: {}", e);
+                            break;
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        // 协程退出时清理
+        let mut streams = STATS_STREAMS.lock().await;
+        if let Some((_, t)) = streams.get(&id_clone) {
+            if *t == token {
+                streams.remove(&id_clone);
             }
         }
     });
 
+    Ok(())
+}
+
+/// 关闭容器统计信息流
+#[tauri::command]
+pub async fn close_container_stats(id: String) -> Result<(), String> {
+    let mut streams = STATS_STREAMS.lock().await;
+    if let Some((tx, _)) = streams.remove(&id) {
+        let _ = tx.send(());
+    }
     Ok(())
 }
 
@@ -218,26 +272,66 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> Result<(), Str
         }),
     );
 
+    let (tx, mut rx) = oneshot::channel::<()>();
+    let token = STREAM_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    {
+        let mut streams = LOGS_STREAMS.lock().await;
+        if let Some((old_tx, _)) = streams.insert(id.clone(), (tx, token)) {
+            let _ = old_tx.send(());
+        }
+    }
+
+    let id_clone = id.clone();
     tauri::async_runtime::spawn(async move {
-        while let Some(msg) = stream.next().await {
-            match msg {
-                Ok(log) => {
-                    let event_name = format!("container-logs-{}", id);
-                    if let Err(e) = app.emit(&event_name, log.to_string()) {
-                        log::error!("发送日志事件失败: {}", e);
-                        break;
-                    }
-                }
-                Err(e) => {
-                    log::error!("获取日志流出错: {}", e);
+        loop {
+            tokio::select! {
+                _ = &mut rx => {
+                    log::info!("收到停止信号，停止日志流: {}", id_clone);
                     break;
                 }
+                msg = stream.next() => {
+                    match msg {
+                        Some(Ok(log)) => {
+                            let event_name = format!("container-logs-{}", id_clone);
+                            if let Err(e) = app.emit(&event_name, log.to_string()) {
+                                log::error!("发送日志事件失败: {}", e);
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            log::error!("获取日志流出错: {}", e);
+                            break;
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        // 协程退出时清理
+        let mut streams = LOGS_STREAMS.lock().await;
+        if let Some((_, t)) = streams.get(&id_clone) {
+            if *t == token {
+                streams.remove(&id_clone);
             }
         }
     });
 
     Ok(())
 }
+
+/// 关闭容器日志流
+#[tauri::command]
+pub async fn close_container_logs(id: String) -> Result<(), String> {
+    let mut streams = LOGS_STREAMS.lock().await;
+    if let Some((tx, _)) = streams.remove(&id) {
+        let _ = tx.send(());
+    }
+    Ok(())
+}
+
 
 /// 重命名容器
 #[tauri::command]

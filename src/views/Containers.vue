@@ -377,6 +377,11 @@ const handleCommitSubmit = async () => {
 }
 
 const fetchDetails = async (id: string) => {
+  if (containerDetails.value && containerDetails.value.id !== id) {
+    const oldId = containerDetails.value.id
+    invoke('close_container_logs', { id: oldId }).catch(() => {})
+    invoke('close_container_stats', { id: oldId }).catch(() => {})
+  }
   loadingDetails.value = true
   try {
     containerDetails.value = await invoke('inspect_container', { id })
@@ -547,6 +552,11 @@ onMounted(() => {
 onUnmounted(() => {
   if (logsUnlisten) logsUnlisten()
   if (statsUnlisten) statsUnlisten()
+  if (containerDetails.value?.id) {
+    const oldId = containerDetails.value.id
+    invoke('close_container_logs', { id: oldId }).catch(() => {})
+    invoke('close_container_stats', { id: oldId }).catch(() => {})
+  }
 })
 </script>
 

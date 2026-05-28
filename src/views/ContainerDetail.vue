@@ -121,6 +121,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (unlisten) unlisten()
+  invoke('close_container_stats', { id: containerId }).catch(() => {})
 })
 </script>
 
