@@ -165,7 +165,7 @@ const handleImportProject = () => {
   cursor: pointer;
   color: var(--text-body);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .project-node:hover,
@@ -225,19 +225,16 @@ const handleImportProject = () => {
   font-weight: 500;
 }
 
-/* 子树与垂向指引线 */
+/* 子树 */
 .container-sub-tree {
   display: flex;
   flex-direction: column;
-  margin-left: 21px;
-  border-left: 1px solid var(--border-color);
-  padding-left: 2px;
   margin-top: 2px;
   margin-bottom: 4px;
 }
 
 .container-node {
-  padding-left: 12px;
+  padding-left: 36px;
 }
 
 /* 状态指示小圆点 */
