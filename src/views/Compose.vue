@@ -24,7 +24,6 @@ import {
   StopOutline,
   SyncOutline,
   HammerOutline,
-  TrashOutline,
   TerminalOutline,
   BarChartOutline,
   CheckmarkCircleOutline,
@@ -52,17 +51,22 @@ const message = useMessage()
 const detailRef = ref<any>(null)
 const selectedId = ref<string | null>(null)
 const selectedType = ref<'project' | 'container' | null>(null)
-const selectedProject = ref<any>(null)
 const containerDetails = ref<any>(null)
 const loadingDetails = ref(false)
+
+const selectedProject = computed(() => {
+  if (selectedId.value && selectedId.value.startsWith('project:')) {
+    const projectName = selectedId.value.split(':')[1]
+    return composeStore.projects.find(p => p.name === projectName) || null
+  }
+  return null
+})
 
 // 悬浮复制 Toast 状态
 const showCopyToast = ref(false)
 const copyToastText = ref('已复制到剪贴板')
 
-// 彻底删除阻断模态框
-const showDeleteConfirm = ref(false)
-const deletingProject = ref<any>(null)
+
 
 // Exec 命令弹窗
 const showExecModal = ref(false)
@@ -82,8 +86,6 @@ const onSelect = async (id: string) => {
   selectedId.value = id
   if (id.startsWith('project:')) {
     selectedType.value = 'project'
-    const projectName = id.split(':')[1]
-    selectedProject.value = composeStore.projects.find(p => p.name === projectName)
   } else {
     selectedType.value = 'container'
     await fetchDetails(id)
@@ -167,17 +169,14 @@ const handleMenuSelect = async (key: string) => {
   }
 
   // 项目动作
-  if (key === 'up' || key === 'down' || key === 'restart_project' || key === 'delete_project') {
+  if (key === 'up' || key === 'down' || key === 'stop_project' || key === 'down_project' || key === 'restart_project') {
     const project = (target && !target.id) ? target : selectedProject.value
     if (!project) return
 
     if (key === 'up') await handleProjectUp(project)
-    else if (key === 'down') await handleProjectDown(project)
+    else if (key === 'stop_project') await handleProjectStop(project)
+    else if (key === 'down' || key === 'down_project') await handleProjectDown(project)
     else if (key === 'restart_project') await handleProjectRestart(project)
-    else if (key === 'delete_project') {
-      deletingProject.value = project
-      showDeleteConfirm.value = true
-    }
   }
 }
 
@@ -282,6 +281,17 @@ const handleProjectUp = async (project?: any) => {
   }
 }
 
+const handleProjectStop = async (project?: any) => {
+  const p = project?.working_dir ? project : selectedProject.value
+  if (!p?.working_dir) return
+  try {
+    await composeStore.runComposeCommand(p.working_dir, ['stop'])
+    message.success('已发送 Compose Stop 指令')
+  } catch (e: any) {
+    message.error('操作失败: ' + e)
+  }
+}
+
 const handleProjectDown = async (project?: any) => {
   const p = project?.working_dir ? project : selectedProject.value
   if (!p?.working_dir) return
@@ -305,23 +315,7 @@ const handleProjectRestart = async (project?: any) => {
 }
 
 
-const handleConfirmDownDestroy = async () => {
-  showDeleteConfirm.value = false
-  const p = deletingProject.value
-  if (!p?.working_dir) return
-  try {
-    message.warning('正在执行 Down 并移除关联匿名卷...')
-    await composeStore.runComposeCommand(p.working_dir, ['down', '-v'])
-    message.success('项目已彻底物理蒸发！')
-    await composeStore.fetchProjects()
-    if (selectedId.value?.startsWith('project:' + p.name)) {
-      selectedId.value = null
-      selectedType.value = null
-    }
-  } catch (e: any) {
-    message.error('销毁失败: ' + e)
-  }
-}
+
 
 const handleShowTop = async (_id: string, name: string) => {
   topContainerName.value = name
@@ -632,11 +626,15 @@ onUnmounted(() => {
             <n-button-group round size="small">
               <n-button :loading="composeStore.executing" type="primary" @click="handleProjectUp">
                 <template #icon><n-icon :component="PlayOutline" /></template>
-                启动 (Up)
+                启动
+              </n-button>
+              <n-button :loading="composeStore.executing" @click="handleProjectStop">
+                <template #icon><n-icon :component="StopOutline" /></template>
+                停止
               </n-button>
               <n-button :loading="composeStore.executing" @click="handleProjectDown">
                 <template #icon><n-icon :component="StopOutline" /></template>
-                停止 (Down)
+                下线
               </n-button>
               <n-button :loading="composeStore.executing" @click="handleProjectRestart">
                 <template #icon><n-icon :component="SyncOutline" /></template>
@@ -678,26 +676,7 @@ onUnmounted(() => {
 
 
 
-  <!-- 2. 彻底删除项目阻断警告模态框 -->
-  <n-modal v-model:show="showDeleteConfirm" preset="card" style="width: 420px; border-top: 4px solid var(--brand-danger);" title="确认强力彻底删除项目？">
-    <template #header-extra>
-      <n-icon :component="TrashOutline" color="var(--brand-danger)" />
-    </template>
-    <div class="warning-modal-body">
-      <p class="warning-highlight-text">警告：此操作不可逆！</p>
-      <p>软件将调用后台执行 <strong>docker compose down -v</strong> 命令：</p>
-      <ul>
-        <li>彻底销毁该项目的所有运行容器</li>
-        <li>彻底擦除与其关联的<strong>匿名数据卷 (Anonymous Volumes)</strong></li>
-      </ul>
-    </div>
-    <template #footer>
-      <div class="warning-modal-footer">
-        <n-button type="error" @click="handleConfirmDownDestroy">确认强力删除</n-button>
-        <n-button quaternary @click="showDeleteConfirm = false">取消</n-button>
-      </div>
-    </template>
-  </n-modal>
+
 
   <!-- 3. Exec 快速执行命令弹窗 -->
   <n-modal v-model:show="showExecModal" preset="card" style="width: 500px;" title="快速执行单行命令">

@@ -82,11 +82,10 @@ export function useContextMenu() {
         ]
       } else if (type === 'project') {
         currentOptions.value = [
-          { label: '全部启动 (Compose Up)', key: 'up', icon: renderIcon(PlayOutline) },
-          { label: '全部重启 (Compose Restart)', key: 'restart_project', icon: renderIcon(RefreshOutline) },
-          { label: '全部停止 (Compose Stop)', key: 'down', icon: renderIcon(StopOutline) },
-          { type: 'divider', key: 'd1' },
-          { label: '彻底删除 (Compose Down...)', key: 'delete_project', icon: renderIcon(TrashOutline) }
+          { label: '启动', key: 'up', icon: renderIcon(PlayOutline) },
+          { label: '重启', key: 'restart_project', icon: renderIcon(RefreshOutline) },
+          { label: '停止', key: 'stop_project', icon: renderIcon(StopOutline) },
+          { label: '下线', key: 'down_project', icon: renderIcon(StopOutline) }
         ]
       } else if (type === 'global') {
         currentOptions.value = [

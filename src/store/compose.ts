@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore } from './settings'
+import { useContainerStore } from './container'
 
 /**
  * Docker Compose 项目接口
@@ -123,7 +124,13 @@ export const useComposeStore = defineStore('compose', {
 
         const unlistenFinished = await listen('compose-cmd-finished', () => {
           cleanup()
-          this.fetchProjects()
+          const refresh = () => {
+            this.fetchProjects()
+            const containerStore = useContainerStore()
+            containerStore.fetchContainers()
+          }
+          refresh()
+          setTimeout(refresh, 400)
         })
         unlistenList.push(unlistenFinished)
 
