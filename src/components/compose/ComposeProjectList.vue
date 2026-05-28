@@ -244,7 +244,7 @@ const handleImportProject = () => {
 
 /* 容器运行状态下的齿轮图标颜色 */
 .container-node.is-up .service-icon {
-  color: var(--brand-primary);
+  color: #10b981;
   opacity: 0.9;
 }
 
@@ -275,8 +275,8 @@ const handleImportProject = () => {
 }
 
 .status-dot.running {
-  background-color: var(--brand-primary);
+  background-color: #10b981;
   opacity: 1;
-  box-shadow: 0 0 4px var(--brand-primary);
+  box-shadow: 0 0 4px #10b981;
 }
 </style>
