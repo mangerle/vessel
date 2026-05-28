@@ -142,6 +142,17 @@ const handleMenuSelect = async (key: string) => {
         }
       })
       break
+    case 'file_explorer':
+      if (selectedId.value !== targetId) {
+        selectedId.value = targetId
+        await fetchDetails(targetId)
+      }
+      nextTick(() => {
+        if (detailRef.value) {
+          detailRef.value.activeTab = 'files'
+        }
+      })
+      break
     case 'logs':
       selectedId.value = targetId
       await fetchDetails(targetId)

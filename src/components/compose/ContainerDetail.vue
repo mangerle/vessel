@@ -204,6 +204,11 @@
             </div>
           </n-scrollbar>
         </div>
+
+        <!-- 5. 文件浏览 -->
+        <div v-show="activeTab === 'files'" class="files-pane">
+          <ContainerFileBrowser :container-id="container.id" :container-status="isUp" />
+        </div>
       </div>
     </template>
 
@@ -235,7 +240,8 @@ import {
   PinOutline,
   DiscOutline,
   FlashOutline,
-  LogoDocker
+  LogoDocker,
+  FolderOutline
 } from '@vicons/ionicons5'
 import { useSettingsStore } from '../../store/settings'
 import { Terminal } from '@xterm/xterm'
@@ -243,6 +249,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
+import ContainerFileBrowser from './ContainerFileBrowser.vue'
 
 const props = defineProps<{
   container: any | null
@@ -276,6 +283,7 @@ const selectedUser = ref<'default' | 'root'>('default')
 
 const tabs = [
   { label: '运行日志', value: 'logs', icon: DocumentTextOutline },
+  { label: '文件浏览', value: 'files', icon: FolderOutline },
   { label: '交互终端', value: 'terminal', icon: TerminalOutline },
   { label: '性能仪表盘', value: 'stats', icon: BarChartOutline },
   { label: '元数据详情', value: 'inspect', icon: ClipboardOutline }
@@ -1034,6 +1042,11 @@ const onScrollTrackMouseDown = (e: MouseEvent) => {
 .inspect-pane {
   height: 100%;
   padding: 16px;
+}
+
+.files-pane {
+  height: 100%;
+  overflow: hidden;
 }
 
 .inspect-grid {

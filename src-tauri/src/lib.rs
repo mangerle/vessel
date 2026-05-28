@@ -139,6 +139,14 @@ pub fn run() {
             docker::prune_volumes,
             docker::list_wsl_distros,
             docker::open_config_dir,
+            docker::list_container_files,
+            docker::download_file_from_container,
+            docker::upload_file_to_container,
+            docker::delete_container_file,
+            docker::create_container_file,
+            docker::rename_container_file,
+            docker::read_container_text_file,
+            docker::write_container_text_file,
             connection::update_connection_config,
         ])
         .run(tauri::generate_context!())

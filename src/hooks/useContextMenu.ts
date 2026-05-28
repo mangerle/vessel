@@ -13,7 +13,8 @@ import {
   FlashOutline,
   ListOutline,
   CreateOutline,
-  SaveOutline
+  SaveOutline,
+  FolderOutline
 } from '@vicons/ionicons5'
 
 export function useContextMenu() {
@@ -68,6 +69,7 @@ export function useContextMenu() {
           { type: 'divider', key: 'div3' },
 
           // 组 4: 控制流注入
+          { label: '文件管理', key: 'file_explorer', icon: renderIcon(FolderOutline) },
           { label: '附加标准流 (Attach)', key: 'attach_stream', icon: renderIcon(FlashOutline) },
           { label: '快速执行命令 (Exec...)', key: 'exec_cmd', icon: renderIcon(TerminalOutline) },
           { 
