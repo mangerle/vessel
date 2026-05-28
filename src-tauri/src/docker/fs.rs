@@ -1,5 +1,9 @@
 use crate::connection::get_docker_client;
 
+fn escape_shell_arg(arg: &str) -> String {
+    format!("'{}'", arg.replace('\'', "'\\''"))
+}
+
 /// 容器内文件信息结构体
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct ContainerFileInfo {
@@ -63,9 +67,10 @@ async fn run_exec_to_string(container_id: &str, cmd: Vec<String>) -> Result<(Str
 pub async fn list_container_files(id: String, path: String) -> Result<Vec<ContainerFileInfo>, String> {
     let target_path = if path.is_empty() { "/".to_string() } else { path };
 
+    let escaped_path = escape_shell_arg(&target_path);
     let stat_script = format!(
-        "cd \"{}\" && for f in * .[^.]*; do ( [ \"$f\" = \".\" ] || [ \"$f\" = \"..\" ] || [ ! -e \"$f\" ] && [ ! -L \"$f\" ] ) && continue; stat -c '%F|%s|%Y|%A|%n' \"$f\" 2>/dev/null; done",
-        target_path.replace('"', "\\\"")
+        "cd {} && for f in * .[^.]*; do ( [ \"$f\" = \".\" ] || [ \"$f\" = \"..\" ] || [ ! -e \"$f\" ] && [ ! -L \"$f\" ] ) && continue; stat -c '%F|%s|%Y|%A|%n' \"$f\" 2>/dev/null; done",
+        escaped_path
     );
     
     let cmd = vec!["sh".to_string(), "-c".to_string(), stat_script];
@@ -98,7 +103,7 @@ pub async fn list_container_files(id: String, path: String) -> Result<Vec<Contai
             }
         }
         _ => {
-            let ls_script = format!("ls -la \"{}\"", target_path.replace('"', "\\\""));
+            let ls_script = format!("ls -la {}", escaped_path);
             let cmd = vec!["sh".to_string(), "-c".to_string(), ls_script];
             if let Ok((stdout, _stderr)) = run_exec_to_string(&id, cmd).await {
                 for line in stdout.lines() {
@@ -287,7 +292,11 @@ pub async fn delete_container_file(id: String, path: String) -> Result<(), Strin
     if path.is_empty() || path == "/" {
         return Err("安全起见，禁止删除容器根目录".to_string());
     }
-    let cmd = vec!["sh".to_string(), "-c".to_string(), format!("rm -rf \"{}\"", path.replace('"', "\\\""))];
+    let cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!("rm -rf {}", escape_shell_arg(&path)),
+    ];
     let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
     if !stderr.trim().is_empty() {
         return Err(format!("删除失败: {}", stderr));
@@ -302,9 +311,17 @@ pub async fn create_container_file(id: String, path: String, is_dir: bool) -> Re
         return Err("路径不能为空".to_string());
     }
     let cmd = if is_dir {
-        vec!["sh".to_string(), "-c".to_string(), format!("mkdir -p \"{}\"", path.replace('"', "\\\""))]
+        vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!("mkdir -p {}", escape_shell_arg(&path)),
+        ]
     } else {
-        vec!["sh".to_string(), "-c".to_string(), format!("touch \"{}\"", path.replace('"', "\\\""))]
+        vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!("touch {}", escape_shell_arg(&path)),
+        ]
     };
     let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
     if !stderr.trim().is_empty() {
@@ -319,7 +336,11 @@ pub async fn rename_container_file(id: String, src: String, dest: String) -> Res
     if src.is_empty() || dest.is_empty() {
         return Err("路径不能为空".to_string());
     }
-    let cmd = vec!["sh".to_string(), "-c".to_string(), format!("mv \"{}\" \"{}\"", src.replace('"', "\\\""), dest.replace('"', "\\\""))];
+    let cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!("mv {} {}", escape_shell_arg(&src), escape_shell_arg(&dest)),
+    ];
     let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
     if !stderr.trim().is_empty() {
         return Err(format!("重命名失败: {}", stderr));
