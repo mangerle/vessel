@@ -1,5 +1,5 @@
 <template>
-  <div class="compose-project-list" @contextmenu="$emit('contextmenu', $event, 'global')">
+  <div class="compose-project-list" @contextmenu.prevent.stop="$emit('contextmenu', $event, 'global')">
     <!-- 顶部 40px 高度的一键导入按钮 -->
     <div class="import-header">
       <button class="import-btn" @click="handleImportProject">
@@ -16,7 +16,7 @@
           class="project-node"
           :class="{ active: selectedId === 'project:' + project.name }"
           @click="handleSelect('project:' + project.name)"
-          @contextmenu.stop="$emit('contextmenu', $event, 'project', project)"
+          @contextmenu.prevent.stop="$emit('contextmenu', $event, 'project', project)"
         >
           <span 
             class="tree-arrow" 
@@ -41,7 +41,7 @@
               'is-down': container.state !== 'running'
             }"
             @click="handleSelect(container.id)"
-            @contextmenu.stop="$emit('contextmenu', $event, 'container', container)"
+            @contextmenu.prevent.stop="$emit('contextmenu', $event, 'container', container)"
           >
             <span class="status-dot" :class="container.state"></span>
             <span class="node-label">{{ container.name }}</span>

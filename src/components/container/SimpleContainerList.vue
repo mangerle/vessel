@@ -1,5 +1,5 @@
 <template>
-  <div class="simple-container-list" @contextmenu="$emit('contextmenu', $event, 'global')">
+  <div class="simple-container-list" @contextmenu.prevent.stop="$emit('contextmenu', $event, 'global')">
     <!-- 顶部 40px 工具栏 -->
     <div class="list-toolbar">
       <!-- 搜索框 -->
@@ -81,7 +81,7 @@
           'is-down': (item.state || item.status) !== 'running'
         }"
         @click="handleSelect(item.id)"
-        @contextmenu.stop="$emit('contextmenu', $event, 'container', item)"
+        @contextmenu.prevent.stop="$emit('contextmenu', $event, 'container', item)"
       >
         <!-- 复选框 -->
         <label class="checkbox-container" @click.stop>
