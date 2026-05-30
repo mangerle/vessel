@@ -1,9 +1,13 @@
 [package]
 name = "vessel"
 version = "0.1.9"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
+description = "A modern desktop client for Docker management."
+authors = ["mangerle"]
+edition = "2024"
+repository = "https://github.com/mangerle/vesselApp"
+homepage = "https://github.com/mangerle/vesselApp"
+license = "MIT"
+readme = "../README.md"
 
 # 更多键及其定义请参阅 https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,7 +15,7 @@ edition = "2021"
 # `_lib` 后缀可能看起来多余，但它是必要的
 # 以使库名称唯一，且不会与二进制文件名称冲突。
 # 这似乎只是 Windows 上的问题，见 https://github.com/rust-lang/cargo/issues/8519
-name = "docker_manager_lib"
+name = "vessel_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

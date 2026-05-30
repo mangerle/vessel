@@ -24,7 +24,7 @@ pub fn run() {
                 .level_for("hyper", log::LevelFilter::Warn)
                 .level_for("tokio", log::LevelFilter::Warn)
                 .level_for("bollard", log::LevelFilter::Warn)
-                .level_for("docker_manager_lib", log::LevelFilter::Info)
+                .level_for("vessel_lib", log::LevelFilter::Info)
                 .build(),
         )
         .plugin(tauri_plugin_shell::init())
