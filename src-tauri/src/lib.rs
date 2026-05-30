@@ -1,5 +1,6 @@
 pub mod connection;
 pub mod docker;
+pub mod error;
 
 use tauri::{
     menu::{Menu, MenuItem},
