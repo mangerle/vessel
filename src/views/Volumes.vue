@@ -18,7 +18,6 @@ import {
   SparklesOutline,
   TrashOutline,
   DocumentOutline,
-  DiscOutline,
   ArrowBackOutline,
   LockClosedOutline,
   FlashOutline,
