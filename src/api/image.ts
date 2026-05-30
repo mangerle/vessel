@@ -48,5 +48,20 @@ export const imageApi = {
   /**
    * 获取镜像历史
    */
-  history: (id: string) => invoke<ImageHistoryInfo[]>('get_image_history', { id })
+  history: (id: string) => invoke<ImageHistoryInfo[]>('get_image_history', { id }),
+
+  /**
+   * 导出镜像
+   */
+  export: (imageIdOrName: string, path: string) => invoke<void>('export_image', { imageIdOrName, path }),
+
+  /**
+   * 导入镜像
+   */
+  import: (path: string) => invoke<void>('import_image', { path }),
+
+  /**
+   * 为镜像打标签
+   */
+  tag: (imageName: string, repo: string, tag: string) => invoke<void>('tag_image', { imageName, repo, tag })
 }

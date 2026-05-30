@@ -1,5 +1,6 @@
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
+use super::ContainerFileInfo;
 
 fn escape_shell_arg(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))

@@ -1,27 +1,6 @@
 import { defineStore } from 'pinia'
-import { invoke } from '@tauri-apps/api/core'
-
-/**
- * Docker 数据卷接口
- */
-interface VolumeInfo {
-  name: string
-  driver: string
-  mountpoint: string
-  created: string
-}
-
-/**
- * 使用卷的容器信息
- */
-export interface VolumeUser {
-  container_id: string
-  container_name: string
-  source: string
-  destination: string
-  mode: string
-  rw: boolean
-}
+import * as volumeApi from '../api/volume'
+import type { VolumeInfo, VolumeUser } from '../api/types'
 
 /**
  * Docker 数据卷仓库
@@ -45,7 +24,7 @@ export const useVolumeStore = defineStore('volume', {
       this.loading = true
       this.error = null
       try {
-        this.volumes = await invoke<VolumeInfo[]>('list_volumes')
+        this.volumes = await volumeApi.listVolumes()
       } catch (err) {
         console.error('获取卷列表失败:', err)
         this.error = String(err)
@@ -60,7 +39,7 @@ export const useVolumeStore = defineStore('volume', {
       this.loading = true
       this.error = null
       try {
-        this.volumeUsers = await invoke<VolumeUser[]>('list_volume_containers', { name })
+        this.volumeUsers = await volumeApi.listVolumeContainers(name)
       } catch (err) {
         console.error('获取卷使用者失败:', err)
         this.error = String(err)
@@ -76,7 +55,7 @@ export const useVolumeStore = defineStore('volume', {
       this.loading = true
       this.error = null
       try {
-        await invoke('open_volume_path', { path })
+        await volumeApi.openVolumePath(path)
       } catch (err) {
         console.error('打开卷路径失败:', err)
         this.error = String(err)
@@ -93,7 +72,7 @@ export const useVolumeStore = defineStore('volume', {
       this.loading = true
       this.error = null
       try {
-        await invoke('remove_volume', { name })
+        await volumeApi.removeVolume(name)
         await this.fetchVolumes()
       } catch (err) {
         console.error('删除卷失败:', err)
@@ -110,7 +89,7 @@ export const useVolumeStore = defineStore('volume', {
       this.loading = true
       this.error = null
       try {
-        await invoke('prune_volumes')
+        await volumeApi.pruneVolumes()
         await this.fetchVolumes()
       } catch (err) {
         console.error('清理卷失败:', err)

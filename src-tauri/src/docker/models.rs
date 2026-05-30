@@ -83,8 +83,8 @@ pub struct ImageHistoryInfo {
     pub size: i64,
 }
 
-impl From<ImageHistoryResponseItem> for ImageHistoryInfo {
-    fn from(item: ImageHistoryResponseItem) -> Self {
+impl From<HistoryResponseItem> for ImageHistoryInfo {
+    fn from(item: HistoryResponseItem) -> Self {
         Self {
             id: item.id,
             created: item.created,

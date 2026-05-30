@@ -1,8 +1,13 @@
 import { defineStore } from 'pinia'
-import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { useTaskStore } from './task'
-import type { ImageInfo, ImageDetails, ImageSearchResult, ImageHistoryInfo, PullProgress } from '../api/types'
+import { imageApi } from '../api/image'
+import type { 
+  ImageInfo, 
+  ImageSearchResult, 
+  ImageHistoryInfo, 
+  PullProgress 
+} from '../api/types'
 
 export const useImageStore = defineStore('image', {
   state: () => ({
@@ -18,7 +23,7 @@ export const useImageStore = defineStore('image', {
       this.loading = true
       this.error = null
       try {
-        this.images = await invoke<ImageInfo[]>('list_images')
+        this.images = await imageApi.list()
       } catch (err) {
         console.error('获取镜像失败:', err)
         this.error = String(err)
@@ -30,7 +35,7 @@ export const useImageStore = defineStore('image', {
       this.loading = true
       this.error = null
       try {
-        this.searchResults = await invoke<ImageSearchResult[]>('search_images', { term })
+        this.searchResults = await imageApi.search(term)
       } catch (err) {
         console.error('搜索镜像失败:', err)
         this.error = String(err)
@@ -45,7 +50,7 @@ export const useImageStore = defineStore('image', {
       this.loading = true
       this.error = null
       try {
-        return await invoke<ImageDetails>('inspect_image', { id })
+        return await imageApi.inspect(id)
       } catch (err) {
         console.error('获取镜像详情失败:', err)
         this.error = String(err)
@@ -58,7 +63,7 @@ export const useImageStore = defineStore('image', {
       this.loading = true
       this.error = null
       try {
-        this.imageHistory = await invoke<ImageHistoryInfo[]>('get_image_history', { id })
+        this.imageHistory = await imageApi.history(id)
       } catch (err) {
         console.error('获取镜像历史失败:', err)
         this.error = String(err)
@@ -70,7 +75,7 @@ export const useImageStore = defineStore('image', {
       this.loading = true
       this.error = null
       try {
-        await invoke('remove_image', { id })
+        await imageApi.remove(id)
         await this.fetchImages()
       } catch (err) {
         console.error('删除镜像失败:', err)
@@ -85,10 +90,10 @@ export const useImageStore = defineStore('image', {
       if (typeof imageName !== 'string') {
         throw new TypeError('参数 imageName 必须是字符串')
       }
-      
+
       const taskStore = useTaskStore()
       const taskId = crypto.randomUUID()
-      
+
       // 使用 includes 检查标签
       const targetImageName = imageName.includes(':') ? imageName : `${imageName}:latest`
 
@@ -107,7 +112,7 @@ export const useImageStore = defineStore('image', {
 
       const cleanup = (status: 'success' | 'error', error?: string) => {
         unlistenList.forEach(fn => fn())
-        
+
         setTimeout(() => {
           const hasOtherRunning = taskStore.tasks.some(t => t.id !== taskId && t.name.startsWith('拉取镜像:') && t.status === 'running')
           if (!hasOtherRunning) {
@@ -128,7 +133,7 @@ export const useImageStore = defineStore('image', {
           if (image !== targetImageName) return
 
           const logMsg = payload.status || payload.stream || ''
-          
+
           let progress: number | undefined = undefined
           if (payload.progressDetail?.current && payload.progressDetail?.total) {
              progress = Math.round((payload.progressDetail.current / payload.progressDetail.total) * 100)
@@ -160,7 +165,7 @@ export const useImageStore = defineStore('image', {
         unlistenList.push(unlistenFinished)
 
         // 调用后端，传递 imageName 已经可能包含的登录凭证
-        await invoke('pull_image', { 
+        await imageApi.pull({ 
           imageName,
           username: auth?.username || null,
           password: auth?.password || null,
@@ -176,7 +181,7 @@ export const useImageStore = defineStore('image', {
       this.loading = true
       this.error = null
       try {
-        const result = await invoke<{ deleted_count: number; space_reclaimed: number }>('prune_images')
+        const result = await imageApi.prune()
         await this.fetchImages()
         return result
       } catch (err) {
@@ -189,7 +194,7 @@ export const useImageStore = defineStore('image', {
     },
     async exportImage(imageId: string, imageName: string) {
       const { save } = await import('@tauri-apps/plugin-dialog')
-      
+
       const safeName = imageName.replace(/[:/]/g, '_') || imageId.substring(0, 12)
       const path = await save({
         title: '导出镜像为 Tar 包',
@@ -262,7 +267,7 @@ export const useImageStore = defineStore('image', {
         })
         unlistenList.push(unlistenFinished)
 
-        await invoke('export_image', { imageIdOrName: exportIdentifier, path })
+        await imageApi.export(exportIdentifier, path)
       } catch (err) {
         console.error('导出镜像失败:', err)
         cleanup('error', String(err))
@@ -272,7 +277,7 @@ export const useImageStore = defineStore('image', {
     async importImage(path: string, customTag?: string) {
       const taskStore = useTaskStore()
       const taskId = crypto.randomUUID()
-      
+
       const fileName = path.split(/[/\\]/).pop() || path
       const taskName = `导入镜像: ${fileName}`
 
@@ -296,7 +301,7 @@ export const useImageStore = defineStore('image', {
         })
         if (status === 'success') {
           await this.fetchImages()
-          
+
           if (customTag) {
             try {
               const newImage = this.images.find(img => !oldIds.has(img.id))
@@ -304,17 +309,13 @@ export const useImageStore = defineStore('image', {
                 const parts = customTag.split(':')
                 const repo = parts[0]
                 const tag = parts[1] || 'latest'
-                
+
                 taskStore.updateTask(taskId, {
                   logs: [`正在为新导入的镜像赋予标签: ${repo}:${tag}...`]
                 })
-                
-                await invoke('tag_image', {
-                  imageName: newImage.id,
-                  repo,
-                  tag
-                })
-                
+
+                await imageApi.tag(newImage.id, repo, tag)
+
                 await this.fetchImages()
                 taskStore.updateTask(taskId, {
                   logs: [`镜像打标签成功: ${repo}:${tag}`]
@@ -359,7 +360,7 @@ export const useImageStore = defineStore('image', {
         })
         unlistenList.push(unlistenFinished)
 
-        await invoke('import_image', { path })
+        await imageApi.import(path)
       } catch (err) {
         console.error('流式导入镜像失败:', err)
         cleanup('error', String(err))
@@ -368,3 +369,4 @@ export const useImageStore = defineStore('image', {
     }
   }
 })
+

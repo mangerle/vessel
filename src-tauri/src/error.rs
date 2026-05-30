@@ -9,10 +9,30 @@ pub enum AppError {
     Io(#[from] std::io::Error),
     #[error("Tauri 错误: {0}")]
     Tauri(#[from] tauri::Error),
+    #[error("Opener 错误: {0}")]
+    Opener(#[from] tauri_plugin_opener::Error),
     #[error("未知错误: {0}")]
     Anyhow(#[from] anyhow::Error),
     #[error("{0}")]
     Custom(String),
+}
+
+impl From<&str> for AppError {
+    fn from(s: &str) -> Self {
+        AppError::Custom(s.to_string())
+    }
+}
+
+impl From<String> for AppError {
+    fn from(s: String) -> Self {
+        AppError::Custom(s)
+    }
+}
+
+impl From<AppError> for String {
+    fn from(e: AppError) -> Self {
+        e.to_string()
+    }
 }
 
 impl Serialize for AppError {

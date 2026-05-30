@@ -1,20 +1,9 @@
 import { defineStore } from 'pinia'
-import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore } from './settings'
 import { useContainerStore } from './container'
-
-/**
- * Docker Compose 项目接口
- */
-export interface ComposeProject {
-  name: string
-  container_count: number
-  running_count: number
-  status: string
-  working_dir?: string
-  config_file?: string
-}
+import type { ComposeProject } from '../api/types'
+import { composeApi } from '../api/compose'
 
 /**
  * Compose 项目仓库
@@ -42,7 +31,7 @@ export const useComposeStore = defineStore('compose', {
       this.loading = true
       this.error = null
       try {
-        this.projects = await invoke<ComposeProject[]>('list_compose_projects')
+        this.projects = await composeApi.listProjects()
       } catch (err) {
         console.error('获取 Compose 项目失败:', err)
         this.error = String(err)
@@ -59,11 +48,11 @@ export const useComposeStore = defineStore('compose', {
       this.error = null
       const settingsStore = useSettingsStore()
       try {
-        this.currentProjectFile = await invoke<string>('read_compose_file', { 
+        this.currentProjectFile = await composeApi.readFile(
           path,
-          mode: settingsStore.connectionMode,
-          distro: settingsStore.wslDistro
-        })
+          settingsStore.connectionMode,
+          settingsStore.wslDistro
+        )
       } catch (err) {
         console.error('读取 Compose 文件失败:', err)
         this.error = String(err)
@@ -81,12 +70,12 @@ export const useComposeStore = defineStore('compose', {
       this.error = null
       const settingsStore = useSettingsStore()
       try {
-        await invoke('write_compose_file', { 
+        await composeApi.writeFile(
           path, 
           content,
-          mode: settingsStore.connectionMode,
-          distro: settingsStore.wslDistro
-        })
+          settingsStore.connectionMode,
+          settingsStore.wslDistro
+        )
         this.currentProjectFile = content
       } catch (err) {
         console.error('保存 Compose 文件失败:', err)
@@ -140,12 +129,12 @@ export const useComposeStore = defineStore('compose', {
         })
         unlistenList.push(unlistenError)
 
-        await invoke('run_compose_command', { 
+        await composeApi.runCommand(
           projectDir, 
           args,
-          mode: settingsStore.connectionMode,
-          distro: settingsStore.wslDistro
-        })
+          settingsStore.connectionMode,
+          settingsStore.wslDistro
+        )
       } catch (err) {
         console.error('执行 Compose 命令失败:', err)
         this.error = String(err)

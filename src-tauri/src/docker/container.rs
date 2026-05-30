@@ -1,4 +1,5 @@
 use crate::connection::get_docker_client;
+use crate::error::AppResult;
 use bollard::container::{ListContainersOptions, StatsOptions, LogsOptions};
 use tauri::{AppHandle, Emitter};
 use futures_util::stream::StreamExt;
@@ -21,7 +22,7 @@ static STREAM_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// 获取本地 Docker 容器列表的命令
 #[tauri::command]
-pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
+pub async fn list_local_containers() -> AppResult<Vec<ContainerInfo>> {
     let docker = get_docker_client().await?;
 
     let containers = docker
@@ -29,67 +30,65 @@ pub async fn list_local_containers() -> Result<Vec<ContainerInfo>, String> {
             all: true,
             ..Default::default()
         }))
-        .await
-        .map_err(|e| format!("无法获取容器列表: {}", e))?;
+        .await?;
 
     Ok(containers.into_iter().map(ContainerInfo::from).collect())
 }
 
 /// 启动容器
 #[tauri::command]
-pub async fn start_container(id: String) -> Result<(), String> {
+pub async fn start_container(id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .start_container::<String>(&id, None)
-        .await
-        .map_err(|e| format!("启动容器失败: {}", e))
+        .await?;
+    Ok(())
 }
 
 /// 停止容器
 #[tauri::command]
-pub async fn stop_container(id: String) -> Result<(), String> {
+pub async fn stop_container(id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .stop_container(&id, None)
-        .await
-        .map_err(|e| format!("停止容器失败: {}", e))
+        .await?;
+    Ok(())
 }
 
 /// 重启容器
 #[tauri::command]
-pub async fn restart_container(id: String) -> Result<(), String> {
+pub async fn restart_container(id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .restart_container(&id, None)
-        .await
-        .map_err(|e| format!("重启容器失败: {}", e))
+        .await?;
+    Ok(())
 }
 
 /// 获取容器详情
 #[tauri::command]
-pub async fn inspect_container(id: String) -> Result<ContainerDetails, String> {
+pub async fn inspect_container(id: String) -> AppResult<ContainerDetails> {
     let docker = get_docker_client().await?;
     let details = docker
         .inspect_container(&id, None)
-        .await
-        .map_err(|e| format!("获取容器详情失败: {}", e))?;
+        .await?;
 
     Ok(ContainerDetails::from(details))
 }
 
 /// 删除容器
 #[tauri::command]
-pub async fn remove_container(id: String) -> Result<(), String> {
+pub async fn remove_container(id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .remove_container(&id, None)
-        .await
-        .map_err(|e| format!("删除容器失败: {}", e))
+        .await?;
+    Ok(())
 }
 
 /// 实时流式传输容器统计信息
 #[tauri::command]
-pub async fn stream_container_stats(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     let mut stream = docker.stats(
         &id,
@@ -151,7 +150,7 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> Result<(), St
 
 /// 关闭容器统计信息流
 #[tauri::command]
-pub async fn close_container_stats(id: String) -> Result<(), String> {
+pub async fn close_container_stats(id: String) -> AppResult<()> {
     let mut streams = STATS_STREAMS.lock().await;
     if let Some((tx, _)) = streams.remove(&id) {
         let _ = tx.send(());
@@ -161,7 +160,7 @@ pub async fn close_container_stats(id: String) -> Result<(), String> {
 
 /// 获取容器日志
 #[tauri::command]
-pub async fn stream_container_logs(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     let mut stream = docker.logs(
         &id,
@@ -227,7 +226,7 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> Result<(), Str
 
 /// 关闭容器日志流
 #[tauri::command]
-pub async fn close_container_logs(id: String) -> Result<(), String> {
+pub async fn close_container_logs(id: String) -> AppResult<()> {
     let mut streams = LOGS_STREAMS.lock().await;
     if let Some((tx, _)) = streams.remove(&id) {
         let _ = tx.send(());
@@ -238,7 +237,7 @@ pub async fn close_container_logs(id: String) -> Result<(), String> {
 
 /// 重命名容器
 #[tauri::command]
-pub async fn rename_container(id: String, new_name: String) -> Result<(), String> {
+pub async fn rename_container(id: String, new_name: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
 
     let options = bollard::container::RenameContainerOptions {
@@ -247,8 +246,7 @@ pub async fn rename_container(id: String, new_name: String) -> Result<(), String
 
     docker
         .rename_container(&id, options)
-        .await
-        .map_err(|e| format!("重命名容器失败: {}", e))?;
+        .await?;
 
     Ok(())
 }
@@ -261,7 +259,7 @@ pub async fn commit_container(
     tag: Option<String>,
     comment: Option<String>,
     author: Option<String>,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let docker = get_docker_client().await?;
 
     let options = bollard::image::CommitContainerOptions {
@@ -276,30 +274,29 @@ pub async fn commit_container(
 
     let response = docker
         .commit_container(options, bollard::container::Config::<String>::default())
-        .await
-        .map_err(|e| format!("提交容器失败: {}", e))?;
+        .await?;
 
     Ok(response.id.unwrap_or_default())
 }
 
 /// 暂停容器
 #[tauri::command]
-pub async fn pause_container(id: String) -> Result<(), String> {
+pub async fn pause_container(id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .pause_container(&id)
-        .await
-        .map_err(|e| format!("暂停容器失败: {}", e))
+        .await?;
+    Ok(())
 }
 
 /// 恢复容器
 #[tauri::command]
-pub async fn unpause_container(id: String) -> Result<(), String> {
+pub async fn unpause_container(id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .unpause_container(&id)
-        .await
-        .map_err(|e| format!("恢复容器失败: {}", e))
+        .await?;
+    Ok(())
 }
 
 /// 进程 Top 响应结构
@@ -311,12 +308,11 @@ pub struct TopResult {
 
 /// 获取容器进程列表
 #[tauri::command]
-pub async fn top_container(id: String) -> Result<TopResult, String> {
+pub async fn top_container(id: String) -> AppResult<TopResult> {
     let docker = get_docker_client().await?;
     let top_result = docker
         .top_processes(&id, None::<bollard::container::TopOptions<String>>)
-        .await
-        .map_err(|e| format!("获取进程列表失败: {}", e))?;
+        .await?;
 
     Ok(TopResult {
         titles: top_result.titles.unwrap_or_default(),
@@ -333,7 +329,7 @@ pub struct ExecResult {
 
 /// 在容器内执行单次命令
 #[tauri::command]
-pub async fn exec_container(id: String, cmd: String) -> Result<ExecResult, String> {
+pub async fn exec_container(id: String, cmd: String) -> AppResult<ExecResult> {
     use bollard::container::LogOutput;
     use bollard::exec::{CreateExecOptions, StartExecResults};
 
@@ -348,27 +344,21 @@ pub async fn exec_container(id: String, cmd: String) -> Result<ExecResult, Strin
 
     let exec = docker
         .create_exec(&id, config)
-        .await
-        .map_err(|e| format!("创建 exec 失败: {}", e))?;
+        .await?;
 
     let start_exec_result = docker
         .start_exec(&exec.id, None)
-        .await
-        .map_err(|e| format!("启动 exec 失败: {}", e))?;
+        .await?;
 
     let mut output_str = String::new();
     if let StartExecResults::Attached { mut output, .. } = start_exec_result {
         while let Some(msg) = output.next().await {
-            match msg {
-                Ok(LogOutput::StdOut { message }) => {
+            match msg? {
+                LogOutput::StdOut { message } => {
                     output_str.push_str(&String::from_utf8_lossy(&message));
                 }
-                Ok(LogOutput::StdErr { message }) => {
+                LogOutput::StdErr { message } => {
                     output_str.push_str(&String::from_utf8_lossy(&message));
-                }
-                Err(e) => {
-                    output_str.push_str(&format!("\n[读取输出错误: {}]\n", e));
-                    break;
                 }
                 _ => {}
             }
@@ -377,8 +367,7 @@ pub async fn exec_container(id: String, cmd: String) -> Result<ExecResult, Strin
 
     let inspect_result = docker
         .inspect_exec(&exec.id)
-        .await
-        .map_err(|e| format!("获取 exec 状态失败: {}", e))?;
+        .await?;
 
     Ok(ExecResult {
         exit_code: inspect_result.exit_code,

@@ -1,46 +1,6 @@
 import { defineStore } from 'pinia'
-import { invoke } from '@tauri-apps/api/core'
-
-/**
- * Docker 网络信息接口
- */
-interface NetworkInfo {
-  id: string
-  name: string
-  driver: string
-  scope: string
-  created: string
-}
-
-/**
- * 已连接的容器信息
- */
-export interface ConnectedContainer {
-  id: string
-  name: string
-  ipv4_address: string
-  ipv6_address: string
-  mac_address: string
-}
-
-/**
- * 网络详情接口
- */
-export interface NetworkDetails {
-  id: string
-  name: string
-  driver: string
-  scope: string
-  created: string
-  internal: boolean
-  attachable: boolean
-  ingress: boolean
-  subnet: string
-  gateway: string
-  containers: ConnectedContainer[]
-  options: Record<string, string>
-  labels: Record<string, string>
-}
+import * as networkApi from '../api/network'
+import type { NetworkInfo, NetworkDetails } from '../api/types'
 
 /**
  * Docker 网络仓库
@@ -64,7 +24,7 @@ export const useNetworkStore = defineStore('network', {
       this.loading = true
       this.error = null
       try {
-        this.networks = await invoke<NetworkInfo[]>('list_networks')
+        this.networks = await networkApi.listNetworks()
       } catch (err) {
         console.error('获取网络列表失败:', err)
         this.error = String(err)
@@ -80,7 +40,7 @@ export const useNetworkStore = defineStore('network', {
       this.loading = true
       this.error = null
       try {
-        this.currentNetwork = await invoke<NetworkDetails>('get_network_details', { id })
+        this.currentNetwork = await networkApi.getNetworkDetails(id)
         return this.currentNetwork
       } catch (err) {
         console.error('获取网络详情失败:', err)
@@ -98,7 +58,7 @@ export const useNetworkStore = defineStore('network', {
       this.loading = true
       this.error = null
       try {
-        await invoke('remove_network', { id })
+        await networkApi.removeNetwork(id)
         await this.fetchNetworks()
       } catch (err) {
         console.error('删除网络失败:', err)
@@ -115,7 +75,7 @@ export const useNetworkStore = defineStore('network', {
       this.loading = true
       this.error = null
       try {
-        await invoke('prune_networks')
+        await networkApi.pruneNetworks()
         await this.fetchNetworks()
       } catch (err) {
         console.error('清理网络失败:', err)
@@ -134,7 +94,7 @@ export const useNetworkStore = defineStore('network', {
       this.loading = true
       this.error = null
       try {
-        await invoke('disconnect_network', { networkId, containerId })
+        await networkApi.disconnectNetwork(networkId, containerId)
         await this.fetchNetworkDetails(networkId)
       } catch (err) {
         console.error('断开网络连接失败:', err)

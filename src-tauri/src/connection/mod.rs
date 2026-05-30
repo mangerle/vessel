@@ -2,6 +2,7 @@ use bollard::Docker;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use once_cell::sync::Lazy;
+use crate::error::AppResult;
 
 pub mod wsl;
 
@@ -38,7 +39,7 @@ pub async fn update_connection_config(mode: String, distro: Option<String>) {
 }
 
 /// 获取 Docker 客户端
-pub async fn get_docker_client() -> Result<Docker, String> {
+pub async fn get_docker_client() -> AppResult<Docker> {
     let mut client_lock = DOCKER_CLIENT.lock().await;
     
     if let Some(client) = &*client_lock {
@@ -65,7 +66,7 @@ pub async fn get_docker_client() -> Result<Docker, String> {
                         }
                     }
                 }
-                Err(format!("无法通过 WSL 连接到 Docker: {}", e))
+                Err(format!("无法通过 WSL 连接到 Docker: {}", e).into())
             }
         }
     } else {
@@ -79,7 +80,7 @@ pub async fn get_docker_client() -> Result<Docker, String> {
                 }
             }
         }
-        Err("当前连接模式暂未支持或无法连接到本地 Docker".to_string())
+        Err("当前连接模式暂未支持或无法连接到本地 Docker".to_string().into())
     }
 }
 
