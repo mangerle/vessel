@@ -1,4 +1,5 @@
 use crate::connection::get_docker_client;
+use crate::error::AppResult;
 use bollard::image::{CreateImageOptions, ListImagesOptions, ImportImageOptions, PruneImagesOptions, TagImageOptions};
 use bollard::container::Config;
 use bollard::models::{HostConfig, PortBinding};
@@ -14,7 +15,7 @@ use super::{ImageInfo, ImageDetails, ImageSearchResult, ImageHistoryInfo, PruneI
 
 /// 获取本地 Docker 镜像列表的命令
 #[tauri::command]
-pub async fn list_images() -> Result<Vec<ImageInfo>, String> {
+pub async fn list_images() -> AppResult<Vec<ImageInfo>> {
     let docker = get_docker_client().await?;
 
     let images = docker
@@ -22,38 +23,35 @@ pub async fn list_images() -> Result<Vec<ImageInfo>, String> {
             all: false,
             ..Default::default()
         }))
-        .await
-        .map_err(|e| format!("无法获取镜像列表: {}", e))?;
+        .await?;
 
     Ok(images.into_iter().map(ImageInfo::from).collect())
 }
 
 /// 获取镜像详情
 #[tauri::command]
-pub async fn inspect_image(id: String) -> Result<ImageDetails, String> {
+pub async fn inspect_image(id: String) -> AppResult<ImageDetails> {
     let docker = get_docker_client().await?;
     let details = docker
         .inspect_image(&id)
-        .await
-        .map_err(|e| format!("获取镜像详情失败: {}", e))?;
+        .await?;
 
     Ok(ImageDetails::from(details))
 }
 
 /// 删除镜像
 #[tauri::command]
-pub async fn remove_image(id: String) -> Result<(), String> {
+pub async fn remove_image(id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .remove_image(&id, None, None)
-        .await
-        .map_err(|e| format!("删除镜像失败: {}", e))?;
+        .await?;
     Ok(())
 }
 
 /// 搜索镜像
 #[tauri::command]
-pub async fn search_images(term: String) -> Result<Vec<ImageSearchResult>, String> {
+pub async fn search_images(term: String) -> AppResult<Vec<ImageSearchResult>> {
     let docker = get_docker_client().await?;
     let results = docker
         .search_images(bollard::image::SearchImagesOptions {
@@ -61,20 +59,18 @@ pub async fn search_images(term: String) -> Result<Vec<ImageSearchResult>, Strin
             limit: None,
             filters: HashMap::new(),
         })
-        .await
-        .map_err(|e| format!("搜索镜像失败: {}", e))?;
+        .await?;
 
     Ok(results.into_iter().map(ImageSearchResult::from).collect())
 }
 
 /// 获取镜像历史
 #[tauri::command]
-pub async fn get_image_history(id: String) -> Result<Vec<ImageHistoryInfo>, String> {
+pub async fn get_image_history(id: String) -> AppResult<Vec<ImageHistoryInfo>> {
     let docker = get_docker_client().await?;
     let history = docker
         .image_history(&id)
-        .await
-        .map_err(|e| format!("获取镜像历史失败: {}", e))?;
+        .await?;
 
     Ok(history.into_iter().map(ImageHistoryInfo::from).collect())
 }
@@ -87,7 +83,7 @@ pub async fn pull_image(
     username: Option<String>,
     password: Option<String>,
     server_address: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let docker = get_docker_client().await?;
     
     let full_image_name = if image_name.contains(':') {
@@ -171,7 +167,7 @@ pub async fn run_image(
     open_stdin: Option<bool>,
     cmd: Option<Vec<String>>,
     overwrite: Option<bool>,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let docker = get_docker_client().await?;
 
     if overwrite.unwrap_or(false) {
@@ -269,20 +265,18 @@ pub async fn run_image(
             }),
             config,
         )
-        .await
-        .map_err(|e| format!("创建容器失败: {}", e))?;
+        .await?;
 
     docker
         .start_container::<String>(&container.id, None)
-        .await
-        .map_err(|e| format!("启动容器失败: {}", e))?;
+        .await?;
 
     Ok(container.id)
 }
 
 /// 获取本地已安装的 WSL 发行版列表
 #[tauri::command]
-pub async fn list_wsl_distros() -> Result<Vec<String>, String> {
+pub async fn list_wsl_distros() -> AppResult<Vec<String>> {
     #[cfg(windows)]
     {
         use std::process::Command;
@@ -292,11 +286,10 @@ pub async fn list_wsl_distros() -> Result<Vec<String>, String> {
         cmd.args(["-l", "-q"]);
         cmd.creation_flags(0x08000000);
 
-        let output = cmd.output()
-            .map_err(|e| format!("无法执行 wsl 命令，可能未安装 WSL: {}", e))?;
+        let output = cmd.output()?;
 
         if !output.status.success() {
-            return Err("WSL 命令执行失败".to_string());
+            return Err("WSL 命令执行失败".into());
         }
 
         let stdout_raw = output.stdout;
@@ -339,15 +332,14 @@ pub async fn list_wsl_distros() -> Result<Vec<String>, String> {
 
 /// 打开本地配置文件目录
 #[tauri::command]
-pub async fn open_config_dir(app: AppHandle) -> Result<(), String> {
+pub async fn open_config_dir(app: AppHandle) -> AppResult<()> {
     let app_dir = app
         .path()
-        .app_data_dir()
-        .map_err(|e| format!("无法获取应用数据目录: {}", e))?;
+        .app_data_dir()?;
     
     app.opener()
-        .open_path(app_dir.to_string_lossy().to_string(), None::<String>)
-        .map_err(|e| format!("无法打开目录: {}", e))
+        .open_path(app_dir.to_string_lossy().to_string(), None::<String>)?;
+    Ok(())
 }
 
 /// 导出镜像为 tar 文件
@@ -356,7 +348,7 @@ pub async fn export_image(
     app: AppHandle,
     image_id_or_name: String,
     path: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let docker = get_docker_client().await?;
     let mut stream = docker.export_image(&image_id_or_name);
 
@@ -458,12 +450,11 @@ pub async fn export_image(
 pub async fn import_image(
     app: AppHandle,
     path: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let docker = get_docker_client().await?;
 
     let file = tokio::fs::File::open(&path)
-        .await
-        .map_err(|e| format!("无法打开镜像包文件: {}", e))?;
+        .await?;
 
     let byte_stream = ReaderStream::new(file)
         .map(|res| {
@@ -527,7 +518,7 @@ pub async fn import_image(
 
 /// 清理无用的虚悬镜像
 #[tauri::command]
-pub async fn prune_images() -> Result<PruneImagesResult, String> {
+pub async fn prune_images() -> AppResult<PruneImagesResult> {
     let docker = get_docker_client().await?;
 
     let mut filters = HashMap::new();
@@ -536,16 +527,9 @@ pub async fn prune_images() -> Result<PruneImagesResult, String> {
     let options = PruneImagesOptions { filters };
     let response = docker
         .prune_images(Some(options))
-        .await
-        .map_err(|e| format!("清理虚悬镜像失败: {}", e))?;
+        .await?;
 
-    let deleted_count = response.images_deleted.as_ref().map(|v| v.len()).unwrap_or(0);
-    let space_reclaimed = response.space_reclaimed.unwrap_or(0);
-
-    Ok(PruneImagesResult {
-        deleted_count,
-        space_reclaimed,
-    })
+    Ok(PruneImagesResult::from(response))
 }
 
 /// 为镜像打标签
@@ -554,7 +538,7 @@ pub async fn tag_image(
     image_name: String,
     repo: String,
     tag: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let docker = get_docker_client().await?;
 
     let options = TagImageOptions {
@@ -564,8 +548,7 @@ pub async fn tag_image(
 
     docker
         .tag_image(&image_name, Some(options))
-        .await
-        .map_err(|e| format!("为镜像打标签失败: {}", e))?;
+        .await?;
 
     Ok(())
 }
