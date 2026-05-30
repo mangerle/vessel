@@ -101,7 +101,13 @@
         <!-- 1. 运行日志 (三栏像素级布局) -->
         <div v-show="activeTab === 'logs'" class="logs-pane">
           <!-- 左栏: 等宽文本流大宽区 -->
-          <div class="logs-text-area" :class="{ 'word-wrap': wordWrap }" ref="logTextRef" @scroll="onLogScroll">
+          <div 
+            class="logs-text-area" 
+            :class="{ 'word-wrap': wordWrap }" 
+            ref="logTextRef" 
+            @scroll="onLogScroll"
+            @contextmenu="handleLogsContext"
+          >
             <div v-for="(log, idx) in logsList" :key="idx" class="log-line">
               {{ log }}
             </div>
@@ -109,6 +115,18 @@
               等待容器日志输出...
             </div>
           </div>
+
+          <!-- 右键菜单 -->
+          <n-dropdown
+            placement="bottom-start"
+            trigger="manual"
+            :x="x"
+            :y="y"
+            :options="logMenuOptions"
+            :show="showDropdown"
+            :on-clickoutside="onClickOutside"
+            @select="handleMenuSelect"
+          />
 
           <!-- 中栏: 独立自定义垂直滚动条 -->
           <div 
@@ -224,7 +242,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { NSpin, NScrollbar, NIcon } from 'naive-ui'
+import { NSpin, NScrollbar, NIcon, NDropdown } from 'naive-ui'
 import { 
   PlayOutline, 
   StopOutline, 
@@ -241,7 +259,8 @@ import {
   DiscOutline,
   FlashOutline,
   LogoDocker,
-  FolderOutline
+  FolderOutline,
+  CopyOutline
 } from '@vicons/ionicons5'
 import { useSettingsStore } from '../../store/settings'
 import { Terminal } from '@xterm/xterm'
@@ -250,6 +269,7 @@ import '@xterm/xterm/css/xterm.css'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import ContainerFileBrowser from './ContainerFileBrowser.vue'
+import { useContextMenu, renderIcon } from '../../hooks/useContextMenu'
 
 const props = defineProps<{
   container: any | null
@@ -259,6 +279,60 @@ const props = defineProps<{
 
 const settingsStore = useSettingsStore()
 const emit = defineEmits(['start', 'stop', 'restart', 'clean-logs'])
+
+// 右键菜单支持
+const { 
+  showDropdown, 
+  x, 
+  y, 
+  handleContextMenu, 
+  onClickOutside 
+} = useContextMenu()
+
+const logMenuOptions = computed(() => [
+  {
+    label: '复制全部日志',
+    key: 'copy_all',
+    icon: renderIcon(CopyOutline)
+  },
+  {
+    label: wordWrap.value ? '关闭自动换行' : '开启自动换行',
+    key: 'toggle_wrap',
+    icon: renderIcon(ReturnDownBackOutline)
+  },
+  {
+    label: tailFollow.value ? '取消锚定末尾' : '开启锚定末尾',
+    key: 'toggle_follow',
+    icon: renderIcon(PinOutline)
+  },
+  {
+    type: 'divider',
+    key: 'd1'
+  },
+  {
+    label: '清空显示缓冲区',
+    key: 'clear',
+    icon: renderIcon(TrashOutline)
+  }
+])
+
+const handleLogsContext = (e: MouseEvent) => {
+  handleContextMenu(e, logMenuOptions.value)
+}
+
+const handleMenuSelect = async (key: string) => {
+  showDropdown.value = false
+  if (key === 'clear') {
+    emit('clean-logs')
+  } else if (key === 'copy_all') {
+    const text = props.logsList.join('\n')
+    await navigator.clipboard.writeText(text)
+  } else if (key === 'toggle_wrap') {
+    wordWrap.value = !wordWrap.value
+  } else if (key === 'toggle_follow') {
+    toggleTailFollow()
+  }
+}
 
 const activeTab = ref('logs')
 
