@@ -295,6 +295,11 @@ const {
 
 const logMenuOptions = computed((): MenuOption[] => [
   {
+    label: '复制选中文本',
+    key: 'copy_selected_logs',
+    icon: renderIcon(CopyOutline)
+  },
+  {
     label: '复制全部日志',
     key: 'copy_all_logs',
     icon: renderIcon(CopyOutline)
@@ -321,6 +326,20 @@ const logMenuOptions = computed((): MenuOption[] => [
 ])
 
 const terminalMenuOptions: MenuOption[] = [
+  {
+    label: '复制 (Copy)',
+    key: 'copy_terminal',
+    icon: renderIcon(CopyOutline)
+  },
+  {
+    label: '粘贴 (Paste)',
+    key: 'paste_terminal',
+    icon: renderIcon(ClipboardOutline)
+  },
+  {
+    type: 'divider',
+    key: 'd1'
+  },
   {
     label: '清屏 (Clear)',
     key: 'clear_terminal',
@@ -388,10 +407,44 @@ const handleMenuSelect = async (key: string) => {
     } catch (err) {
       message.error(`复制失败: ${err}`)
     }
+  } else if (key === 'copy_selected_logs') {
+    const text = window.getSelection()?.toString() || ''
+    if (text) {
+      try {
+        await navigator.clipboard.writeText(text)
+        message.success('已复制选中日志')
+      } catch (err) {
+        message.error(`复制失败: ${err}`)
+      }
+    } else {
+      message.warning('没有选中文本')
+    }
   } else if (key === 'toggle_wrap') {
     wordWrap.value = !wordWrap.value
   } else if (key === 'toggle_follow') {
     toggleTailFollow()
+  } else if (key === 'copy_terminal') {
+    if (term && term.hasSelection()) {
+      try {
+        await navigator.clipboard.writeText(term.getSelection())
+        message.success('已复制终端内容')
+      } catch (err) {
+        message.error(`复制失败: ${err}`)
+      }
+    } else {
+      message.warning('终端中没有选中文本')
+    }
+  } else if (key === 'paste_terminal') {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text && terminalExecId) {
+        const encoder = new TextEncoder()
+        const bytes = Array.from(encoder.encode(text))
+        await invoke('write_to_terminal', { execId: terminalExecId, data: bytes })
+      }
+    } catch (err) {
+      message.error(`粘贴失败: ${err}`)
+    }
   } else if (key === 'clear_terminal') {
     term?.clear()
   } else if (key === 'reset_terminal') {

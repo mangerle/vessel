@@ -81,7 +81,6 @@
               <th style="width: 100px;">大小</th>
               <th style="width: 150px;">权限</th>
               <th style="width: 180px;">修改时间</th>
-              <th style="width: 180px; text-align: right;">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -103,28 +102,6 @@
               <td>{{ file.is_dir ? '-' : formatBytes(file.size) }}</td>
               <td class="perm-cell">{{ file.permissions || '-' }}</td>
               <td>{{ formatTime(file.mtime) }}</td>
-              <td class="actions-cell">
-                <n-space size="small" justify="end">
-                  <n-button 
-                    v-if="!file.is_dir && isTextFile(file.name)" 
-                    size="tiny" 
-                    quaternary 
-                    type="primary"
-                    @click="openEditor(file)"
-                  >
-                    编辑
-                  </n-button>
-                  <n-button size="tiny" quaternary type="primary" @click="handleDownload(file)">
-                    下载
-                  </n-button>
-                  <n-button size="tiny" quaternary @click="openRename(file)">
-                    重命名
-                  </n-button>
-                  <n-button size="tiny" quaternary type="error" @click="handleDelete(file)">
-                    删除
-                  </n-button>
-                </n-space>
-              </td>
             </tr>
           </tbody>
         </n-table>
