@@ -187,6 +187,7 @@ const handleSave = async () => {
     } catch (e) {
       error(`后端配置同步失败: ${e}`)
       console.error('后端配置同步失败:', e)
+      return
     }
   }
 

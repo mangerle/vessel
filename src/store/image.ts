@@ -192,6 +192,7 @@ export const useImageStore = defineStore('image', {
         this.loading = false
       }
     },
+
     async exportImage(imageId: string, imageName: string) {
       const { save } = await import('@tauri-apps/plugin-dialog')
 

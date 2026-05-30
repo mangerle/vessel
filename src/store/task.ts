@@ -13,9 +13,6 @@ export const useTaskStore = defineStore('task', {
   state: () => ({
     tasks: [] as Task[]
   }),
-  getters: {
-    activeTasksCount: (state) => state.tasks.filter(t => t.status === 'running').length
-  },
   actions: {
     addTask(task: Task) {
       this.tasks.unshift(task)

@@ -13,10 +13,11 @@ export const useContainerStore = defineStore('container', {
       this.loading = true
       this.error = null
       try {
-        await actionFn()
+        const result = await actionFn()
         if (refresh) {
           this.containers = await containerApi.list()
         }
+        return result
       } catch (err) {
         console.error(`${actionName}失败:`, err)
         this.error = String(err)

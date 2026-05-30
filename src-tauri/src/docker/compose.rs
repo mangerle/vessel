@@ -1,3 +1,4 @@
+use super::ComposeProject;
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::container::ListContainersOptions;
@@ -5,7 +6,6 @@ use std::collections::HashMap;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::io::AsyncBufReadExt;
-use super::ComposeProject;
 
 /// 获取 Compose 项目列表
 #[tauri::command]
@@ -25,30 +25,30 @@ pub async fn list_compose_projects() -> AppResult<Vec<ComposeProject>> {
         config_file: Option<String>,
     }
 
-    let mut projects_map: HashMap<String, ProjectData> =
-        HashMap::new();
+    let mut projects_map: HashMap<String, ProjectData> = HashMap::new();
 
     for container in containers {
         if let Some(labels) = container.labels
-            && let Some(project_name) = labels.get("com.docker.compose.project") {
-                let data = projects_map
-                    .entry(project_name.clone())
-                    .or_insert(ProjectData {
-                        total: 0,
-                        running: 0,
-                        working_dir: labels
-                            .get("com.docker.compose.project.working_dir")
-                            .cloned(),
-                        config_file: labels
-                            .get("com.docker.compose.project.config_files")
-                            .cloned(),
-                    });
+            && let Some(project_name) = labels.get("com.docker.compose.project")
+        {
+            let data = projects_map
+                .entry(project_name.clone())
+                .or_insert(ProjectData {
+                    total: 0,
+                    running: 0,
+                    working_dir: labels
+                        .get("com.docker.compose.project.working_dir")
+                        .cloned(),
+                    config_file: labels
+                        .get("com.docker.compose.project.config_files")
+                        .cloned(),
+                });
 
-                data.total += 1;
-                if container.state.as_deref() == Some("running") {
-                    data.running += 1;
-                }
+            data.total += 1;
+            if container.state.as_deref() == Some("running") {
+                data.running += 1;
             }
+        }
     }
 
     let projects = projects_map
@@ -80,11 +80,12 @@ pub async fn read_compose_file(
     if mode == "wsl" {
         let mut cmd = tokio::process::Command::new("wsl");
         if let Some(d) = distro
-            && !d.is_empty() {
-                cmd.args(["-d", &d]);
-            }
+            && !d.is_empty()
+        {
+            cmd.args(["-d", &d]);
+        }
         cmd.args(["-u", "root", "--", "cat", &path]);
-        
+
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
 
@@ -102,17 +103,19 @@ pub async fn read_compose_file(
 /// 写入 Compose 配置文件内容
 #[tauri::command]
 pub async fn write_compose_file(
-    path: String, 
+    path: String,
     content: String,
     mode: String,
     distro: Option<String>,
 ) -> AppResult<()> {
+    log::info!("正在写入 Compose 文件: {}", path);
     if mode == "wsl" {
         let mut cmd = tokio::process::Command::new("wsl");
         if let Some(d) = distro
-            && !d.is_empty() {
-                cmd.args(["-d", &d]);
-            }
+            && !d.is_empty()
+        {
+            cmd.args(["-d", &d]);
+        }
         let shell_cmd = format!("cat << 'EOF' > \"{}\"\n{}\nEOF", path, content);
         cmd.args(["-u", "root", "--", "sh", "-c", &shell_cmd]);
 
@@ -121,12 +124,24 @@ pub async fn write_compose_file(
 
         let out = cmd.output().await?;
         if out.status.success() {
+            log::info!("Compose 文件写入成功 (WSL): {}", path);
             Ok(())
         } else {
-            Err(String::from_utf8_lossy(&out.stderr).to_string().into())
+            let err = String::from_utf8_lossy(&out.stderr).to_string();
+            log::error!("Compose 文件写入失败 (WSL) {}: {}", path, err);
+            Err(err.into())
         }
     } else {
-        Ok(tokio::fs::write(path, content).await?)
+        match tokio::fs::write(&path, content).await {
+            Ok(_) => {
+                log::info!("Compose 文件写入成功: {}", path);
+                Ok(())
+            }
+            Err(e) => {
+                log::error!("Compose 文件写入失败 {}: {}", path, e);
+                Err(e.into())
+            }
+        }
     }
 }
 
@@ -139,20 +154,29 @@ pub async fn run_compose_command(
     mode: String,
     distro: Option<String>,
 ) -> AppResult<()> {
+    let args_str = args.join(" ");
+    log::info!(
+        "正在执行 Compose 命令: docker compose {} (目录: {})",
+        args_str,
+        project_dir
+    );
+
     let mut cmd = if mode == "wsl" {
         let mut c = tokio::process::Command::new("wsl");
         if let Some(d) = distro
-            && !d.is_empty() {
-                c.args(["-d", &d]);
-            }
-        let args_str = args.join(" ");
-        c.args(["sh", "-c", &format!("cd \"{}\" && docker compose {}", project_dir, args_str)]);
+            && !d.is_empty()
+        {
+            c.args(["-d", &d]);
+        }
+        c.args([
+            "sh",
+            "-c",
+            &format!("cd \"{}\" && docker compose {}", project_dir, args_str),
+        ]);
         c
     } else {
         let mut c = tokio::process::Command::new("docker");
-        c.arg("compose")
-            .args(args)
-            .current_dir(project_dir);
+        c.arg("compose").args(args).current_dir(&project_dir);
         c
     };
 
@@ -194,11 +218,17 @@ pub async fn run_compose_command(
                 if status.success() {
                     let _ = app_clone_finish.emit("compose-cmd-finished", ());
                 } else {
-                    let _ = app_clone_finish.emit("compose-cmd-error", format!("Process exited with status: {}", status));
+                    let _ = app_clone_finish.emit(
+                        "compose-cmd-error",
+                        format!("Process exited with status: {}", status),
+                    );
                 }
             }
             Err(e) => {
-                let _ = app_clone_finish.emit("compose-cmd-error", format!("Failed to wait for process: {}", e));
+                let _ = app_clone_finish.emit(
+                    "compose-cmd-error",
+                    format!("Failed to wait for process: {}", e),
+                );
             }
         }
     });

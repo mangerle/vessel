@@ -1,17 +1,19 @@
+use super::{ImageDetails, ImageHistoryInfo, ImageInfo, ImageSearchResult, PruneImagesResult};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
-use bollard::image::{CreateImageOptions, ListImagesOptions, ImportImageOptions, PruneImagesOptions, TagImageOptions};
 use bollard::container::Config;
+use bollard::image::{
+    CreateImageOptions, ImportImageOptions, ListImagesOptions, PruneImagesOptions, TagImageOptions,
+};
 use bollard::models::{HostConfig, PortBinding};
 use futures_util::stream::StreamExt;
+use serde::Serialize;
 use std::collections::HashMap;
-use tokio_util::bytes::Bytes;
-use tokio_util::io::ReaderStream;
-use tokio::io::AsyncWriteExt;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
-use serde::Serialize;
-use super::{ImageInfo, ImageDetails, ImageSearchResult, ImageHistoryInfo, PruneImagesResult};
+use tokio::io::AsyncWriteExt;
+use tokio_util::bytes::Bytes;
+use tokio_util::io::ReaderStream;
 
 /// 获取本地 Docker 镜像列表的命令
 #[tauri::command]
@@ -32,9 +34,7 @@ pub async fn list_images() -> AppResult<Vec<ImageInfo>> {
 #[tauri::command]
 pub async fn inspect_image(id: String) -> AppResult<ImageDetails> {
     let docker = get_docker_client().await?;
-    let details = docker
-        .inspect_image(&id)
-        .await?;
+    let details = docker.inspect_image(&id).await?;
 
     Ok(ImageDetails::from(details))
 }
@@ -42,11 +42,18 @@ pub async fn inspect_image(id: String) -> AppResult<ImageDetails> {
 /// 删除镜像
 #[tauri::command]
 pub async fn remove_image(id: String) -> AppResult<()> {
+    log::info!("正在删除镜像: {}", id);
     let docker = get_docker_client().await?;
-    docker
-        .remove_image(&id, None, None)
-        .await?;
-    Ok(())
+    match docker.remove_image(&id, None, None).await {
+        Ok(_) => {
+            log::info!("镜像 {} 删除成功", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("删除镜像 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 搜索镜像
@@ -68,9 +75,7 @@ pub async fn search_images(term: String) -> AppResult<Vec<ImageSearchResult>> {
 #[tauri::command]
 pub async fn get_image_history(id: String) -> AppResult<Vec<ImageHistoryInfo>> {
     let docker = get_docker_client().await?;
-    let history = docker
-        .image_history(&id)
-        .await?;
+    let history = docker.image_history(&id).await?;
 
     Ok(history.into_iter().map(ImageHistoryInfo::from).collect())
 }
@@ -85,7 +90,7 @@ pub async fn pull_image(
     server_address: Option<String>,
 ) -> AppResult<()> {
     let docker = get_docker_client().await?;
-    
+
     let full_image_name = if image_name.contains(':') {
         image_name.clone()
     } else {
@@ -96,14 +101,16 @@ pub async fn pull_image(
 
     let mut credentials = None;
     if let (Some(u), Some(p)) = (username, password)
-        && !u.is_empty() && !p.is_empty() {
-            credentials = Some(bollard::auth::DockerCredentials {
-                username: Some(u),
-                password: Some(p),
-                serveraddress: server_address,
-                ..Default::default()
-            });
-        }
+        && !u.is_empty()
+        && !p.is_empty()
+    {
+        credentials = Some(bollard::auth::DockerCredentials {
+            username: Some(u),
+            password: Some(p),
+            serveraddress: server_address,
+            ..Default::default()
+        });
+    }
 
     let mut stream = docker.create_image(
         Some(CreateImageOptions {
@@ -116,7 +123,7 @@ pub async fn pull_image(
 
     let app_handle = app.clone();
     let name_for_events = full_image_name.clone();
-    
+
     tauri::async_runtime::spawn(async move {
         while let Some(msg) = stream.next().await {
             match msg {
@@ -126,10 +133,13 @@ pub async fn pull_image(
                         image: String,
                         info: bollard::models::CreateImageInfo,
                     }
-                    let _ = app_handle.emit("image-pull-progress", ProgressPayload {
-                        image: name_for_events.clone(),
-                        info,
-                    });
+                    let _ = app_handle.emit(
+                        "image-pull-progress",
+                        ProgressPayload {
+                            image: name_for_events.clone(),
+                            info,
+                        },
+                    );
                 }
                 Err(e) => {
                     log::error!("拉取镜像 {} 出错: {}", name_for_events, e);
@@ -138,10 +148,13 @@ pub async fn pull_image(
                         image: String,
                         error: String,
                     }
-                    let _ = app_handle.emit("image-pull-error", ErrorPayload {
-                        image: name_for_events.clone(),
-                        error: e.to_string(),
-                    });
+                    let _ = app_handle.emit(
+                        "image-pull-error",
+                        ErrorPayload {
+                            image: name_for_events.clone(),
+                            error: e.to_string(),
+                        },
+                    );
                     break;
                 }
             }
@@ -171,14 +184,17 @@ pub async fn run_image(
     let docker = get_docker_client().await?;
 
     if overwrite.unwrap_or(false)
-        && let Some(ref container_name) = name {
-            let remove_options = bollard::container::RemoveContainerOptions {
-                v: true,
-                force: true,
-                link: false,
-            };
-            let _ = docker.remove_container(container_name, Some(remove_options)).await;
-        }
+        && let Some(ref container_name) = name
+    {
+        let remove_options = bollard::container::RemoveContainerOptions {
+            v: true,
+            force: true,
+            link: false,
+        };
+        let _ = docker
+            .remove_container(container_name, Some(remove_options))
+            .await;
+    }
 
     let mut port_bindings = HashMap::new();
     let mut exposed_ports = HashMap::new();
@@ -195,7 +211,11 @@ pub async fn run_image(
 
         let container_parts: Vec<&str> = container_part.split('/').collect();
         let container_port = container_parts[0];
-        let protocol = if container_parts.len() > 1 { container_parts[1] } else { "tcp" };
+        let protocol = if container_parts.len() > 1 {
+            container_parts[1]
+        } else {
+            "tcp"
+        };
 
         if container_port.trim().is_empty() {
             continue;
@@ -203,7 +223,7 @@ pub async fn run_image(
 
         let container_key = format!("{}/{}", container_port.trim(), protocol);
         exposed_ports.insert(container_key.clone(), HashMap::new());
-        
+
         let host_port_opt = if host_port.trim().is_empty() {
             None
         } else {
@@ -258,10 +278,11 @@ pub async fn run_image(
 
     let container = docker
         .create_container(
-            name.as_ref().map(|n| bollard::container::CreateContainerOptions {
-                name: n.clone(),
-                ..Default::default()
-            }),
+            name.as_ref()
+                .map(|n| bollard::container::CreateContainerOptions {
+                    name: n.clone(),
+                    ..Default::default()
+                }),
             config,
         )
         .await?;
@@ -278,8 +299,8 @@ pub async fn run_image(
 pub async fn list_wsl_distros() -> AppResult<Vec<String>> {
     #[cfg(windows)]
     {
-        use std::process::Command;
         use std::os::windows::process::CommandExt;
+        use std::process::Command;
 
         let mut cmd = Command::new("wsl.exe");
         cmd.args(["-l", "-q"]);
@@ -310,14 +331,15 @@ pub async fn list_wsl_distros() -> AppResult<Vec<String>> {
         }
 
         if distros.is_empty()
-            && let Ok(text) = String::from_utf8(stdout_raw) {
-                for line in text.lines() {
-                    let trimmed = line.trim().trim_start_matches('\u{feff}').to_string();
-                    if !trimmed.is_empty() {
-                        distros.push(trimmed);
-                    }
+            && let Ok(text) = String::from_utf8(stdout_raw)
+        {
+            for line in text.lines() {
+                let trimmed = line.trim().trim_start_matches('\u{feff}').to_string();
+                if !trimmed.is_empty() {
+                    distros.push(trimmed);
                 }
             }
+        }
 
         Ok(distros)
     }
@@ -331,10 +353,8 @@ pub async fn list_wsl_distros() -> AppResult<Vec<String>> {
 /// 打开本地配置文件目录
 #[tauri::command]
 pub async fn open_config_dir(app: AppHandle) -> AppResult<()> {
-    let app_dir = app
-        .path()
-        .app_data_dir()?;
-    
+    let app_dir = app.path().app_data_dir()?;
+
     app.opener()
         .open_path(app_dir.to_string_lossy().to_string(), None::<String>)?;
     Ok(())
@@ -347,17 +367,15 @@ pub async fn open_log_dir(app: tauri::AppHandle) -> crate::error::AppResult<()> 
     if !log_dir.exists() {
         std::fs::create_dir_all(&log_dir)?;
     }
-    app.opener().open_path(log_dir.to_string_lossy().to_string(), None::<String>)?;
+    app.opener()
+        .open_path(log_dir.to_string_lossy().to_string(), None::<String>)?;
     Ok(())
 }
 
 /// 导出镜像为 tar 文件
 #[tauri::command]
-pub async fn export_image(
-    app: AppHandle,
-    image_id_or_name: String,
-    path: String,
-) -> AppResult<()> {
+pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String) -> AppResult<()> {
+    log::info!("开始导出镜像 {} 到 {}", image_id_or_name, path);
     let docker = get_docker_client().await?;
     let mut stream = docker.export_image(&image_id_or_name);
 
@@ -370,16 +388,19 @@ pub async fn export_image(
             Ok(f) => f,
             Err(e) => {
                 let err_msg = format!("创建目标文件失败: {}", e);
-                log::error!("{}", err_msg);
+                log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
                 #[derive(Clone, serde::Serialize)]
                 struct ExportErrPayload {
                     image: String,
                     error: String,
                 }
-                let _ = app_handle.emit("image-export-error", ExportErrPayload {
-                    image: name_clone,
-                    error: err_msg,
-                });
+                let _ = app_handle.emit(
+                    "image-export-error",
+                    ExportErrPayload {
+                        image: name_clone,
+                        error: err_msg,
+                    },
+                );
                 return;
             }
         };
@@ -392,16 +413,19 @@ pub async fn export_image(
                     total_bytes += bytes.len() as i64;
                     if let Err(e) = file.write_all(&bytes).await {
                         let err_msg = format!("写入镜像数据失败: {}", e);
-                        log::error!("{}", err_msg);
+                        log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
                         #[derive(Clone, serde::Serialize)]
                         struct ExportErrPayload {
                             image: String,
                             error: String,
                         }
-                        let _ = app_handle.emit("image-export-error", ExportErrPayload {
-                            image: name_clone,
-                            error: err_msg,
-                        });
+                        let _ = app_handle.emit(
+                            "image-export-error",
+                            ExportErrPayload {
+                                image: name_clone,
+                                error: err_msg,
+                            },
+                        );
                         return;
                     }
 
@@ -410,23 +434,29 @@ pub async fn export_image(
                         image: String,
                         bytes_written: i64,
                     }
-                    let _ = app_handle.emit("image-export-progress", ExportProgressPayload {
-                        image: name_clone.clone(),
-                        bytes_written: total_bytes,
-                    });
+                    let _ = app_handle.emit(
+                        "image-export-progress",
+                        ExportProgressPayload {
+                            image: name_clone.clone(),
+                            bytes_written: total_bytes,
+                        },
+                    );
                 }
                 Err(e) => {
                     let err_msg = format!("读取镜像导出流失败: {}", e);
-                    log::error!("{}", err_msg);
+                    log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
                     #[derive(Clone, serde::Serialize)]
                     struct ExportErrPayload {
                         image: String,
                         error: String,
                     }
-                    let _ = app_handle.emit("image-export-error", ExportErrPayload {
-                        image: name_clone,
-                        error: err_msg,
-                    });
+                    let _ = app_handle.emit(
+                        "image-export-error",
+                        ExportErrPayload {
+                            image: name_clone,
+                            error: err_msg,
+                        },
+                    );
                     return;
                 }
             }
@@ -434,20 +464,23 @@ pub async fn export_image(
 
         if let Err(e) = file.flush().await {
             let err_msg = format!("刷新文件失败: {}", e);
-            log::error!("{}", err_msg);
+            log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
             #[derive(Clone, serde::Serialize)]
             struct ExportErrPayload {
                 image: String,
                 error: String,
             }
-            let _ = app_handle.emit("image-export-error", ExportErrPayload {
-                image: name_clone,
-                error: err_msg,
-            });
+            let _ = app_handle.emit(
+                "image-export-error",
+                ExportErrPayload {
+                    image: name_clone,
+                    error: err_msg,
+                },
+            );
             return;
         }
 
-        log::info!("镜像导出任务结束: {}", name_clone);
+        log::info!("镜像 {} 导出成功: {}", name_clone, path_clone);
         let _ = app_handle.emit("image-export-finished", name_clone);
     });
 
@@ -456,28 +489,27 @@ pub async fn export_image(
 
 /// 导入镜像文件
 #[tauri::command]
-pub async fn import_image(
-    app: AppHandle,
-    path: String,
-) -> AppResult<()> {
+pub async fn import_image(app: AppHandle, path: String) -> AppResult<()> {
+    log::info!("开始从 {} 导入镜像", path);
     let docker = get_docker_client().await?;
 
-    let file = tokio::fs::File::open(&path)
-        .await?;
+    let file = match tokio::fs::File::open(&path).await {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("打开镜像文件 {} 失败: {}", path, e);
+            return Err(e.into());
+        }
+    };
 
-    let byte_stream = ReaderStream::new(file)
-        .map(|res| {
-            res.unwrap_or_else(|e| {
-                log::error!("读取 Tar 文件出错: {}", e);
-                Bytes::new()
-            })
-        });
+    let byte_stream = ReaderStream::new(file).map(|res| {
+        res.unwrap_or_else(|e| {
+            log::error!("读取 Tar 文件出错: {}", e);
+            Bytes::new()
+        })
+    });
 
-    let mut stream = docker.import_image_stream(
-        ImportImageOptions { quiet: false },
-        byte_stream,
-        None,
-    );
+    let mut stream =
+        docker.import_image_stream(ImportImageOptions { quiet: false }, byte_stream, None);
 
     let app_handle = app.clone();
     let path_clone = path.clone();
@@ -510,15 +542,18 @@ pub async fn import_image(
                         path: String,
                         error: String,
                     }
-                    let _ = app_handle.emit("image-import-error", ImportErrPayload {
-                        path: path_clone.clone(),
-                        error: e.to_string(),
-                    });
+                    let _ = app_handle.emit(
+                        "image-import-error",
+                        ImportErrPayload {
+                            path: path_clone.clone(),
+                            error: e.to_string(),
+                        },
+                    );
                     return;
                 }
             }
         }
-        log::info!("镜像导入任务结束: {}", path_clone);
+        log::info!("镜像导入成功: {}", path_clone);
         let _ = app_handle.emit("image-import-finished", path_clone);
     });
 
@@ -528,36 +563,44 @@ pub async fn import_image(
 /// 清理无用的虚悬镜像
 #[tauri::command]
 pub async fn prune_images() -> AppResult<PruneImagesResult> {
+    log::info!("正在清理无用镜像...");
     let docker = get_docker_client().await?;
 
     let mut filters = HashMap::new();
     filters.insert("dangling".to_string(), vec!["true".to_string()]);
 
     let options = PruneImagesOptions { filters };
-    let response = docker
-        .prune_images(Some(options))
-        .await?;
-
-    Ok(PruneImagesResult::from(response))
+    match docker.prune_images(Some(options)).await {
+        Ok(response) => {
+            log::info!("镜像清理完成");
+            Ok(PruneImagesResult::from(response))
+        }
+        Err(e) => {
+            log::error!("镜像清理失败: {}", e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 为镜像打标签
 #[tauri::command]
-pub async fn tag_image(
-    image_name: String,
-    repo: String,
-    tag: String,
-) -> AppResult<()> {
+pub async fn tag_image(image_name: String, repo: String, tag: String) -> AppResult<()> {
+    log::info!("正在为镜像 {} 打标签: {}:{}", image_name, repo, tag);
     let docker = get_docker_client().await?;
 
     let options = TagImageOptions {
-        repo,
-        tag,
+        repo: repo.clone(),
+        tag: tag.clone(),
     };
 
-    docker
-        .tag_image(&image_name, Some(options))
-        .await?;
-
-    Ok(())
+    match docker.tag_image(&image_name, Some(options)).await {
+        Ok(_) => {
+            log::info!("镜像 {} 打标签成功: {}:{}", image_name, repo, tag);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("镜像 {} 打标签失败: {}", image_name, e);
+            Err(e.into())
+        }
+    }
 }

@@ -1,15 +1,15 @@
+use super::{ContainerDetails, ContainerInfo};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
-use bollard::container::{ListContainersOptions, StatsOptions, LogsOptions};
-use tauri::{AppHandle, Emitter};
+use bollard::container::{ListContainersOptions, LogsOptions, StatsOptions};
 use futures_util::stream::StreamExt;
-use super::{ContainerInfo, ContainerDetails};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use tokio::sync::oneshot;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 pub type StreamMap = HashMap<String, (oneshot::Sender<()>, u64)>;
 
@@ -20,7 +20,6 @@ pub static LOGS_STREAMS: Lazy<Arc<Mutex<StreamMap>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 static STREAM_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 
 /// 获取本地 Docker 容器列表的命令
 #[tauri::command]
@@ -40,40 +39,59 @@ pub async fn list_local_containers() -> AppResult<Vec<ContainerInfo>> {
 /// 启动容器
 #[tauri::command]
 pub async fn start_container(id: String) -> AppResult<()> {
+    log::info!("正在启动容器: {}", id);
     let docker = get_docker_client().await?;
-    docker
-        .start_container::<String>(&id, None)
-        .await?;
-    Ok(())
+    match docker.start_container::<String>(&id, None).await {
+        Ok(_) => {
+            log::info!("容器 {} 启动成功", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("启动容器 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 停止容器
 #[tauri::command]
 pub async fn stop_container(id: String) -> AppResult<()> {
+    log::info!("正在停止容器: {}", id);
     let docker = get_docker_client().await?;
-    docker
-        .stop_container(&id, None)
-        .await?;
-    Ok(())
+    match docker.stop_container(&id, None).await {
+        Ok(_) => {
+            log::info!("容器 {} 停止成功", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("停止容器 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 重启容器
 #[tauri::command]
 pub async fn restart_container(id: String) -> AppResult<()> {
+    log::info!("正在重启容器: {}", id);
     let docker = get_docker_client().await?;
-    docker
-        .restart_container(&id, None)
-        .await?;
-    Ok(())
+    match docker.restart_container(&id, None).await {
+        Ok(_) => {
+            log::info!("容器 {} 重启成功", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("重启容器 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 获取容器详情
 #[tauri::command]
 pub async fn inspect_container(id: String) -> AppResult<ContainerDetails> {
     let docker = get_docker_client().await?;
-    let details = docker
-        .inspect_container(&id, None)
-        .await?;
+    let details = docker.inspect_container(&id, None).await?;
 
     Ok(ContainerDetails::from(details))
 }
@@ -81,11 +99,18 @@ pub async fn inspect_container(id: String) -> AppResult<ContainerDetails> {
 /// 删除容器
 #[tauri::command]
 pub async fn remove_container(id: String) -> AppResult<()> {
+    log::info!("正在删除容器: {}", id);
     let docker = get_docker_client().await?;
-    docker
-        .remove_container(&id, None)
-        .await?;
-    Ok(())
+    match docker.remove_container(&id, None).await {
+        Ok(_) => {
+            log::info!("容器 {} 删除成功", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("删除容器 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 实时流式传输容器统计信息
@@ -141,9 +166,10 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()>
         // 协程退出时清理
         let mut streams = STATS_STREAMS.lock().await;
         if let Some((_, t)) = streams.get(&id_clone)
-            && *t == token {
-                streams.remove(&id_clone);
-            }
+            && *t == token
+        {
+            streams.remove(&id_clone);
+        }
     });
 
     Ok(())
@@ -216,9 +242,10 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> 
         // 协程退出时清理
         let mut streams = LOGS_STREAMS.lock().await;
         if let Some((_, t)) = streams.get(&id_clone)
-            && *t == token {
-                streams.remove(&id_clone);
-            }
+            && *t == token
+        {
+            streams.remove(&id_clone);
+        }
     });
 
     Ok(())
@@ -234,21 +261,26 @@ pub async fn close_container_logs(id: String) -> AppResult<()> {
     Ok(())
 }
 
-
 /// 重命名容器
 #[tauri::command]
 pub async fn rename_container(id: String, new_name: String) -> AppResult<()> {
+    log::info!("正在重命名容器 {} 为 {}", id, new_name);
     let docker = get_docker_client().await?;
 
     let options = bollard::container::RenameContainerOptions {
-        name: new_name,
+        name: new_name.clone(),
     };
 
-    docker
-        .rename_container(&id, options)
-        .await?;
-
-    Ok(())
+    match docker.rename_container(&id, options).await {
+        Ok(_) => {
+            log::info!("容器 {} 重命名成功", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("重命名容器 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 提交容器为新镜像
@@ -260,6 +292,7 @@ pub async fn commit_container(
     comment: Option<String>,
     author: Option<String>,
 ) -> AppResult<String> {
+    log::info!("正在提交容器 {} 为镜像 {}:{:?}", id, repo, tag);
     let docker = get_docker_client().await?;
 
     let options = bollard::image::CommitContainerOptions {
@@ -272,31 +305,54 @@ pub async fn commit_container(
         changes: None,
     };
 
-    let response = docker
+    match docker
         .commit_container(options, bollard::container::Config::<String>::default())
-        .await?;
-
-    Ok(response.id.unwrap_or_default())
+        .await
+    {
+        Ok(response) => {
+            let new_id = response.id.unwrap_or_default();
+            log::info!("容器 {} 提交成功，新镜像 ID: {}", id, new_id);
+            Ok(new_id)
+        }
+        Err(e) => {
+            log::error!("提交容器 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 暂停容器
 #[tauri::command]
 pub async fn pause_container(id: String) -> AppResult<()> {
+    log::info!("正在暂停容器: {}", id);
     let docker = get_docker_client().await?;
-    docker
-        .pause_container(&id)
-        .await?;
-    Ok(())
+    match docker.pause_container(&id).await {
+        Ok(_) => {
+            log::info!("容器 {} 暂停成功", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("暂停容器 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 恢复容器
 #[tauri::command]
 pub async fn unpause_container(id: String) -> AppResult<()> {
+    log::info!("正在恢复容器: {}", id);
     let docker = get_docker_client().await?;
-    docker
-        .unpause_container(&id)
-        .await?;
-    Ok(())
+    match docker.unpause_container(&id).await {
+        Ok(_) => {
+            log::info!("容器 {} 恢复成功", id);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("恢复容器 {} 失败: {}", id, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 进程 Top 响应结构
@@ -333,6 +389,7 @@ pub async fn exec_container(id: String, cmd: String) -> AppResult<ExecResult> {
     use bollard::container::LogOutput;
     use bollard::exec::{CreateExecOptions, StartExecResults};
 
+    log::info!("正在容器 {} 中执行命令: {}", id, cmd);
     let docker = get_docker_client().await?;
 
     let config = CreateExecOptions {
@@ -342,13 +399,21 @@ pub async fn exec_container(id: String, cmd: String) -> AppResult<ExecResult> {
         ..Default::default()
     };
 
-    let exec = docker
-        .create_exec(&id, config)
-        .await?;
+    let exec = match docker.create_exec(&id, config).await {
+        Ok(e) => e,
+        Err(e) => {
+            log::error!("在容器 {} 中创建 exec 失败: {}", id, e);
+            return Err(e.into());
+        }
+    };
 
-    let start_exec_result = docker
-        .start_exec(&exec.id, None)
-        .await?;
+    let start_exec_result = match docker.start_exec(&exec.id, None).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("在容器 {} 中启动 exec 失败: {}", id, e);
+            return Err(e.into());
+        }
+    };
 
     let mut output_str = String::new();
     if let StartExecResults::Attached { mut output, .. } = start_exec_result {
@@ -365,13 +430,15 @@ pub async fn exec_container(id: String, cmd: String) -> AppResult<ExecResult> {
         }
     }
 
-    let inspect_result = docker
-        .inspect_exec(&exec.id)
-        .await?;
+    let inspect_result = docker.inspect_exec(&exec.id).await?;
 
+    log::info!(
+        "容器 {} 命令执行完成，退出码: {:?}",
+        id,
+        inspect_result.exit_code
+    );
     Ok(ExecResult {
         exit_code: inspect_result.exit_code,
         output: output_str,
     })
 }
-

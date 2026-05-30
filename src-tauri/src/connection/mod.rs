@@ -1,8 +1,8 @@
+use crate::error::AppResult;
 use bollard::Docker;
+use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use once_cell::sync::Lazy;
-use crate::error::AppResult;
 
 pub mod wsl;
 
@@ -14,10 +14,12 @@ pub struct ConnectionConfig {
 }
 
 /// 全局连接配置
-pub static CONNECTION_CONFIG: Lazy<Arc<Mutex<ConnectionConfig>>> = Lazy::new(|| Arc::new(Mutex::new(ConnectionConfig {
-    mode: "wsl".to_string(),
-    distro: None,
-})));
+pub static CONNECTION_CONFIG: Lazy<Arc<Mutex<ConnectionConfig>>> = Lazy::new(|| {
+    Arc::new(Mutex::new(ConnectionConfig {
+        mode: "wsl".to_string(),
+        distro: None,
+    }))
+});
 
 /// 全局 Docker 客户端实例
 static DOCKER_CLIENT: Lazy<Arc<Mutex<Option<Docker>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -31,6 +33,7 @@ pub async fn clear_client_cache() {
 /// 更新全局连接配置的命令
 #[tauri::command]
 pub async fn update_connection_config(mode: String, distro: Option<String>) {
+    log::info!("正在更新连接配置: mode={}, distro={:?}", mode, distro);
     let mut config = CONNECTION_CONFIG.lock().await;
     config.mode = mode;
     config.distro = distro;
@@ -41,17 +44,19 @@ pub async fn update_connection_config(mode: String, distro: Option<String>) {
 /// 获取 Docker 客户端
 pub async fn get_docker_client() -> AppResult<Docker> {
     let mut client_lock = DOCKER_CLIENT.lock().await;
-    
+
     if let Some(client) = &*client_lock {
         return Ok(client.clone());
     }
 
+    log::info!("正在尝试建立新的 Docker 连接...");
     let config = CONNECTION_CONFIG.lock().await.clone();
 
     // 根据配置选择连接方式
     if config.mode == "wsl" {
         match wsl::WslBridge::new(config.distro).connect().await {
             Ok(docker) => {
+                log::info!("Docker WSL 连接成功");
                 *client_lock = Some(docker.clone());
                 Ok(docker)
             }
@@ -59,12 +64,16 @@ pub async fn get_docker_client() -> AppResult<Docker> {
                 // 如果 WSL 失败，回退到探测命名管道 (Windows 默认，兼容 Docker Desktop)
                 #[cfg(windows)]
                 {
+                    log::info!("WSL 连接失败，尝试回退到命名管道...");
                     if let Ok(docker) = Docker::connect_with_named_pipe_defaults()
-                        && docker.ping().await.is_ok() {
-                            *client_lock = Some(docker.clone());
-                            return Ok(docker);
-                        }
+                        && docker.ping().await.is_ok()
+                    {
+                        log::info!("命名管道连接成功");
+                        *client_lock = Some(docker.clone());
+                        return Ok(docker);
+                    }
                 }
+                log::error!("无法通过 WSL 连接到 Docker: {}", e);
                 Err(format!("无法通过 WSL 连接到 Docker: {}", e).into())
             }
         }
@@ -72,13 +81,18 @@ pub async fn get_docker_client() -> AppResult<Docker> {
         // SSH 或其他模式暂未完全实现，回退到命名管道
         #[cfg(windows)]
         {
+            log::info!("当前非 WSL 模式，尝试通过命名管道连接...");
             if let Ok(docker) = Docker::connect_with_named_pipe_defaults()
-                && docker.ping().await.is_ok() {
-                    *client_lock = Some(docker.clone());
-                    return Ok(docker);
-                }
+                && docker.ping().await.is_ok()
+            {
+                log::info!("命名管道连接成功");
+                *client_lock = Some(docker.clone());
+                return Ok(docker);
+            }
         }
-        Err("当前连接模式暂未支持或无法连接到本地 Docker".to_string().into())
+        log::error!("当前连接模式暂未支持或无法连接到本地 Docker");
+        Err("当前连接模式暂未支持或无法连接到本地 Docker"
+            .to_string()
+            .into())
     }
 }
-

@@ -1,17 +1,15 @@
+use super::{VolumeInfo, VolumeUser};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::container::ListContainersOptions;
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
-use super::{VolumeInfo, VolumeUser};
 
 /// 获取卷列表
 #[tauri::command]
 pub async fn list_volumes() -> AppResult<Vec<VolumeInfo>> {
     let docker = get_docker_client().await?;
-    let response = docker
-        .list_volumes::<String>(None)
-        .await?;
+    let response = docker.list_volumes::<String>(None).await?;
 
     let volumes = response.volumes.unwrap_or_default();
     Ok(volumes.into_iter().map(VolumeInfo::from).collect())
@@ -20,49 +18,68 @@ pub async fn list_volumes() -> AppResult<Vec<VolumeInfo>> {
 /// 删除卷
 #[tauri::command]
 pub async fn remove_volume(name: String) -> AppResult<()> {
+    log::info!("正在删除卷: {}", name);
     let docker = get_docker_client().await?;
-    docker
-        .remove_volume(&name, None)
-        .await?;
-    Ok(())
+    match docker.remove_volume(&name, None).await {
+        Ok(_) => {
+            log::info!("卷 {} 删除成功", name);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("删除卷 {} 失败: {}", name, e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 清理未使用的卷
 #[tauri::command]
 pub async fn prune_volumes() -> AppResult<()> {
+    log::info!("正在清理未使用的卷...");
     let docker = get_docker_client().await?;
-    docker
-        .prune_volumes::<String>(None)
-        .await?;
-    Ok(())
+    match docker.prune_volumes::<String>(None).await {
+        Ok(_) => {
+            log::info!("卷清理完成");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("卷清理失败: {}", e);
+            Err(e.into())
+        }
+    }
 }
 
 /// 获取使用特定卷的容器列表
 #[tauri::command]
 pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> {
     let docker = get_docker_client().await?;
-    
+
     let containers = docker
         .list_containers(Some(ListContainersOptions::<String> {
             all: true,
             ..Default::default()
         }))
         .await?;
-    
+
     let mut users = Vec::new();
-    
+
     for container in containers {
         if let Some(id) = container.id {
-            let details = docker
-                .inspect_container(&id, None)
-                .await?;
-            
+            let details = docker.inspect_container(&id, None).await?;
+
             if let Some(mounts) = details.mounts {
                 for mount in mounts {
-                    if mount.name.as_deref() == Some(&name) || mount.source.as_deref() == Some(&name) {
+                    if mount.name.as_deref() == Some(&name)
+                        || mount.source.as_deref() == Some(&name)
+                    {
                         users.push(VolumeUser {
                             container_id: id.clone(),
-                            container_name: details.name.clone().unwrap_or_default().trim_start_matches('/').to_string(),
+                            container_name: details
+                                .name
+                                .clone()
+                                .unwrap_or_default()
+                                .trim_start_matches('/')
+                                .to_string(),
                             source: mount.source.unwrap_or_default(),
                             destination: mount.destination.unwrap_or_default(),
                             mode: mount.mode.unwrap_or_default(),
@@ -73,14 +90,22 @@ pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> 
             }
         }
     }
-    
+
     Ok(users)
 }
 
 /// 在文件管理器中打开卷路径
 #[tauri::command]
 pub async fn open_volume_path(app: AppHandle, path: String) -> AppResult<()> {
-    app.opener()
-        .open_path(path, None::<String>)?;
-    Ok(())
+    log::info!("正在文件管理器中打开路径: {}", path);
+    match app.opener().open_path(&path, None::<String>) {
+        Ok(_) => {
+            log::info!("已成功打开路径: {}", path);
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("打开路径 {} 失败: {}", path, e);
+            Err(e.into())
+        }
+    }
 }
