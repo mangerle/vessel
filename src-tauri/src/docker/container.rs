@@ -140,11 +140,10 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()>
         }
         // 协程退出时清理
         let mut streams = STATS_STREAMS.lock().await;
-        if let Some((_, t)) = streams.get(&id_clone) {
-            if *t == token {
+        if let Some((_, t)) = streams.get(&id_clone)
+            && *t == token {
                 streams.remove(&id_clone);
             }
-        }
     });
 
     Ok(())
@@ -216,11 +215,10 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> 
         }
         // 协程退出时清理
         let mut streams = LOGS_STREAMS.lock().await;
-        if let Some((_, t)) = streams.get(&id_clone) {
-            if *t == token {
+        if let Some((_, t)) = streams.get(&id_clone)
+            && *t == token {
                 streams.remove(&id_clone);
             }
-        }
     });
 
     Ok(())

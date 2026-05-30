@@ -29,8 +29,8 @@ pub async fn list_compose_projects() -> AppResult<Vec<ComposeProject>> {
         HashMap::new();
 
     for container in containers {
-        if let Some(labels) = container.labels {
-            if let Some(project_name) = labels.get("com.docker.compose.project") {
+        if let Some(labels) = container.labels
+            && let Some(project_name) = labels.get("com.docker.compose.project") {
                 let data = projects_map
                     .entry(project_name.clone())
                     .or_insert(ProjectData {
@@ -49,7 +49,6 @@ pub async fn list_compose_projects() -> AppResult<Vec<ComposeProject>> {
                     data.running += 1;
                 }
             }
-        }
     }
 
     let projects = projects_map
@@ -80,11 +79,10 @@ pub async fn read_compose_file(
 ) -> AppResult<String> {
     if mode == "wsl" {
         let mut cmd = tokio::process::Command::new("wsl");
-        if let Some(d) = distro {
-            if !d.is_empty() {
+        if let Some(d) = distro
+            && !d.is_empty() {
                 cmd.args(["-d", &d]);
             }
-        }
         cmd.args(["-u", "root", "--", "cat", &path]);
         
         #[cfg(windows)]
@@ -111,11 +109,10 @@ pub async fn write_compose_file(
 ) -> AppResult<()> {
     if mode == "wsl" {
         let mut cmd = tokio::process::Command::new("wsl");
-        if let Some(d) = distro {
-            if !d.is_empty() {
+        if let Some(d) = distro
+            && !d.is_empty() {
                 cmd.args(["-d", &d]);
             }
-        }
         let shell_cmd = format!("cat << 'EOF' > \"{}\"\n{}\nEOF", path, content);
         cmd.args(["-u", "root", "--", "sh", "-c", &shell_cmd]);
 
@@ -144,11 +141,10 @@ pub async fn run_compose_command(
 ) -> AppResult<()> {
     let mut cmd = if mode == "wsl" {
         let mut c = tokio::process::Command::new("wsl");
-        if let Some(d) = distro {
-            if !d.is_empty() {
+        if let Some(d) = distro
+            && !d.is_empty() {
                 c.args(["-d", &d]);
             }
-        }
         let args_str = args.join(" ");
         c.args(["sh", "-c", &format!("cd \"{}\" && docker compose {}", project_dir, args_str)]);
         c

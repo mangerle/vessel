@@ -61,11 +61,10 @@ impl WslBridge {
                 tokio::spawn(async move {
                     // 为每个连接启动一个 wsl 进程
                     let mut cmd = Command::new("wsl");
-                    if let Some(d) = distro_clone {
-                        if !d.is_empty() && !d.contains("发行版名称") {
+                    if let Some(d) = distro_clone
+                        && !d.is_empty() && !d.contains("发行版名称") {
                             cmd.args(["-d", &d]);
                         }
-                    }
                     cmd.args(["docker", "system", "dial-stdio"])
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())

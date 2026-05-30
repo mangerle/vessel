@@ -95,8 +95,8 @@ pub async fn pull_image(
     log::info!("开始拉取镜像: {}", full_image_name);
 
     let mut credentials = None;
-    if let (Some(u), Some(p)) = (username, password) {
-        if !u.is_empty() && !p.is_empty() {
+    if let (Some(u), Some(p)) = (username, password)
+        && !u.is_empty() && !p.is_empty() {
             credentials = Some(bollard::auth::DockerCredentials {
                 username: Some(u),
                 password: Some(p),
@@ -104,7 +104,6 @@ pub async fn pull_image(
                 ..Default::default()
             });
         }
-    }
 
     let mut stream = docker.create_image(
         Some(CreateImageOptions {
@@ -171,8 +170,8 @@ pub async fn run_image(
 ) -> AppResult<String> {
     let docker = get_docker_client().await?;
 
-    if overwrite.unwrap_or(false) {
-        if let Some(ref container_name) = name {
+    if overwrite.unwrap_or(false)
+        && let Some(ref container_name) = name {
             let remove_options = bollard::container::RemoveContainerOptions {
                 v: true,
                 force: true,
@@ -180,7 +179,6 @@ pub async fn run_image(
             };
             let _ = docker.remove_container(container_name, Some(remove_options)).await;
         }
-    }
 
     let mut port_bindings = HashMap::new();
     let mut exposed_ports = HashMap::new();
@@ -311,8 +309,8 @@ pub async fn list_wsl_distros() -> AppResult<Vec<String>> {
             }
         }
 
-        if distros.is_empty() {
-            if let Ok(text) = String::from_utf8(stdout_raw) {
+        if distros.is_empty()
+            && let Ok(text) = String::from_utf8(stdout_raw) {
                 for line in text.lines() {
                     let trimmed = line.trim().trim_start_matches('\u{feff}').to_string();
                     if !trimmed.is_empty() {
@@ -320,7 +318,6 @@ pub async fn list_wsl_distros() -> AppResult<Vec<String>> {
                     }
                 }
             }
-        }
 
         Ok(distros)
     }

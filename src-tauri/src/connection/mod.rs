@@ -59,12 +59,11 @@ pub async fn get_docker_client() -> AppResult<Docker> {
                 // 如果 WSL 失败，回退到探测命名管道 (Windows 默认，兼容 Docker Desktop)
                 #[cfg(windows)]
                 {
-                    if let Ok(docker) = Docker::connect_with_named_pipe_defaults() {
-                        if docker.ping().await.is_ok() {
+                    if let Ok(docker) = Docker::connect_with_named_pipe_defaults()
+                        && docker.ping().await.is_ok() {
                             *client_lock = Some(docker.clone());
                             return Ok(docker);
                         }
-                    }
                 }
                 Err(format!("无法通过 WSL 连接到 Docker: {}", e).into())
             }
@@ -73,12 +72,11 @@ pub async fn get_docker_client() -> AppResult<Docker> {
         // SSH 或其他模式暂未完全实现，回退到命名管道
         #[cfg(windows)]
         {
-            if let Ok(docker) = Docker::connect_with_named_pipe_defaults() {
-                if docker.ping().await.is_ok() {
+            if let Ok(docker) = Docker::connect_with_named_pipe_defaults()
+                && docker.ping().await.is_ok() {
                     *client_lock = Some(docker.clone());
                     return Ok(docker);
                 }
-            }
         }
         Err("当前连接模式暂未支持或无法连接到本地 Docker".to_string().into())
     }
