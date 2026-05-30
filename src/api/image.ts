@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { ImageInfo, ImageDetails, ImageSearchResult, ImageHistoryInfo } from '../store/image'
+import type { ImageInfo, ImageDetails, ImageSearchResult, ImageHistoryInfo } from './types'
 
 /**
  * 镜像拉取的参数接口
@@ -38,7 +38,7 @@ export const imageApi = {
   /**
    * 拉取镜像
    */
-  pull: (params: PullParams) => invoke<void>('pull_image', params),
+  pull: (params: PullParams) => invoke<void>('pull_image', params as any),
 
   /**
    * 清理虚悬镜像

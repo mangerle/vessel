@@ -2,49 +2,7 @@ import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { useTaskStore } from './task'
-
-export interface ImageInfo {
-  id: string
-  tags: string[]
-  size: number
-  created: number
-}
-
-export interface ImageDetails extends Omit<ImageInfo, 'created'> {
-  created: string
-  architecture: string
-  os: string
-  env: string[]
-  exposed_ports: string[]
-  cmd: string[]
-  entrypoint: string[]
-}
-
-export interface ImageSearchResult {
-  name: string
-  description: string
-  is_official: boolean
-  star_count: number
-}
-
-export interface ImageHistoryInfo {
-  id: string
-  created: number
-  created_by: string
-  size: number
-}
-
-export interface PullProgress {
-  status?: string
-  progress?: string
-  id?: string
-  stream?: string
-  error?: string
-  progressDetail?: {
-    current?: number
-    total?: number
-  }
-}
+import type { ImageInfo, ImageDetails, ImageSearchResult, ImageHistoryInfo, PullProgress } from '../api/types'
 
 export const useImageStore = defineStore('image', {
   state: () => ({

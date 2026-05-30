@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { ContainerInfo, ContainerDetails } from '../store/container'
+import type { ContainerInfo, ContainerDetails } from './types'
 
 /**
  * 容器相关的 API 服务
