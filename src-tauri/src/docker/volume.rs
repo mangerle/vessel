@@ -1,4 +1,5 @@
 use crate::connection::get_docker_client;
+use crate::error::AppResult;
 use bollard::container::ListContainersOptions;
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
@@ -6,12 +7,11 @@ use super::{VolumeInfo, VolumeUser};
 
 /// 获取卷列表
 #[tauri::command]
-pub async fn list_volumes() -> Result<Vec<VolumeInfo>, String> {
+pub async fn list_volumes() -> AppResult<Vec<VolumeInfo>> {
     let docker = get_docker_client().await?;
     let response = docker
         .list_volumes::<String>(None)
-        .await
-        .map_err(|e| format!("无法获取卷列表: {}", e))?;
+        .await?;
 
     let volumes = response.volumes.unwrap_or_default();
     Ok(volumes.into_iter().map(VolumeInfo::from).collect())
@@ -19,28 +19,27 @@ pub async fn list_volumes() -> Result<Vec<VolumeInfo>, String> {
 
 /// 删除卷
 #[tauri::command]
-pub async fn remove_volume(name: String) -> Result<(), String> {
+pub async fn remove_volume(name: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .remove_volume(&name, None)
-        .await
-        .map_err(|e| format!("删除卷失败: {}", e))
+        .await?;
+    Ok(())
 }
 
 /// 清理未使用的卷
 #[tauri::command]
-pub async fn prune_volumes() -> Result<(), String> {
+pub async fn prune_volumes() -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
         .prune_volumes::<String>(None)
-        .await
-        .map_err(|e| format!("清理卷失败: {}", e))?;
+        .await?;
     Ok(())
 }
 
 /// 获取使用特定卷的容器列表
 #[tauri::command]
-pub async fn list_volume_containers(name: String) -> Result<Vec<VolumeUser>, String> {
+pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> {
     let docker = get_docker_client().await?;
     
     let containers = docker
@@ -48,8 +47,7 @@ pub async fn list_volume_containers(name: String) -> Result<Vec<VolumeUser>, Str
             all: true,
             ..Default::default()
         }))
-        .await
-        .map_err(|e| format!("无法获取容器列表: {}", e))?;
+        .await?;
     
     let mut users = Vec::new();
     
@@ -57,8 +55,7 @@ pub async fn list_volume_containers(name: String) -> Result<Vec<VolumeUser>, Str
         if let Some(id) = container.id {
             let details = docker
                 .inspect_container(&id, None)
-                .await
-                .map_err(|e| format!("无法获取容器详情 ({}): {}", id, e))?;
+                .await?;
             
             if let Some(mounts) = details.mounts {
                 for mount in mounts {
@@ -82,8 +79,8 @@ pub async fn list_volume_containers(name: String) -> Result<Vec<VolumeUser>, Str
 
 /// 在文件管理器中打开卷路径
 #[tauri::command]
-pub async fn open_volume_path(app: AppHandle, path: String) -> Result<(), String> {
+pub async fn open_volume_path(app: AppHandle, path: String) -> AppResult<()> {
     app.opener()
-        .open_path(path, None::<String>)
-        .map_err(|e| format!("无法打开目录: {}", e))
+        .open_path(path, None::<String>)?;
+    Ok(())
 }
