@@ -1,5 +1,36 @@
 # Changelog
 
+### [0.1.9](https://github.com/mangerle/vessel/compare/v0.1.8...v0.1.9) (2026-05-30)
+
+
+### 🚀 新增功能 (Features)
+
+* 添加 image、container api service ([564063e](https://github.com/mangerle/vessel/commit/564063ebb2a6bfb7566473049de7ce94493059c0))
+* 增加软件启动自动检查更新功能，并支持跳转设置页更新 ([072e214](https://github.com/mangerle/vessel/commit/072e214bca3391ab0548d0f464feb39d65f2b6e6))
+* **backend:** 添加open_log_dir Tauri指令 ([fab63d3](https://github.com/mangerle/vessel/commit/fab63d3e21e79494739ee2f935600b50667cf267))
+* **frontend:** 添加 useApi 钩子以实现标准化 API 处理 ([ee25e53](https://github.com/mangerle/vessel/commit/ee25e53115cd8c25b3d43f56a67f78a9af26a281))
+* **logging:** 为设置添加前端操作日志 ([890abe7](https://github.com/mangerle/vessel/commit/890abe75d0d9cf588dcd4d8da357a2e3ac59f1c7))
+* **ui:** 补全终端、图表和元数据详情的定制化右键菜单 ([275263d](https://github.com/mangerle/vessel/commit/275263d6d269416afc09fbd90228ab4ceb0fe5d3))
+* **ui:** 为文件浏览器添加差异化右键菜单 ([d04d9a2](https://github.com/mangerle/vessel/commit/d04d9a2e6353fc453dfcb798af37515f3db57e15))
+* **ui:** 为文件浏览器添加差异化右键菜单并完善交互逻辑 ([e5fa882](https://github.com/mangerle/vessel/commit/e5fa882def96d91982bbcb1049db967c1b4f9674))
+* **ui:** 为运行日志视图添加专属右键菜单 ([50a0330](https://github.com/mangerle/vessel/commit/50a033023ae7521cc11a59f7fb2f2c5ab54e55b8))
+* **ui:** 在设置中添加“打开日志目录”按钮 ([f3ea132](https://github.com/mangerle/vessel/commit/f3ea1326f459277904215bfed53ec782195af76a))
+* **ui:** 在资源视图和关于部分中用应用程序标志替换占位符图标 ([234ba98](https://github.com/mangerle/vessel/commit/234ba9844fe28e74ae9e86a624417a6c05f19289))
+
+
+### 🐛 Bug 修复 (Bug Fixes)
+
+* **build:** 移除未使用的图标导入以修复编译错误 ([6b13d62](https://github.com/mangerle/vessel/commit/6b13d62467298705f5210dabe92b91d8b7388cb7))
+* **ui:** 完善日志复制的错误处理与用户提示 ([f6d06a3](https://github.com/mangerle/vessel/commit/f6d06a30f702c926e592d0cce9b1f2ab59337452))
+* **ui:** 修复侧边列表空白处右键菜单因事件冒泡未阻止导致原生菜单干扰和坐标计算异常的问题 ([4825943](https://github.com/mangerle/vessel/commit/48259437c31468804bd7e2e7865395f2ca365b1f))
+* **ui:** 修复日志菜单因为点击失去焦点导致无法获取选中文本的问题 ([7f5034f](https://github.com/mangerle/vessel/commit/7f5034f6798d54bb90ee83fb6da78a45ab7f456b))
+* **ui:** 修复终端光标颜色在不同主题下不可见的问题 ([bb53873](https://github.com/mangerle/vessel/commit/bb53873a0fab7edeec4a720d99fb657cf1381111))
+* **ui:** 修复终端和图表视图下右键菜单无效并被全局背景菜单覆盖的问题 ([c7153da](https://github.com/mangerle/vessel/commit/c7153da397f789c11f502f5c2f7bd45a0829a2de))
+* **ui:** 修复终端内无法使用右键选中并复制文本的问题 ([05a9c53](https://github.com/mangerle/vessel/commit/05a9c530388630175be997ddc7f7e8124115f371))
+* **ui:** 修复终端右键复制因为焦点丢失导致无法获取选中文本的问题 ([dce53ae](https://github.com/mangerle/vessel/commit/dce53ae5bbdb51d5421a2435690a2d9cfe9936ce))
+* **ui:** 修复终端右键执行复制或粘贴后失去输入焦点的问题 ([63f06bd](https://github.com/mangerle/vessel/commit/63f06bda0b993dcfaef8207bc7b437e14707ce79))
+* **ui:** 运行日志和终端新增复制粘贴，文件浏览器去除多余的操作按钮 ([5573465](https://github.com/mangerle/vessel/commit/55734650cd5f804388083a7d7b292df2ec391a02))
+
 ### [0.1.8](https://github.com/mangerle/vessel/compare/v0.1.7...v0.1.8) (2026-05-28)
 
 
