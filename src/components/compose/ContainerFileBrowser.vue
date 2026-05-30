@@ -208,7 +208,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import { 
-  useMessage, NButton, NSpace, NInput, NTable, 
+  useMessage, useDialog, NButton, NSpace, NInput, NTable, 
   NModal, NRadioGroup, NRadio, NDropdown, NSpin, NIcon 
 } from 'naive-ui'
 import { 
@@ -226,6 +226,7 @@ const props = defineProps<{
 }>()
 
 const message = useMessage()
+const dialog = useDialog()
 const { 
   showDropdown, x, y, currentOptions, currentTarget, 
   handleContextMenu, onClickOutside, renderIcon 
@@ -236,6 +237,12 @@ const currentPath = ref('/')
 const pathInput = ref('/')
 const files = ref<any[]>([])
 const loading = ref(false)
+
+// 路径拼接助手函数
+const joinPath = (base: string, name: string) => {
+  const divider = base === '/' ? '' : '/'
+  return `${base}${divider}${name}`
+}
 
 // 新建对话框状态
 const showCreateModal = ref(false)
@@ -261,7 +268,7 @@ const uploadOptions = [
 
 // 文件项右键菜单选项
 const fileItemOptions = (file: any): MenuOption[] => [
-  ...(isTextFile(file.name) ? [{
+  ...(!file.is_dir && isTextFile(file.name) ? [{
     label: '编辑',
     key: 'edit',
     icon: renderIcon(DocumentTextOutline)
@@ -288,7 +295,10 @@ const fileItemOptions = (file: any): MenuOption[] => [
   {
     label: '删除',
     key: 'delete',
-    icon: renderIcon(TrashOutline)
+    icon: renderIcon(TrashOutline),
+    props: {
+      style: { color: 'var(--brand-danger)' }
+    }
   }
 ]
 
@@ -341,10 +351,11 @@ const handleMenuSelect = (key: string) => {
       fetchFiles()
       break
     case 'copy_path':
-      const divider = currentPath.value === '/' ? '' : '/'
-      const fullPath = `${currentPath.value}${divider}${data.name}`
+      const fullPath = joinPath(currentPath.value, data.name)
       navigator.clipboard.writeText(fullPath).then(() => {
         message.success('路径已复制到剪贴板')
+      }).catch(err => {
+        message.error(`复制失败: ${err}`)
       })
       break
   }
@@ -421,8 +432,7 @@ const goUp = () => {
 // 双击文件夹进入，双击可编辑文件打开编辑
 const handleDblClick = (file: any) => {
   if (file.is_dir) {
-    const divider = currentPath.value === '/' ? '' : '/'
-    currentPath.value = `${currentPath.value}${divider}${file.name}`
+    currentPath.value = joinPath(currentPath.value, file.name)
     fetchFiles()
   } else if (isTextFile(file.name)) {
     openEditor(file)
@@ -435,8 +445,7 @@ const handleCreate = async () => {
     message.warning('请输入名称')
     return
   }
-  const divider = currentPath.value === '/' ? '' : '/'
-  const targetPath = `${currentPath.value}${divider}${createName.value.trim()}`
+  const targetPath = joinPath(currentPath.value, createName.value.trim())
   
   try {
     await invoke('create_container_file', {
@@ -486,8 +495,7 @@ const handleDownload = async (file: any) => {
     })
     if (selected) {
       loading.value = true
-      const divider = currentPath.value === '/' ? '' : '/'
-      const containerPath = `${currentPath.value}${divider}${file.name}`
+      const containerPath = joinPath(currentPath.value, file.name)
       await invoke('download_file_from_container', {
         id: props.containerId,
         containerPath,
@@ -515,9 +523,8 @@ const handleRename = async () => {
     showRenameModal.value = false
     return
   }
-  const divider = currentPath.value === '/' ? '' : '/'
-  const srcPath = `${currentPath.value}${divider}${oldFileName.value}`
-  const destPath = `${currentPath.value}${divider}${renameName.value.trim()}`
+  const srcPath = joinPath(currentPath.value, oldFileName.value)
+  const destPath = joinPath(currentPath.value, renameName.value.trim())
   
   try {
     await invoke('rename_container_file', {
@@ -535,27 +542,31 @@ const handleRename = async () => {
 
 // 触发删除容器内文件/文件夹
 const handleDelete = async (file: any) => {
-  const divider = currentPath.value === '/' ? '' : '/'
-  const targetPath = `${currentPath.value}${divider}${file.name}`
+  const targetPath = joinPath(currentPath.value, file.name)
   
-  if (confirm(`确定要永久删除 ${file.name} 吗？`)) {
-    try {
-      await invoke('delete_container_file', {
-        id: props.containerId,
-        path: targetPath
-      })
-      message.success('删除成功')
-      fetchFiles()
-    } catch (e: any) {
-      message.error(`删除失败: ${e}`)
+  dialog.warning({
+    title: '确认删除',
+    content: `确定要永久删除 ${file.name} 吗？`,
+    positiveText: '确认',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await invoke('delete_container_file', {
+          id: props.containerId,
+          path: targetPath
+        })
+        message.success('删除成功')
+        fetchFiles()
+      } catch (e: any) {
+        message.error(`删除失败: ${e}`)
+      }
     }
-  }
+  })
 }
 
 // 打开编辑器并拉取文本文件内容
 const openEditor = async (file: any) => {
-  const divider = currentPath.value === '/' ? '' : '/'
-  const targetPath = `${currentPath.value}${divider}${file.name}`
+  const targetPath = joinPath(currentPath.value, file.name)
   editingFilePath.value = targetPath
   loading.value = true
   
