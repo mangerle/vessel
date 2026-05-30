@@ -108,9 +108,9 @@ pub async fn list_container_files(id: String, path: String) -> AppResult<Vec<Con
                     let is_dir = permissions_str.starts_with('d');
                     
                     let mut current_idx = 0;
-                    for i in 0..8 {
-                        if let Some(pos) = trimmed[current_idx..].find(parts[i]) {
-                            current_idx += pos + parts[i].len();
+                    for part in parts.iter().take(8) {
+                        if let Some(pos) = trimmed[current_idx..].find(*part) {
+                            current_idx += pos + part.len();
                         } else {
                             break;
                         }
@@ -349,7 +349,7 @@ pub async fn read_container_text_file(id: String, path: String) -> AppResult<Str
     
     let mut archive = Archive::new(std::io::Cursor::new(tar_bytes));
     
-    for entry_result in archive.entries()? {
+    if let Some(entry_result) = archive.entries()?.next() {
         let mut entry = entry_result?;
         let mut content_bytes = Vec::new();
         entry.read_to_end(&mut content_bytes)?;

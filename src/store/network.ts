@@ -17,73 +17,51 @@ export const useNetworkStore = defineStore('network', {
     error: null as string | null
   }),
   actions: {
+    async executeAction(actionName: string, actionFn: () => Promise<any>, refresh: boolean = true) {
+      this.loading = true
+      this.error = null
+      try {
+        const result = await actionFn()
+        if (refresh) {
+          this.networks = await networkApi.listNetworks()
+        }
+        return result
+      } catch (err) {
+        console.error(`${actionName}失败:`, err)
+        this.error = String(err)
+        throw err
+      } finally {
+        this.loading = false
+      }
+    },
     /**
      * 获取网络列表
      */
     async fetchNetworks() {
-      this.loading = true
-      this.error = null
-      try {
-        this.networks = await networkApi.listNetworks()
-      } catch (err) {
-        console.error('获取网络列表失败:', err)
-        this.error = String(err)
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('获取网络', async () => {}, true)
     },
     /**
      * 获取网络详情
      * @param id 网络 ID
      */
     async fetchNetworkDetails(id: string) {
-      this.loading = true
-      this.error = null
-      try {
+      return await this.executeAction('获取网络详情', async () => {
         this.currentNetwork = await networkApi.getNetworkDetails(id)
         return this.currentNetwork
-      } catch (err) {
-        console.error('获取网络详情失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      }, false)
     },
     /**
      * 删除网络
      * @param id 网络 ID
      */
     async removeNetwork(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await networkApi.removeNetwork(id)
-        await this.fetchNetworks()
-      } catch (err) {
-        console.error('删除网络失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('删除网络', () => networkApi.removeNetwork(id))
     },
     /**
      * 清理未使用的网络
      */
     async pruneNetworks() {
-      this.loading = true
-      this.error = null
-      try {
-        await networkApi.pruneNetworks()
-        await this.fetchNetworks()
-      } catch (err) {
-        console.error('清理网络失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('清理网络', () => networkApi.pruneNetworks())
     },
     /**
      * 断开容器网络连接
@@ -91,18 +69,10 @@ export const useNetworkStore = defineStore('network', {
      * @param containerId 容器 ID
      */
     async disconnectContainer(networkId: string, containerId: string) {
-      this.loading = true
-      this.error = null
-      try {
+      await this.executeAction('断开网络连接', async () => {
         await networkApi.disconnectNetwork(networkId, containerId)
-        await this.fetchNetworkDetails(networkId)
-      } catch (err) {
-        console.error('断开网络连接失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+        this.currentNetwork = await networkApi.getNetworkDetails(networkId)
+      }, false)
     }
   }
 })

@@ -9,101 +9,42 @@ export const useContainerStore = defineStore('container', {
     error: null as string | null
   }),
   actions: {
-    async fetchContainers() {
+    async executeAction(actionName: string, actionFn: () => Promise<any>, refresh: boolean = true) {
       this.loading = true
       this.error = null
       try {
-        this.containers = await containerApi.list()
+        await actionFn()
+        if (refresh) {
+          this.containers = await containerApi.list()
+        }
       } catch (err) {
-        console.error('获取容器失败:', err)
+        console.error(`${actionName}失败:`, err)
         this.error = String(err)
+        throw err
       } finally {
         this.loading = false
       }
+    },
+    async fetchContainers() {
+      await this.executeAction('获取容器', async () => {}, true)
     },
     async startContainer(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await containerApi.start(id)
-        await this.fetchContainers()
-      } catch (err) {
-        console.error('启动容器失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('启动容器', () => containerApi.start(id))
     },
     async stopContainer(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await containerApi.stop(id)
-        await this.fetchContainers()
-      } catch (err) {
-        console.error('停止容器失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('停止容器', () => containerApi.stop(id))
     },
     async restartContainer(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await containerApi.restart(id)
-        await this.fetchContainers()
-      } catch (err) {
-        console.error('重启容器失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('重启容器', () => containerApi.restart(id))
     },
     async removeContainer(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await containerApi.remove(id)
-        await this.fetchContainers()
-      } catch (err) {
-        console.error('删除容器失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('删除容器', () => containerApi.remove(id))
     },
     async pauseContainer(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await containerApi.pause(id)
-        await this.fetchContainers()
-      } catch (err) {
-        console.error('暂停容器失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('暂停容器', () => containerApi.pause(id))
     },
     async unpauseContainer(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await containerApi.unpause(id)
-        await this.fetchContainers()
-      } catch (err) {
-        console.error('恢复容器失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('恢复容器', () => containerApi.unpause(id))
     }
   }
 })

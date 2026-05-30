@@ -156,6 +156,7 @@ pub async fn pull_image(
 
 /// 运行镜像（创建并启动容器）
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn run_image(
     image: String,
     name: Option<String>,

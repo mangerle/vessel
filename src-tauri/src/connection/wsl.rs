@@ -109,7 +109,7 @@ impl WslBridge {
                         };
 
                         let copy_task = async {
-                            let _ = tokio::select! {
+                            tokio::select! {
                                 _ = tokio::io::copy(&mut reader, &mut stdin) => {},
                                 _ = tokio::io::copy(&mut stdout, &mut writer) => {},
                             };

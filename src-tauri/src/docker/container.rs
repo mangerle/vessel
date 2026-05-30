@@ -11,10 +11,12 @@ use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub static STATS_STREAMS: Lazy<Arc<Mutex<HashMap<String, (oneshot::Sender<()>, u64)>>>> =
+pub type StreamMap = HashMap<String, (oneshot::Sender<()>, u64)>;
+
+pub static STATS_STREAMS: Lazy<Arc<Mutex<StreamMap>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
-pub static LOGS_STREAMS: Lazy<Arc<Mutex<HashMap<String, (oneshot::Sender<()>, u64)>>>> =
+pub static LOGS_STREAMS: Lazy<Arc<Mutex<StreamMap>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 static STREAM_COUNTER: AtomicU64 = AtomicU64::new(0);

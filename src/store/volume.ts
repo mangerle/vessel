@@ -17,87 +17,56 @@ export const useVolumeStore = defineStore('volume', {
     error: null as string | null
   }),
   actions: {
-    /**
-     * 获取数据卷列表
-     */
-    async fetchVolumes() {
+    async executeAction(actionName: string, actionFn: () => Promise<any>, refresh: boolean = true) {
       this.loading = true
       this.error = null
       try {
-        this.volumes = await volumeApi.listVolumes()
+        const result = await actionFn()
+        if (refresh) {
+          this.volumes = await volumeApi.listVolumes()
+        }
+        return result
       } catch (err) {
-        console.error('获取卷列表失败:', err)
+        console.error(`${actionName}失败:`, err)
         this.error = String(err)
+        throw err
       } finally {
         this.loading = false
       }
     },
     /**
+     * 获取数据卷列表
+     */
+    async fetchVolumes() {
+      await this.executeAction('获取数据卷', async () => {}, true)
+    },
+    /**
      * 获取使用特定卷的容器
      */
     async fetchVolumeUsers(name: string) {
-      this.loading = true
-      this.error = null
-      try {
+      await this.executeAction('获取卷使用者', async () => {
         this.volumeUsers = await volumeApi.listVolumeContainers(name)
-      } catch (err) {
-        console.error('获取卷使用者失败:', err)
-        this.error = String(err)
-      } finally {
-        this.loading = false
-      }
+      }, false)
     },
     /**
      * 在文件管理器中打开卷路径
      * @param path 卷路径
      */
     async openPath(path: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await volumeApi.openVolumePath(path)
-      } catch (err) {
-        console.error('打开卷路径失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('打开卷路径', () => volumeApi.openVolumePath(path), false)
     },
     /**
      * 删除数据卷
      * @param name 卷名称
      */
     async removeVolume(name: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await volumeApi.removeVolume(name)
-        await this.fetchVolumes()
-      } catch (err) {
-        console.error('删除卷失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('删除卷', () => volumeApi.removeVolume(name))
     },
     /**
      * 清理未使用的数据卷
      */
     async pruneVolumes() {
-      this.loading = true
-      this.error = null
-      try {
-        await volumeApi.pruneVolumes()
-        await this.fetchVolumes()
-      } catch (err) {
-        console.error('清理卷失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await this.executeAction('清理卷', () => volumeApi.pruneVolumes())
     }
   }
 })
