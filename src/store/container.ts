@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
-import { invoke } from '@tauri-apps/api/core'
-import type { ContainerInfo, ContainerDetails } from '../api/types'
+import { containerApi } from '../api/container'
+import type { ContainerInfo } from '../api/types'
 
 export const useContainerStore = defineStore('container', {
   state: () => ({
@@ -13,7 +13,7 @@ export const useContainerStore = defineStore('container', {
       this.loading = true
       this.error = null
       try {
-        this.containers = await invoke<ContainerInfo[]>('list_local_containers')
+        this.containers = await containerApi.list()
       } catch (err) {
         console.error('获取容器失败:', err)
         this.error = String(err)
@@ -25,7 +25,7 @@ export const useContainerStore = defineStore('container', {
       this.loading = true
       this.error = null
       try {
-        await invoke('start_container', { id })
+        await containerApi.start(id)
         await this.fetchContainers()
       } catch (err) {
         console.error('启动容器失败:', err)
@@ -39,7 +39,7 @@ export const useContainerStore = defineStore('container', {
       this.loading = true
       this.error = null
       try {
-        await invoke('stop_container', { id })
+        await containerApi.stop(id)
         await this.fetchContainers()
       } catch (err) {
         console.error('停止容器失败:', err)
@@ -53,7 +53,7 @@ export const useContainerStore = defineStore('container', {
       this.loading = true
       this.error = null
       try {
-        await invoke('restart_container', { id })
+        await containerApi.restart(id)
         await this.fetchContainers()
       } catch (err) {
         console.error('重启容器失败:', err)
@@ -67,7 +67,7 @@ export const useContainerStore = defineStore('container', {
       this.loading = true
       this.error = null
       try {
-        await invoke('remove_container', { id })
+        await containerApi.remove(id)
         await this.fetchContainers()
       } catch (err) {
         console.error('删除容器失败:', err)
@@ -81,7 +81,7 @@ export const useContainerStore = defineStore('container', {
       this.loading = true
       this.error = null
       try {
-        await invoke('pause_container', { id })
+        await containerApi.pause(id)
         await this.fetchContainers()
       } catch (err) {
         console.error('暂停容器失败:', err)
@@ -95,7 +95,7 @@ export const useContainerStore = defineStore('container', {
       this.loading = true
       this.error = null
       try {
-        await invoke('unpause_container', { id })
+        await containerApi.unpause(id)
         await this.fetchContainers()
       } catch (err) {
         console.error('恢复容器失败:', err)
