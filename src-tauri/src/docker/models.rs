@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use bollard::models::{
-    ContainerSummary, ImageSummary, ImageSearchResponseItem, ImageHistoryResponseItem, 
+    ContainerSummary, ImageSummary, ImageSearchResponseItem, HistoryResponseItem, 
     Network, Volume, ContainerInspectResponse, ImageInspect,
     NetworkContainer, PortBinding, MountPoint
 };
@@ -400,4 +400,23 @@ impl From<ImageInspect> for ImageDetails {
 pub struct PruneImagesResult {
     pub deleted_count: usize,
     pub space_reclaimed: i64,
+}
+
+impl From<bollard::models::ImagePruneResponse> for PruneImagesResult {
+    fn from(response: bollard::models::ImagePruneResponse) -> Self {
+        Self {
+            deleted_count: response.images_deleted.as_ref().map(|v| v.len()).unwrap_or(0),
+            space_reclaimed: response.space_reclaimed.unwrap_or(0),
+        }
+    }
+}
+
+/// 容器内文件信息结构体
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct ContainerFileInfo {
+    pub name: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub mtime: u64, // 毫秒级 Unix 时间戳
+    pub permissions: String,
 }

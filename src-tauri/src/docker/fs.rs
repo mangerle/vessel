@@ -4,16 +4,6 @@ fn escape_shell_arg(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))
 }
 
-/// 容器内文件信息结构体
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub struct ContainerFileInfo {
-    pub name: String,
-    pub is_dir: bool,
-    pub size: u64,
-    pub mtime: u64, // 毫秒级 Unix 时间戳
-    pub permissions: String,
-}
-
 /// 在容器中同步运行命令并获取 stdout 和 stderr 字符串的辅助函数
 async fn run_exec_to_string(container_id: &str, cmd: Vec<String>) -> Result<(String, String), String> {
     use bollard::container::LogOutput;
