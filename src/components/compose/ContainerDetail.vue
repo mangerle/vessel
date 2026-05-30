@@ -444,6 +444,7 @@ const handleMenuSelect = async (key: string) => {
     } else {
       message.warning('终端中没有选中文本')
     }
+    setTimeout(() => term?.focus(), 10)
   } else if (key === 'paste_terminal') {
     try {
       const text = await navigator.clipboard.readText()
@@ -455,8 +456,10 @@ const handleMenuSelect = async (key: string) => {
     } catch (err) {
       message.error(`粘贴失败: ${err}`)
     }
+    setTimeout(() => term?.focus(), 10)
   } else if (key === 'clear_terminal') {
     term?.clear()
+    setTimeout(() => term?.focus(), 10)
   } else if (key === 'reset_terminal') {
     initTerminal()
   } else if (key === 'toggle_stats') {
