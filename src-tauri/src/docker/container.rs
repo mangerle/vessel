@@ -113,7 +113,7 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()>
         loop {
             tokio::select! {
                 _ = &mut rx => {
-                    log::info!("收到停止信号，停止统计流: {}", id_clone);
+                    log::debug!("收到停止信号，停止统计流: {}", id_clone);
                     break;
                 }
                 msg = stream.next() => {
@@ -189,7 +189,7 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> 
         loop {
             tokio::select! {
                 _ = &mut rx => {
-                    log::info!("收到停止信号，停止日志流: {}", id_clone);
+                    log::debug!("收到停止信号，停止日志流: {}", id_clone);
                     break;
                 }
                 msg = stream.next() => {
