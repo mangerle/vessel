@@ -1,4 +1,5 @@
 use crate::connection::get_docker_client;
+use crate::error::AppResult;
 use bollard::container::ListContainersOptions;
 use std::collections::HashMap;
 use tauri::AppHandle;
@@ -8,15 +9,14 @@ use super::ComposeProject;
 
 /// 获取 Compose 项目列表
 #[tauri::command]
-pub async fn list_compose_projects() -> Result<Vec<ComposeProject>, String> {
+pub async fn list_compose_projects() -> AppResult<Vec<ComposeProject>> {
     let docker = get_docker_client().await?;
     let containers = docker
         .list_containers(Some(ListContainersOptions::<String> {
             all: true,
             ..Default::default()
         }))
-        .await
-        .map_err(|e| format!("无法获取容器列表: {}", e))?;
+        .await?;
 
     struct ProjectData {
         total: usize,
@@ -77,7 +77,7 @@ pub async fn read_compose_file(
     path: String,
     mode: String,
     distro: Option<String>,
-) -> Result<String, String> {
+) -> AppResult<String> {
     if mode == "wsl" {
         let mut cmd = tokio::process::Command::new("wsl");
         if let Some(d) = distro {
@@ -90,16 +90,14 @@ pub async fn read_compose_file(
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
 
-        let out = cmd.output().await.map_err(|e| e.to_string())?;
+        let out = cmd.output().await?;
         if out.status.success() {
             Ok(String::from_utf8_lossy(&out.stdout).to_string())
         } else {
-            Err(String::from_utf8_lossy(&out.stderr).to_string())
+            Err(String::from_utf8_lossy(&out.stderr).to_string().into())
         }
     } else {
-        tokio::fs::read_to_string(path)
-            .await
-            .map_err(|e| e.to_string())
+        Ok(tokio::fs::read_to_string(path).await?)
     }
 }
 
@@ -110,7 +108,7 @@ pub async fn write_compose_file(
     content: String,
     mode: String,
     distro: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if mode == "wsl" {
         let mut cmd = tokio::process::Command::new("wsl");
         if let Some(d) = distro {
@@ -124,16 +122,14 @@ pub async fn write_compose_file(
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
 
-        let out = cmd.output().await.map_err(|e| e.to_string())?;
+        let out = cmd.output().await?;
         if out.status.success() {
             Ok(())
         } else {
-            Err(String::from_utf8_lossy(&out.stderr).to_string())
+            Err(String::from_utf8_lossy(&out.stderr).to_string().into())
         }
     } else {
-        tokio::fs::write(path, content)
-            .await
-            .map_err(|e| e.to_string())
+        Ok(tokio::fs::write(path, content).await?)
     }
 }
 
@@ -145,7 +141,7 @@ pub async fn run_compose_command(
     args: Vec<String>,
     mode: String,
     distro: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let mut cmd = if mode == "wsl" {
         let mut c = tokio::process::Command::new("wsl");
         if let Some(d) = distro {
@@ -172,9 +168,7 @@ pub async fn run_compose_command(
         cmd.creation_flags(0x08000000);
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to start docker compose: {}", e))?;
+    let mut child = cmd.spawn()?;
 
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();

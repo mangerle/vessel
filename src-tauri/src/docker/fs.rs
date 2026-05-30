@@ -1,11 +1,12 @@
 use crate::connection::get_docker_client;
+use crate::error::AppResult;
 
 fn escape_shell_arg(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))
 }
 
 /// 在容器中同步运行命令并获取 stdout 和 stderr 字符串的辅助函数
-async fn run_exec_to_string(container_id: &str, cmd: Vec<String>) -> Result<(String, String), String> {
+async fn run_exec_to_string(container_id: &str, cmd: Vec<String>) -> AppResult<(String, String)> {
     use bollard::container::LogOutput;
     use bollard::exec::{CreateExecOptions, StartExecResults};
     use futures_util::StreamExt;
@@ -17,31 +18,26 @@ async fn run_exec_to_string(container_id: &str, cmd: Vec<String>) -> Result<(Str
         cmd: Some(cmd),
         ..Default::default()
     };
-    let exec = docker.create_exec(container_id, options)
-        .await
-        .map_err(|e| format!("创建 exec 失败: {}", e))?;
+    let exec = docker.create_exec(container_id, options).await?;
     
-    let result = docker.start_exec(&exec.id, None)
-        .await
-        .map_err(|e| format!("启动 exec 失败: {}", e))?;
+    let result = docker.start_exec(&exec.id, None).await?;
     
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     
     if let StartExecResults::Attached { mut output, .. } = result {
         while let Some(msg) = output.next().await {
-            match msg {
-                Ok(LogOutput::StdOut { message }) => {
+            match msg? {
+                LogOutput::StdOut { message } => {
                     stdout.extend_from_slice(&message);
                 }
-                Ok(LogOutput::StdErr { message }) => {
+                LogOutput::StdErr { message } => {
                     stderr.extend_from_slice(&message);
                 }
-                Ok(LogOutput::Console { message }) => {
+                LogOutput::Console { message } => {
                     stdout.extend_from_slice(&message);
                 }
-                Ok(_) => {}
-                Err(e) => return Err(format!("读取 exec 输出失败: {}", e)),
+                _ => {}
             }
         }
     }
@@ -54,7 +50,7 @@ async fn run_exec_to_string(container_id: &str, cmd: Vec<String>) -> Result<(Str
 
 /// 获取容器内目录的文件列表
 #[tauri::command]
-pub async fn list_container_files(id: String, path: String) -> Result<Vec<ContainerFileInfo>, String> {
+pub async fn list_container_files(id: String, path: String) -> AppResult<Vec<ContainerFileInfo>> {
     let target_path = if path.is_empty() { "/".to_string() } else { path };
 
     let escaped_path = escape_shell_arg(&target_path);
@@ -135,7 +131,7 @@ pub async fn list_container_files(id: String, path: String) -> Result<Vec<Contai
                     });
                 }
             } else {
-                return Err("无法读取容器内文件列表，容器可能没有安装 sh 解释器".to_string());
+                return Err("无法读取容器内文件列表，容器可能没有安装 sh 解释器".to_string().into());
             }
         }
     }
@@ -157,7 +153,7 @@ pub async fn download_file_from_container(
     id: String,
     container_path: String,
     local_path: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     use futures_util::StreamExt;
     use std::path::Path;
     use tar::Archive;
@@ -176,21 +172,16 @@ pub async fn download_file_from_container(
     let temp_file_path = temp_dir.join(&temp_file_name);
     
     {
-        let mut temp_file = tokio::fs::File::create(&temp_file_path)
-            .await
-            .map_err(|e| format!("创建本地临时文件失败: {}", e))?;
+        let mut temp_file = tokio::fs::File::create(&temp_file_path).await?;
             
         while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.map_err(|e| format!("下载容器文件流出错: {}", e))?;
-            temp_file.write_all(&chunk)
-                .await
-                .map_err(|e| format!("写入本地临时文件出错: {}", e))?;
+            let chunk = chunk_result?;
+            temp_file.write_all(&chunk).await?;
         }
-        temp_file.flush().await.map_err(|e| format!("刷新文件失败: {}", e))?;
+        temp_file.flush().await?;
     }
     
-    let tar_file = std::fs::File::open(&temp_file_path)
-        .map_err(|e| format!("读取本地临时归档失败: {}", e))?;
+    let tar_file = std::fs::File::open(&temp_file_path)?;
     
     let mut archive = Archive::new(tar_file);
     
@@ -198,12 +189,10 @@ pub async fn download_file_from_container(
     let is_dir = local_path_buf.is_dir() || local_path.ends_with('/') || local_path.ends_with('\\');
     
     if is_dir {
-        archive.unpack(&local_path)
-            .map_err(|e| format!("解压归档到目标目录失败: {}", e))?;
+        archive.unpack(&local_path)?;
     } else {
         let parent = local_path_buf.parent().unwrap_or_else(|| Path::new("."));
-        archive.unpack(parent)
-            .map_err(|e| format!("解压归档失败: {}", e))?;
+        archive.unpack(parent)?;
             
         let container_file_name = Path::new(&container_path)
             .file_name()
@@ -216,8 +205,7 @@ pub async fn download_file_from_container(
                 if local_path_buf.exists() {
                     let _ = std::fs::remove_file(local_path_buf);
                 }
-                std::fs::rename(&extracted_path, local_path_buf)
-                    .map_err(|e| format!("重命名下载文件失败: {}", e))?;
+                std::fs::rename(&extracted_path, local_path_buf)?;
             }
         }
     }
@@ -233,7 +221,7 @@ pub async fn upload_file_to_container(
     id: String,
     local_path: String,
     container_dir: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     use std::path::Path;
     use tar::Builder;
 
@@ -241,7 +229,7 @@ pub async fn upload_file_to_container(
     
     let local_path_buf = Path::new(&local_path);
     if !local_path_buf.exists() {
-        return Err("宿主机文件或目录不存在".to_string());
+        return Err("宿主机文件或目录不存在".to_string().into());
     }
     
     let mut tar_data = Vec::new();
@@ -253,15 +241,12 @@ pub async fn upload_file_to_container(
             .ok_or_else(|| "无法获取本地文件名".to_string())?;
             
         if local_path_buf.is_dir() {
-            builder.append_dir_all(file_name, &local_path)
-                .map_err(|e| format!("打包本地目录失败: {}", e))?;
+            builder.append_dir_all(file_name, &local_path)?;
         } else {
-            let mut file = std::fs::File::open(&local_path)
-                .map_err(|e| format!("打开本地文件失败: {}", e))?;
-            builder.append_file(file_name, &mut file)
-                .map_err(|e| format!("打包本地文件失败: {}", e))?;
+            let mut file = std::fs::File::open(&local_path)?;
+            builder.append_file(file_name, &mut file)?;
         }
-        builder.finish().map_err(|e| format!("完成打包归档失败: {}", e))?;
+        builder.finish()?;
     }
     
     let options = bollard::container::UploadToContainerOptions {
@@ -269,18 +254,16 @@ pub async fn upload_file_to_container(
         no_overwrite_dir_non_dir: "false".to_string(),
     };
     
-    docker.upload_to_container(&id, Some(options), tar_data.into())
-        .await
-        .map_err(|e| format!("上传文件到容器失败: {}", e))?;
+    docker.upload_to_container(&id, Some(options), tar_data.into()).await?;
         
     Ok(())
 }
 
 /// 删除容器内的文件或文件夹
 #[tauri::command]
-pub async fn delete_container_file(id: String, path: String) -> Result<(), String> {
+pub async fn delete_container_file(id: String, path: String) -> AppResult<()> {
     if path.is_empty() || path == "/" {
-        return Err("安全起见，禁止删除容器根目录".to_string());
+        return Err("安全起见，禁止删除容器根目录".to_string().into());
     }
     let cmd = vec![
         "sh".to_string(),
@@ -289,16 +272,16 @@ pub async fn delete_container_file(id: String, path: String) -> Result<(), Strin
     ];
     let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
     if !stderr.trim().is_empty() {
-        return Err(format!("删除失败: {}", stderr));
+        return Err(format!("删除失败: {}", stderr).into());
     }
     Ok(())
 }
 
 /// 在容器中新建文件或文件夹
 #[tauri::command]
-pub async fn create_container_file(id: String, path: String, is_dir: bool) -> Result<(), String> {
+pub async fn create_container_file(id: String, path: String, is_dir: bool) -> AppResult<()> {
     if path.is_empty() {
-        return Err("路径不能为空".to_string());
+        return Err("路径不能为空".to_string().into());
     }
     let cmd = if is_dir {
         vec![
@@ -315,16 +298,16 @@ pub async fn create_container_file(id: String, path: String, is_dir: bool) -> Re
     };
     let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
     if !stderr.trim().is_empty() {
-        return Err(format!("创建失败: {}", stderr));
+        return Err(format!("创建失败: {}", stderr).into());
     }
     Ok(())
 }
 
 /// 重命名容器内的文件或文件夹
 #[tauri::command]
-pub async fn rename_container_file(id: String, src: String, dest: String) -> Result<(), String> {
+pub async fn rename_container_file(id: String, src: String, dest: String) -> AppResult<()> {
     if src.is_empty() || dest.is_empty() {
-        return Err("路径不能为空".to_string());
+        return Err("路径不能为空".to_string().into());
     }
     let cmd = vec![
         "sh".to_string(),
@@ -333,14 +316,14 @@ pub async fn rename_container_file(id: String, src: String, dest: String) -> Res
     ];
     let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
     if !stderr.trim().is_empty() {
-        return Err(format!("重命名失败: {}", stderr));
+        return Err(format!("重命名失败: {}", stderr).into());
     }
     Ok(())
 }
 
 /// 读取容器内文本文件内容
 #[tauri::command]
-pub async fn read_container_text_file(id: String, path: String) -> Result<String, String> {
+pub async fn read_container_text_file(id: String, path: String) -> AppResult<String> {
     use futures_util::StreamExt;
     use std::io::Read;
     use tar::Archive;
@@ -355,26 +338,25 @@ pub async fn read_container_text_file(id: String, path: String) -> Result<String
     
     let mut tar_bytes = Vec::new();
     while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result.map_err(|e| format!("读取容器文件流出错: {}", e))?;
+        let chunk = chunk_result?;
         tar_bytes.extend_from_slice(&chunk);
     }
     
     if tar_bytes.is_empty() {
-        return Err("文件为空或不存在".to_string());
+        return Err("文件为空或不存在".to_string().into());
     }
     
     let mut archive = Archive::new(std::io::Cursor::new(tar_bytes));
     
-    for entry_result in archive.entries().map_err(|e| format!("解析归档错误: {}", e))? {
-        let mut entry = entry_result.map_err(|e| format!("解析归档项错误: {}", e))?;
+    for entry_result in archive.entries()? {
+        let mut entry = entry_result?;
         let mut content_bytes = Vec::new();
-        entry.read_to_end(&mut content_bytes)
-            .map_err(|e| format!("读取归档文件内容失败: {}", e))?;
+        entry.read_to_end(&mut content_bytes)?;
             
         return Ok(String::from_utf8_lossy(&content_bytes).into_owned());
     }
     
-    Err("在归档中未找到任何文件".to_string())
+    Err("在归档中未找到任何文件".to_string().into())
 }
 
 /// 写入容器内文本文件内容
@@ -383,7 +365,7 @@ pub async fn write_container_text_file(
     id: String,
     path: String,
     content: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     use std::path::Path;
     use tar::Builder;
 
@@ -406,10 +388,9 @@ pub async fn write_container_text_file(
         header.set_size(content.len() as u64);
         header.set_mode(0o644);
         
-        builder.append_data(&mut header, file_name, content.as_bytes())
-            .map_err(|e| format!("构建归档项失败: {}", e))?;
+        builder.append_data(&mut header, file_name, content.as_bytes())?;
             
-        builder.finish().map_err(|e| format!("结束归档打包失败: {}", e))?;
+        builder.finish()?;
     }
     
     let options = bollard::container::UploadToContainerOptions {
@@ -417,9 +398,7 @@ pub async fn write_container_text_file(
         no_overwrite_dir_non_dir: "false".to_string(),
     };
     
-    docker.upload_to_container(&id, Some(options), tar_data.into())
-        .await
-        .map_err(|e| format!("上传更新文件失败: {}", e))?;
+    docker.upload_to_container(&id, Some(options), tar_data.into()).await?;
         
     Ok(())
 }
