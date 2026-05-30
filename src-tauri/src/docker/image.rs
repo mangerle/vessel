@@ -342,6 +342,17 @@ pub async fn open_config_dir(app: AppHandle) -> AppResult<()> {
     Ok(())
 }
 
+/// 打开日志文件目录
+#[tauri::command]
+pub async fn open_log_dir(app: tauri::AppHandle) -> crate::error::AppResult<()> {
+    let log_dir = app.path().app_log_dir()?;
+    if !log_dir.exists() {
+        std::fs::create_dir_all(&log_dir)?;
+    }
+    app.opener().open_path(log_dir.to_string_lossy().to_string(), None::<String>)?;
+    Ok(())
+}
+
 /// 导出镜像为 tar 文件
 #[tauri::command]
 pub async fn export_image(

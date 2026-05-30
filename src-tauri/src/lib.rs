@@ -147,6 +147,7 @@ pub fn run() {
             docker::prune_volumes,
             docker::list_wsl_distros,
             docker::open_config_dir,
+            docker::open_log_dir,
             docker::list_container_files,
             docker::download_file_from_container,
             docker::upload_file_to_container,
