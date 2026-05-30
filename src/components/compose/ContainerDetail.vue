@@ -326,7 +326,12 @@ const handleMenuSelect = async (key: string) => {
     emit('clean-logs')
   } else if (key === 'copy_all') {
     const text = props.logsList.join('\n')
-    await navigator.clipboard.writeText(text)
+    try {
+      await navigator.clipboard.writeText(text)
+      message.success('已复制全部日志到剪贴板')
+    } catch (err) {
+      message.error(`复制失败: ${err}`)
+    }
   } else if (key === 'toggle_wrap') {
     wordWrap.value = !wordWrap.value
   } else if (key === 'toggle_follow') {
