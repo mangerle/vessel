@@ -325,6 +325,16 @@ const handleOpenConfigDir = async () => {
   }
 }
 
+// 打开运行日志目录
+const handleOpenLogDir = async () => {
+  try {
+    await invoke('open_log_dir')
+    message.success('已打开日志文件所在目录')
+  } catch (e: any) {
+    message.error('打开日志目录失败: ' + e)
+  }
+}
+
 // 恢复出厂设置
 const handleResetFactory = async () => {
   localStorage.clear()
@@ -681,6 +691,18 @@ onMounted(async () => {
               <div class="row-value-area">
                 <button class="form-action-btn border-btn" @click="handleOpenConfigDir">
                   📂 打开配置文件目录
+                </button>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="row-label-area">
+                <div class="row-title">系统操作运行日志</div>
+                <div class="row-desc">查看 Vessel 运行过程中的详细日志，用于排查容器联通或后端引擎异常。</div>
+              </div>
+              <div class="row-value-area">
+                <button class="form-action-btn border-btn" @click="handleOpenLogDir">
+                  📜 打开日志目录
                 </button>
               </div>
             </div>
