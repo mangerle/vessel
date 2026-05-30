@@ -483,11 +483,26 @@ const activeTab = ref('logs')
 const getTerminalTheme = () => {
   const theme = settingsStore.theme
   if (theme === 'zed-gray') {
-    return { background: '#121212', foreground: '#cccccc', selectionBackground: 'rgba(255, 255, 255, 0.3)' }
+    return { 
+      background: '#121212', 
+      foreground: '#cccccc', 
+      cursor: '#cccccc',
+      selectionBackground: 'rgba(255, 255, 255, 0.3)' 
+    }
   } else if (theme === 'light-apple') {
-    return { background: '#f5f5f7', foreground: '#424245', selectionBackground: 'rgba(0, 112, 227, 0.3)' }
+    return { 
+      background: '#f5f5f7', 
+      foreground: '#424245', 
+      cursor: '#424245',
+      selectionBackground: 'rgba(0, 112, 227, 0.3)' 
+    }
   }
-  return { background: '#05070c', foreground: '#cbd5e1', selectionBackground: 'rgba(255, 255, 255, 0.25)' }
+  return { 
+    background: '#05070c', 
+    foreground: '#cbd5e1', 
+    cursor: '#cbd5e1',
+    selectionBackground: 'rgba(255, 255, 255, 0.25)' 
+  }
 }
 
 // 监听全局主题变化，实时同步给 xterm
