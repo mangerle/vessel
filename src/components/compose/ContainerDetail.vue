@@ -550,7 +550,9 @@ const initTerminal = async () => {
     cursorBlink: true,
     theme: getTerminalTheme(),
     fontFamily: 'JetBrains Mono, Consolas, monospace',
-    fontSize: 11
+    fontSize: 11,
+    rightClickSelectsWord: true,
+    disableStdin: false
   })
 
   fitAddon = new FitAddon()
