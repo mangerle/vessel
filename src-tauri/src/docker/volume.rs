@@ -14,15 +14,7 @@ pub async fn list_volumes() -> Result<Vec<VolumeInfo>, String> {
         .map_err(|e| format!("无法获取卷列表: {}", e))?;
 
     let volumes = response.volumes.unwrap_or_default();
-    Ok(volumes
-        .into_iter()
-        .map(|v| VolumeInfo {
-            name: v.name,
-            driver: v.driver,
-            mountpoint: v.mountpoint,
-            created: v.created_at.unwrap_or_default(),
-        })
-        .collect())
+    Ok(volumes.into_iter().map(VolumeInfo::from).collect())
 }
 
 /// 删除卷

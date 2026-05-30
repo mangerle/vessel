@@ -25,15 +25,7 @@ pub async fn list_images() -> Result<Vec<ImageInfo>, String> {
         .await
         .map_err(|e| format!("无法获取镜像列表: {}", e))?;
 
-    Ok(images
-        .into_iter()
-        .map(|img| ImageInfo {
-            id: img.id,
-            tags: img.repo_tags,
-            size: img.size,
-            created: img.created,
-        })
-        .collect())
+    Ok(images.into_iter().map(ImageInfo::from).collect())
 }
 
 /// 获取镜像详情
@@ -45,23 +37,7 @@ pub async fn inspect_image(id: String) -> Result<ImageDetails, String> {
         .await
         .map_err(|e| format!("获取镜像详情失败: {}", e))?;
 
-    let config = details.config.as_ref();
-
-    Ok(ImageDetails {
-        id: details.id.unwrap_or_default(),
-        tags: details.repo_tags.unwrap_or_default(),
-        size: details.size.unwrap_or_default(),
-        created: details.created.unwrap_or_default(),
-        architecture: details.architecture.unwrap_or_default(),
-        os: details.os.unwrap_or_default(),
-        env: config.and_then(|c| c.env.clone()).unwrap_or_default(),
-        exposed_ports: config
-            .and_then(|c| c.exposed_ports.as_ref())
-            .map(|p| p.keys().cloned().collect())
-            .unwrap_or_default(),
-        cmd: config.and_then(|c| c.cmd.clone()).unwrap_or_default(),
-        entrypoint: config.and_then(|c| c.entrypoint.clone()).unwrap_or_default(),
-    })
+    Ok(ImageDetails::from(details))
 }
 
 /// 删除镜像
@@ -88,15 +64,7 @@ pub async fn search_images(term: String) -> Result<Vec<ImageSearchResult>, Strin
         .await
         .map_err(|e| format!("搜索镜像失败: {}", e))?;
 
-    Ok(results
-        .into_iter()
-        .map(|item| ImageSearchResult {
-            name: item.name.unwrap_or_default(),
-            description: item.description.unwrap_or_default(),
-            is_official: item.is_official.unwrap_or_default(),
-            star_count: item.star_count.unwrap_or_default(),
-        })
-        .collect())
+    Ok(results.into_iter().map(ImageSearchResult::from).collect())
 }
 
 /// 获取镜像历史
@@ -108,15 +76,7 @@ pub async fn get_image_history(id: String) -> Result<Vec<ImageHistoryInfo>, Stri
         .await
         .map_err(|e| format!("获取镜像历史失败: {}", e))?;
 
-    Ok(history
-        .into_iter()
-        .map(|item| ImageHistoryInfo {
-            id: item.id,
-            created: item.created,
-            created_by: item.created_by,
-            size: item.size,
-        })
-        .collect())
+    Ok(history.into_iter().map(ImageHistoryInfo::from).collect())
 }
 
 /// 拉取镜像
