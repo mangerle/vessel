@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../store/settings'
 import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
@@ -34,6 +35,7 @@ import {
 
 const settingsStore = useSettingsStore()
 const message = useMessage()
+const route = useRoute()
 
 const activeTab = ref<string>('general')
 
@@ -456,6 +458,13 @@ onMounted(async () => {
     appVersion.value = 'v' + await getVersion()
   } catch (e) {
     console.error('获取应用版本号失败:', e)
+  }
+
+  // 检查是否从启动更新提醒跳转而来
+  if (route.query.triggerUpdate === 'true') {
+    handleCheckUpdate()
+    // 切换到关于页签以展示更新信息
+    activeTab.value = 'about'
   }
 })
 </script>

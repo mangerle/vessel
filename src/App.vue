@@ -5,6 +5,7 @@ import { exit } from '@tauri-apps/plugin-process'
 import { invoke } from '@tauri-apps/api/core'
 import { useSettingsStore } from './store/settings'
 import SingleInstanceListener from './components/common/SingleInstanceListener.vue'
+import StartupUpdater from './components/common/StartupUpdater.vue'
 import { 
   NConfigProvider, 
   NMessageProvider, 
@@ -157,6 +158,7 @@ onMounted(async () => {
           <n-global-style />
           <router-view />
           <SingleInstanceListener />
+          <StartupUpdater />
         </n-notification-provider>
       </n-dialog-provider>
     </n-message-provider>
