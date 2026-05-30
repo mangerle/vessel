@@ -294,6 +294,7 @@ const {
 } = useContextMenu()
 
 const selectedLogText = ref('')
+const selectedTerminalText = ref('')
 
 const logMenuOptions = computed((): MenuOption[] => [
   {
@@ -387,6 +388,11 @@ const handleLogsContext = (e: MouseEvent) => {
 }
 
 const handleTerminalContext = (e: MouseEvent) => {
+  if (term) {
+    selectedTerminalText.value = term.getSelection()
+  } else {
+    selectedTerminalText.value = ''
+  }
   handleContextMenu(e, terminalMenuOptions)
 }
 
@@ -427,9 +433,10 @@ const handleMenuSelect = async (key: string) => {
   } else if (key === 'toggle_follow') {
     toggleTailFollow()
   } else if (key === 'copy_terminal') {
-    if (term && term.hasSelection()) {
+    const text = selectedTerminalText.value
+    if (text) {
       try {
-        await navigator.clipboard.writeText(term.getSelection())
+        await navigator.clipboard.writeText(text)
         message.success('已复制终端内容')
       } catch (err) {
         message.error(`复制失败: ${err}`)
@@ -474,11 +481,11 @@ const activeTab = ref('logs')
 const getTerminalTheme = () => {
   const theme = settingsStore.theme
   if (theme === 'zed-gray') {
-    return { background: '#121212', foreground: '#cccccc' }
+    return { background: '#121212', foreground: '#cccccc', selectionBackground: 'rgba(255, 255, 255, 0.3)' }
   } else if (theme === 'light-apple') {
-    return { background: '#f5f5f7', foreground: '#424245' }
+    return { background: '#f5f5f7', foreground: '#424245', selectionBackground: 'rgba(0, 112, 227, 0.3)' }
   }
-  return { background: '#05070c', foreground: '#cbd5e1' }
+  return { background: '#05070c', foreground: '#cbd5e1', selectionBackground: 'rgba(255, 255, 255, 0.25)' }
 }
 
 // 监听全局主题变化，实时同步给 xterm
@@ -551,8 +558,8 @@ const initTerminal = async () => {
     theme: getTerminalTheme(),
     fontFamily: 'JetBrains Mono, Consolas, monospace',
     fontSize: 11,
-    rightClickSelectsWord: true,
-    disableStdin: false
+    disableStdin: false,
+    macOptionClickForcesSelection: true
   })
 
   fitAddon = new FitAddon()
