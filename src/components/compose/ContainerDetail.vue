@@ -106,7 +106,7 @@
             :class="{ 'word-wrap': wordWrap }" 
             ref="logTextRef" 
             @scroll="onLogScroll"
-            @contextmenu="handleLogsContext"
+            @contextmenu.prevent.stop="handleLogsContext"
           >
             <div v-for="(log, idx) in logsList" :key="idx" class="log-line">
               {{ log }}
@@ -115,18 +115,6 @@
               等待容器日志输出...
             </div>
           </div>
-
-          <!-- 右键菜单 -->
-          <n-dropdown
-            placement="bottom-start"
-            trigger="manual"
-            :x="x"
-            :y="y"
-            :options="logMenuOptions"
-            :show="showDropdown"
-            :on-clickoutside="onClickOutside"
-            @select="handleMenuSelect"
-          />
 
           <!-- 中栏: 独立自定义垂直滚动条 -->
           <div 
@@ -163,17 +151,17 @@
         </div>
 
         <!-- 2. 原位交互式终端 PTY (新增强力特性) -->
-        <div v-show="activeTab === 'terminal'" class="terminal-pane" @contextmenu.stop="handleTerminalContext">
+        <div v-show="activeTab === 'terminal'" class="terminal-pane" @contextmenu.prevent.stop="handleTerminalContext">
           <div ref="terminalRef" class="pty-terminal-container"></div>
         </div>
 
         <!-- 3. 性能仪表盘 -->
-        <div v-show="activeTab === 'stats'" class="stats-pane" @contextmenu.stop="handleStatsContext">
+        <div v-show="activeTab === 'stats'" class="stats-pane" @contextmenu.prevent.stop="handleStatsContext">
           <slot name="stats"></slot>
         </div>
 
         <!-- 4. 元数据详情 -->
-        <div v-show="activeTab === 'inspect'" class="inspect-pane" @contextmenu.stop="handleInspectContext">
+        <div v-show="activeTab === 'inspect'" class="inspect-pane" @contextmenu.prevent.stop="handleInspectContext">
           <n-scrollbar style="height: 100%">
             <div class="inspect-grid">
               <div class="inspect-section-title">端口映射</div>
@@ -237,6 +225,18 @@
       <div class="empty-title">欢迎使用 Vessel</div>
       <div class="empty-sub">请在左侧选择一个项目或容器，开始高效微服务管控</div>
     </div>
+
+    <!-- 右键菜单 -->
+    <n-dropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="x"
+      :y="y"
+      :options="currentOptions"
+      :show="showDropdown"
+      :on-clickoutside="onClickOutside"
+      @select="handleMenuSelect"
+    />
   </div>
 </template>
 
@@ -288,6 +288,7 @@ const {
   showDropdown, 
   x, 
   y, 
+  currentOptions,
   handleContextMenu, 
   onClickOutside 
 } = useContextMenu()

@@ -64,7 +64,7 @@
       </div>
 
       <!-- 文件列表区域 -->
-      <div class="browser-body" @contextmenu="handleBgContext">
+      <div class="browser-body" @contextmenu.prevent.stop="handleBgContext">
         <div v-if="loading && files.length === 0" class="list-loading">
           <n-spin size="medium" />
         </div>
@@ -89,7 +89,7 @@
               v-for="file in files" 
               :key="file.name" 
               @dblclick="handleDblClick(file)"
-              @contextmenu.stop="handleFileContext($event, file)"
+              @contextmenu.prevent.stop="handleFileContext($event, file)"
               class="file-row"
             >
               <td class="file-name-cell">
