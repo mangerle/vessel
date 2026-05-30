@@ -1,11 +1,18 @@
-import { h, ref } from 'vue'
-import { NIcon } from 'naive-ui'
+import { Component, h, ref } from 'vue'
+import { DropdownOption, NIcon } from 'naive-ui'
+
+/**
+ * 右键菜单项类型定义
+ */
+export type MenuOption = DropdownOption & {
+  // 可根据需要添加扩展属性
+}
 
 /**
  * 辅助渲染图标函数
  * 导出以便在业务组件配置菜单项时使用
  */
-export const renderIcon = (icon: any) => {
+export const renderIcon = (icon: Component) => {
   return () => h(NIcon, null, { default: () => h(icon) })
 }
 
@@ -13,7 +20,7 @@ export function useContextMenu() {
   const showDropdown = ref(false)
   const x = ref(0)
   const y = ref(0)
-  const currentOptions = ref<any[]>([])
+  const currentOptions = ref<MenuOption[]>([])
   const currentTarget = ref<any>(null)
 
   /**
@@ -22,7 +29,7 @@ export function useContextMenu() {
    * @param options 菜单项配置
    * @param data 关联的数据（如容器对象）
    */
-  const handleContextMenu = (e: MouseEvent, options: any[], data?: any) => {
+  const handleContextMenu = (e: MouseEvent, options: MenuOption[], data?: any) => {
     e.preventDefault()
     showDropdown.value = false
     

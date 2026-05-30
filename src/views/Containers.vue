@@ -16,7 +16,18 @@ import {
 import {
   TerminalOutline,
   BarChartOutline,
-  CheckmarkCircleOutline
+  CheckmarkCircleOutline,
+  PlayOutline,
+  StopOutline,
+  SyncOutline,
+  PauseOutline,
+  PlayForwardOutline,
+  CopyOutline,
+  FolderOpenOutline,
+  DocumentTextOutline,
+  TrashOutline,
+  PencilOutline,
+  SaveOutline
 } from '@vicons/ionicons5'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -25,7 +36,7 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers'
 import SimpleContainerList from '../components/container/SimpleContainerList.vue'
 import ContainerDetail from '../components/compose/ContainerDetail.vue'
-import { useContextMenu } from '../hooks/useContextMenu'
+import { useContextMenu, MenuOption, renderIcon } from '../hooks/useContextMenu'
 
 use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
@@ -97,6 +108,37 @@ const {
   onClickOutside: closeMenu
 } = useContextMenu()
 
+const containerMenuOptions = (container: any): MenuOption[] => {
+  const isRunning = container.state === 'running';
+  const isPaused = container.state === 'paused';
+  const canStart = !isRunning && !isPaused;
+  const canStop = isRunning || isPaused;
+  
+  return [
+    { label: '启动容器', key: 'start', icon: renderIcon(PlayOutline), disabled: !canStart },
+    { label: '停止容器', key: 'stop', icon: renderIcon(StopOutline), disabled: !canStop },
+    { label: '重启容器', key: 'restart', icon: renderIcon(SyncOutline), disabled: !canStop },
+    { label: isPaused ? '恢复运行' : '挂起容器', key: isPaused ? 'unpause' : 'pause', icon: renderIcon(isPaused ? PlayForwardOutline : PauseOutline), disabled: !canStop && !isPaused },
+    { type: 'divider', key: 'd1' },
+    { label: '复制容器 ID', key: 'copy_id', icon: renderIcon(CopyOutline) },
+    { label: '复制镜像 ID', key: 'copy_image_id', icon: renderIcon(CopyOutline) },
+    { label: '重命名容器', key: 'rename_container', icon: renderIcon(PencilOutline) },
+    { label: '提交为镜像', key: 'commit_container', icon: renderIcon(SaveOutline) },
+    { type: 'divider', key: 'd2' },
+    { label: '内部活跃进程 (Top)', key: 'show_top', icon: renderIcon(BarChartOutline), disabled: !isRunning },
+    { label: '执行单行命令 (Exec)', key: 'exec_cmd', icon: renderIcon(TerminalOutline), disabled: !isRunning },
+    { label: '交互式终端', key: 'terminal_user', icon: renderIcon(TerminalOutline), disabled: !isRunning },
+    { label: '容器文件浏览器', key: 'file_explorer', icon: renderIcon(FolderOpenOutline), disabled: !isRunning },
+    { label: '查看实时日志', key: 'logs', icon: renderIcon(DocumentTextOutline) },
+    { type: 'divider', key: 'd3' },
+    { label: '删除容器', key: 'delete', icon: renderIcon(TrashOutline), disabled: isRunning }
+  ]
+}
+
+const globalMenuOptions: MenuOption[] = [
+  { label: '刷新列表', key: 'refresh_list', icon: renderIcon(SyncOutline) }
+]
+
 const adjustedY = computed(() => {
   if (y.value > window.innerHeight - 450) {
     return Math.max(10, y.value - 410)
@@ -107,6 +149,12 @@ const adjustedY = computed(() => {
 const handleMenuSelect = async (key: string) => {
   const target = currentTarget.value
   closeMenu()
+
+  if (key === 'refresh_list') {
+    await containerStore.fetchContainers()
+    message.success('已刷新容器列表')
+    return
+  }
 
   const targetId = target?.id || selectedId.value
   if (!targetId) return
@@ -567,7 +615,7 @@ onUnmounted(() => {
       <SimpleContainerList
         :items="independentContainers"
         :selected-id="selectedId"
-        @contextmenu="handleContextMenu"
+        @contextmenu="(e, type, item) => handleContextMenu(e, type === 'container' ? containerMenuOptions(item) : globalMenuOptions, item)"
         @select="onSelect"
         @batch="handleBatchAction"
       />

@@ -29,7 +29,12 @@ import {
   CheckmarkCircleOutline,
   LogoDocker,
   FileTrayFullOutline,
-  FlashOutline
+  FlashOutline,
+  PauseOutline,
+  PlayForwardOutline,
+  CopyOutline,
+  DocumentTextOutline,
+  TrashOutline
 } from '@vicons/ionicons5'
 
 import VChart from 'vue-echarts'
@@ -39,7 +44,7 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers'
 import ComposeProjectList from '../components/compose/ComposeProjectList.vue'
 import ContainerDetail from '../components/compose/ContainerDetail.vue'
-import { useContextMenu } from '../hooks/useContextMenu'
+import { useContextMenu, MenuOption, renderIcon } from '../hooks/useContextMenu'
 
 use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
@@ -107,6 +112,54 @@ const {
   onClickOutside: closeMenu
 } = useContextMenu()
 
+const projectMenuOptions = (_project: any): MenuOption[] => {
+  return [
+    { label: '启动项目 (Up)', key: 'up', icon: renderIcon(PlayOutline) },
+    { label: '停止项目 (Stop)', key: 'stop_project', icon: renderIcon(StopOutline) },
+    { label: '下线项目 (Down)', key: 'down_project', icon: renderIcon(TrashOutline) },
+    { label: '重启项目 (Restart)', key: 'restart_project', icon: renderIcon(SyncOutline) }
+  ]
+}
+
+const composeContainerMenuOptions = (container: any): MenuOption[] => {
+  const isRunning = container.state === 'running';
+  const isPaused = container.state === 'paused';
+  const canStart = !isRunning && !isPaused;
+  const canStop = isRunning || isPaused;
+  
+  return [
+    { label: '启动容器', key: 'start', icon: renderIcon(PlayOutline), disabled: !canStart },
+    { label: '停止容器', key: 'stop', icon: renderIcon(StopOutline), disabled: !canStop },
+    { label: '重启容器', key: 'restart', icon: renderIcon(SyncOutline), disabled: !canStop },
+    { label: isPaused ? '恢复运行' : '挂起容器', key: isPaused ? 'unpause' : 'pause', icon: renderIcon(isPaused ? PlayForwardOutline : PauseOutline), disabled: !canStop && !isPaused },
+    { type: 'divider', key: 'd1' },
+    { label: '复制容器 ID', key: 'copy_id', icon: renderIcon(CopyOutline) },
+    { label: '复制镜像 ID', key: 'copy_image_id', icon: renderIcon(CopyOutline) },
+    { type: 'divider', key: 'd2' },
+    { label: '内部活跃进程 (Top)', key: 'show_top', icon: renderIcon(BarChartOutline), disabled: !isRunning },
+    { label: '执行单行命令 (Exec)', key: 'exec_cmd', icon: renderIcon(TerminalOutline), disabled: !isRunning },
+    { label: '交互式终端', key: 'terminal_user', icon: renderIcon(TerminalOutline), disabled: !isRunning },
+    { label: '容器文件浏览器', key: 'file_explorer', icon: renderIcon(FolderOpenOutline), disabled: !isRunning },
+    { label: '查看实时日志', key: 'logs', icon: renderIcon(DocumentTextOutline) },
+    { type: 'divider', key: 'd3' },
+    { label: '删除容器', key: 'delete', icon: renderIcon(TrashOutline), disabled: isRunning }
+  ]
+}
+
+const globalMenuOptions: MenuOption[] = [
+  { label: '刷新列表', key: 'refresh_list', icon: renderIcon(SyncOutline) }
+]
+
+const onContextMenu = (e: MouseEvent, type: string, item?: any) => {
+  let options = globalMenuOptions
+  if (type === 'project') {
+    options = projectMenuOptions(item)
+  } else if (type === 'container') {
+    options = composeContainerMenuOptions(item)
+  }
+  handleContextMenu(e, options, item)
+}
+
 const adjustedY = computed(() => {
   if (y.value > window.innerHeight - 450) {
     return Math.max(10, y.value - 410)
@@ -117,6 +170,13 @@ const adjustedY = computed(() => {
 const handleMenuSelect = async (key: string) => {
   const target = currentTarget.value
   closeMenu()
+
+  if (key === 'refresh_list') {
+    await composeStore.fetchProjects()
+    await containerStore.fetchContainers()
+    message.success('已刷新项目和容器列表')
+    return
+  }
 
   const targetId = target?.id || (selectedType.value === 'container' ? selectedId.value : null)
 
@@ -619,7 +679,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="compose-view" @contextmenu="handleContextMenu($event, 'global')">
+  <div class="compose-view" @contextmenu.prevent="onContextMenu($event, 'global')">
     <!-- 左侧 Compose 极简文件管理器树 (240px 宽度) -->
     <div class="list-column">
       <ComposeProjectList
@@ -627,7 +687,7 @@ onUnmounted(() => {
         :projects="composeStore.projects"
         :selected-id="selectedId"
         @select="onSelect"
-        @contextmenu="handleContextMenu"
+        @contextmenu="onContextMenu"
         @import="showImportModal = true"
       />
     </div>

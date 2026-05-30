@@ -242,7 +242,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { NSpin, NScrollbar, NIcon, NDropdown } from 'naive-ui'
+import { NSpin, NScrollbar, NIcon, NDropdown, useMessage } from 'naive-ui'
 import { 
   PlayOutline, 
   StopOutline, 
@@ -277,6 +277,7 @@ const props = defineProps<{
   logsList: string[]
 }>()
 
+const message = useMessage()
 const settingsStore = useSettingsStore()
 const emit = defineEmits(['start', 'stop', 'restart', 'clean-logs'])
 
