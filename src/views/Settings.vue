@@ -693,15 +693,15 @@ onMounted(async () => {
           <div v-show="activeTab === 'about'" class="form-section about-section">
             <div class="about-logo-wrapper">
               <div class="about-logo-icon-bg">
-                <n-icon :component="LogoDocker" size="40" class="about-logo-icon" />
+                <img src="/logo.png" alt="Vessel Logo" class="about-logo-img" style="width: 52px; height: 52px; object-fit: contain;" />
               </div>
               <div class="about-app-name">Vessel</div>
               <div class="about-app-version">{{ appVersion }}</div>
             </div>
 
             <div class="about-description-card">
-              <p>Vessel 是一款面向现代云原生极客打造的<strong>轻量级、两栖式 Docker 桌面容器管理客户端</strong>。</p>
-              <p>系统支持本地 WSL 管道侧载直连、远程 SSH 密码多节点调度，并在本版本中全面升级了引擎多连接切换与全通道加签安全升级技术。</p>
+              <p>Vessel 是一款面向现代化打造的<strong>轻量级 Docker 桌面容器管理客户端</strong>。</p>
+              <p>系统支持本地 WSL 管道侧载直连、远程 SSH 密码多节点调度，全面升级了引擎多连接切换与全通道加签安全升级技术。</p>
             </div>
 
             <div class="about-action-row">
@@ -1407,6 +1407,10 @@ onMounted(async () => {
   transform: translateY(-2px);
   box-shadow: 0 12px 28px rgba(16, 185, 129, 0.25), inset 0 2px 4px rgba(255, 255, 255, 0.1);
   border-color: rgba(16, 185, 129, 0.4);
+}
+
+.about-logo-img {
+  filter: drop-shadow(0 2px 8px rgba(16, 185, 129, 0.4));
 }
 
 .about-logo-icon {

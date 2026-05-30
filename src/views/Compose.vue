@@ -27,7 +27,6 @@ import {
   TerminalOutline,
   BarChartOutline,
   CheckmarkCircleOutline,
-  LogoDocker,
   FileTrayFullOutline,
   FlashOutline,
   PauseOutline,
@@ -804,7 +803,7 @@ onUnmounted(() => {
       <!-- 空选择状态 -->
       <div v-else key="compose-empty-state" class="empty-state">
         <div class="empty-logo">
-          <n-icon :component="LogoDocker" />
+          <img src="/logo.png" alt="Vessel Logo" style="width: 80px; height: 80px; object-fit: contain;" />
         </div>
         <div class="empty-title">欢迎使用 Vessel</div>
         <div class="empty-sub">请在左侧选择一个 Compose 服务或项目以进行深度精细化操作。</div>

@@ -246,7 +246,7 @@ onMounted(() => {
       <!-- 空白缺省页 -->
       <div v-else class="empty-state">
         <div class="empty-logo">
-          <n-icon :component="GlobeOutline" />
+          <img src="/logo.png" alt="Vessel Logo" style="width: 80px; height: 80px; object-fit: contain;" />
         </div>
         <div class="empty-title">网络局域网观测台</div>
         <div class="empty-sub">选择左侧的虚拟网络以观察其网关、已挂载服务容器以及物理局域网拓扑结构。</div>

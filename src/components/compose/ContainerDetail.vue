@@ -220,7 +220,7 @@
 
     <div v-else class="empty-state" key="empty-state-pane">
       <div class="empty-logo">
-        <n-icon :component="LogoDocker" />
+        <img src="/logo.png" alt="Vessel Logo" style="width: 80px; height: 80px; object-fit: contain;" />
       </div>
       <div class="empty-title">欢迎使用 Vessel</div>
       <div class="empty-sub">请在左侧选择一个项目或容器，开始高效微服务管控</div>
@@ -258,7 +258,6 @@ import {
   PinOutline,
   DiscOutline,
   FlashOutline,
-  LogoDocker,
   FolderOutline,
   CopyOutline,
   RefreshOutline,
