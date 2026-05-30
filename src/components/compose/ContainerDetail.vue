@@ -293,6 +293,8 @@ const {
   onClickOutside 
 } = useContextMenu()
 
+const selectedLogText = ref('')
+
 const logMenuOptions = computed((): MenuOption[] => [
   {
     label: '复制选中文本',
@@ -380,6 +382,7 @@ const inspectMenuOptions: MenuOption[] = [
 ]
 
 const handleLogsContext = (e: MouseEvent) => {
+  selectedLogText.value = window.getSelection()?.toString() || ''
   handleContextMenu(e, logMenuOptions.value)
 }
 
@@ -408,7 +411,7 @@ const handleMenuSelect = async (key: string) => {
       message.error(`复制失败: ${err}`)
     }
   } else if (key === 'copy_selected_logs') {
-    const text = window.getSelection()?.toString() || ''
+    const text = selectedLogText.value
     if (text) {
       try {
         await navigator.clipboard.writeText(text)
