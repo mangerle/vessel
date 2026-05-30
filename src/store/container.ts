@@ -1,12 +1,39 @@
 import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 
-interface ContainerInfo {
+export interface ContainerInfo {
   id: string
   name: string
   state: string
   image: string
   compose_project?: string
+}
+
+export interface PortMapping {
+  private_port: number
+  public_port?: number
+  type_: string
+  ip?: string
+}
+
+export interface MountInfo {
+  source: string
+  destination: string
+  mode: string
+  rw: boolean
+}
+
+export interface ContainerDetails {
+  id: string
+  name: string
+  image: string
+  image_id: string
+  state: string
+  status: string
+  created: string
+  env: string[]
+  ports: PortMapping[]
+  mounts: MountInfo[]
 }
 
 export const useContainerStore = defineStore('container', {
