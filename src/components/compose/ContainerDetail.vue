@@ -163,17 +163,17 @@
         </div>
 
         <!-- 2. 原位交互式终端 PTY (新增强力特性) -->
-        <div v-show="activeTab === 'terminal'" class="terminal-pane">
+        <div v-show="activeTab === 'terminal'" class="terminal-pane" @contextmenu.stop="handleTerminalContext">
           <div ref="terminalRef" class="pty-terminal-container"></div>
         </div>
 
         <!-- 3. 性能仪表盘 -->
-        <div v-show="activeTab === 'stats'" class="stats-pane">
+        <div v-show="activeTab === 'stats'" class="stats-pane" @contextmenu.stop="handleStatsContext">
           <slot name="stats"></slot>
         </div>
 
         <!-- 4. 元数据详情 -->
-        <div v-show="activeTab === 'inspect'" class="inspect-pane">
+        <div v-show="activeTab === 'inspect'" class="inspect-pane" @contextmenu.stop="handleInspectContext">
           <n-scrollbar style="height: 100%">
             <div class="inspect-grid">
               <div class="inspect-section-title">端口映射</div>
@@ -260,7 +260,9 @@ import {
   FlashOutline,
   LogoDocker,
   FolderOutline,
-  CopyOutline
+  CopyOutline,
+  RefreshOutline,
+  PauseOutline
 } from '@vicons/ionicons5'
 import { useSettingsStore } from '../../store/settings'
 import { Terminal } from '@xterm/xterm'
@@ -269,7 +271,7 @@ import '@xterm/xterm/css/xterm.css'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import ContainerFileBrowser from './ContainerFileBrowser.vue'
-import { useContextMenu, renderIcon } from '../../hooks/useContextMenu'
+import { useContextMenu, renderIcon, MenuOption } from '../../hooks/useContextMenu'
 
 const props = defineProps<{
   container: any | null
@@ -279,7 +281,7 @@ const props = defineProps<{
 
 const message = useMessage()
 const settingsStore = useSettingsStore()
-const emit = defineEmits(['start', 'stop', 'restart', 'clean-logs'])
+const emit = defineEmits(['start', 'stop', 'restart', 'clean-logs', 'toggle-stats', 'reset-stats'])
 
 // 右键菜单支持
 const { 
@@ -290,10 +292,10 @@ const {
   onClickOutside 
 } = useContextMenu()
 
-const logMenuOptions = computed(() => [
+const logMenuOptions = computed((): MenuOption[] => [
   {
     label: '复制全部日志',
-    key: 'copy_all',
+    key: 'copy_all_logs',
     icon: renderIcon(CopyOutline)
   },
   {
@@ -312,20 +314,72 @@ const logMenuOptions = computed(() => [
   },
   {
     label: '清空显示缓冲区',
-    key: 'clear',
+    key: 'clear_logs',
     icon: renderIcon(TrashOutline)
   }
 ])
+
+const terminalMenuOptions: MenuOption[] = [
+  {
+    label: '清屏 (Clear)',
+    key: 'clear_terminal',
+    icon: renderIcon(TrashOutline)
+  },
+  {
+    label: '重置连接',
+    key: 'reset_terminal',
+    icon: renderIcon(RefreshOutline)
+  }
+]
+
+const isStatsPaused = ref(false)
+const statsMenuOptions = computed((): MenuOption[] => [
+  {
+    label: isStatsPaused.value ? '继续采集' : '暂停采集',
+    key: 'toggle_stats',
+    icon: renderIcon(isStatsPaused.value ? PlayOutline : PauseOutline)
+  },
+  {
+    label: '重置图表',
+    key: 'reset_stats',
+    icon: renderIcon(RefreshOutline)
+  }
+])
+
+const inspectMenuOptions: MenuOption[] = [
+  {
+    label: '复制完整 JSON',
+    key: 'copy_inspect',
+    icon: renderIcon(CopyOutline)
+  },
+  {
+    label: '重新获取元数据',
+    key: 'reload_inspect',
+    icon: renderIcon(RefreshOutline)
+  }
+]
 
 const handleLogsContext = (e: MouseEvent) => {
   handleContextMenu(e, logMenuOptions.value)
 }
 
+const handleTerminalContext = (e: MouseEvent) => {
+  handleContextMenu(e, terminalMenuOptions)
+}
+
+const handleStatsContext = (e: MouseEvent) => {
+  handleContextMenu(e, statsMenuOptions.value)
+}
+
+const handleInspectContext = (e: MouseEvent) => {
+  handleContextMenu(e, inspectMenuOptions)
+}
+
 const handleMenuSelect = async (key: string) => {
   showDropdown.value = false
-  if (key === 'clear') {
+  if (key === 'clear_logs') {
     emit('clean-logs')
-  } else if (key === 'copy_all') {
+  } else if (key === 'copy_all_logs') {
     const text = props.logsList.join('\n')
     try {
       await navigator.clipboard.writeText(text)
@@ -337,6 +391,24 @@ const handleMenuSelect = async (key: string) => {
     wordWrap.value = !wordWrap.value
   } else if (key === 'toggle_follow') {
     toggleTailFollow()
+  } else if (key === 'clear_terminal') {
+    term?.clear()
+  } else if (key === 'reset_terminal') {
+    initTerminal()
+  } else if (key === 'toggle_stats') {
+    isStatsPaused.value = !isStatsPaused.value
+    emit('toggle-stats', isStatsPaused.value)
+  } else if (key === 'reset_stats') {
+    emit('reset-stats')
+  } else if (key === 'copy_inspect') {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(props.container, null, 2))
+      message.success('已复制元数据 JSON 到剪贴板')
+    } catch (err) {
+      message.error(`复制失败: ${err}`)
+    }
+  } else if (key === 'reload_inspect') {
+    emit('restart') // 借用 restart 或者触发外层的重新 fetchDetails
   }
 }
 

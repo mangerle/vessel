@@ -592,6 +592,26 @@ const startStatsStream = async (id: string) => {
   }
 }
 
+const handleToggleStats = (paused: boolean) => {
+  if (paused) {
+    if (statsUnlisten) {
+      statsUnlisten()
+      statsUnlisten = null
+    }
+  } else {
+    if (selectedId.value) {
+      startStatsStream(selectedId.value)
+    }
+  }
+}
+
+const handleResetStats = () => {
+  cpuData.value = []
+  memData.value = []
+  netData.value = []
+  ioData.value = []
+}
+
 // --- Lifecycle ---
 onMounted(() => {
   containerStore.fetchContainers()
@@ -632,6 +652,8 @@ onUnmounted(() => {
         @stop="handleStop"
         @restart="handleRestart"
         @clean-logs="handleCleanLogs"
+        @toggle-stats="handleToggleStats"
+        @reset-stats="handleResetStats"
       >
         <!-- stats 插槽：2x2 性能面板 -->
         <template #stats>
