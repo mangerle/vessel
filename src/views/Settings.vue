@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { info, error, warn } from '@tauri-apps/plugin-log'
 import {
   NSelect,
   NSwitch,
@@ -174,6 +175,7 @@ const isDirty = computed(() => {
 })
 
 const handleSave = async () => {
+  info('用户尝试保存全局配置...')
   // 1. 同步给后端 Rust 环境 (核心：连接引擎切换)
   const activeConn = draft.value.connections.find(c => c.id === draft.value.activeConnectionId)
   if (activeConn) {
@@ -183,29 +185,37 @@ const handleSave = async () => {
         distro: activeConn.wslDistro || null 
       })
     } catch (e) {
+      error(`后端配置同步失败: ${e}`)
       console.error('后端配置同步失败:', e)
     }
   }
 
-  // 2. 保存到 store 状态中并自动持久化
-  settingsStore.theme = draft.value.theme as any
-  settingsStore.closeToTray = draft.value.closeToTray
-  settingsStore.refreshInterval = draft.value.refreshInterval
-  settingsStore.visibleMenus = [...draft.value.visibleMenus]
-  settingsStore.connections = draft.value.connections.map(c => ({ ...c }))
-  settingsStore.activeConnectionId = draft.value.activeConnectionId
-  settingsStore.registries = draft.value.registries.map(r => ({ ...r }))
-  
-  await settingsStore.setAutoStart(draft.value.autoStart) // 会触发自启动插件并保存
-  await settingsStore.saveSettings()
-  
-  // 3. 重新同步草稿，使 isDirty 变为 false，按钮自动退去高亮
-  syncDraftFromStore()
-  
-  message.success('配置已成功落盘，系统通信管道已重载！')
+  try {
+    // 2. 保存到 store 状态中并自动持久化
+    settingsStore.theme = draft.value.theme as any
+    settingsStore.closeToTray = draft.value.closeToTray
+    settingsStore.refreshInterval = draft.value.refreshInterval
+    settingsStore.visibleMenus = [...draft.value.visibleMenus]
+    settingsStore.connections = draft.value.connections.map(c => ({ ...c }))
+    settingsStore.activeConnectionId = draft.value.activeConnectionId
+    settingsStore.registries = draft.value.registries.map(r => ({ ...r }))
+    
+    await settingsStore.setAutoStart(draft.value.autoStart) // 会触发自启动插件并保存
+    await settingsStore.saveSettings()
+    
+    // 3. 重新同步草稿，使 isDirty 变为 false，按钮自动退去高亮
+    syncDraftFromStore()
+    
+    info('配置保存成功并已落盘')
+    message.success('配置已成功落盘，系统通信管道已重载！')
+  } catch (e) {
+    error(`配置保存失败: ${e}`)
+    message.error('配置保存失败')
+  }
 }
 
 const handleCancel = () => {
+  info('用户取消了配置修改')
   syncDraftFromStore()
   message.info('已丢弃所有内存修改')
 }
@@ -234,6 +244,7 @@ const handleRefreshWsl = async (silent = false) => {
       if (!silent) message.info('未探测到已安装的 WSL 发行版。')
     }
   } catch (err) {
+    error(`扫描分发版失败: ${err}`)
     console.error('扫描分发版失败:', err)
     if (!silent) message.error('扫描分发版失败')
   }
@@ -337,11 +348,14 @@ const handleOpenLogDir = async () => {
 
 // 恢复出厂设置
 const handleResetFactory = async () => {
+  warn('用户触发恢复出厂设置！')
   localStorage.clear()
   try {
     await settingsStore.resetSettings()
+    info('本地物理配置已擦除')
     message.error('本地物理配置已擦除！恢复出厂设置中...')
   } catch (err) {
+    error(`清除物理配置文件失败: ${err}`)
     message.error('清除物理配置文件失败，仅清理本地缓存。')
   }
   setTimeout(() => {
@@ -382,12 +396,14 @@ const cleanMarkdown = (text: string) => {
 // 真正检查更新
 const handleCheckUpdate = async () => {
   if (checkingUpdate.value) return
+  info('用户手动检查软件更新...')
   checkingUpdate.value = true
   updateError.value = ''
   
   try {
     const updateResult = await check()
     if (updateResult) {
+      info(`发现新版本: ${updateResult.version}`)
       activeUpdate.value = updateResult
       updateInfo.value = {
         version: updateResult.version,
@@ -397,9 +413,11 @@ const handleCheckUpdate = async () => {
       updateStep.value = 'found'
       showUpdateModal.value = true
     } else {
+      info('当前已是最新版本')
       message.info('当前已是最新版本')
     }
   } catch (e: any) {
+    error(`检查更新失败: ${e}`)
     console.error('检查更新失败:', e)
     message.error('检查更新失败: ' + e)
     updateError.value = String(e)
