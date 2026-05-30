@@ -726,19 +726,19 @@ onMounted(async () => {
     <!-- 底部即改即生效控制栏 (绝对布局贴底) -->
     <div class="settings-bottom-actions">
       <button 
+        class="cancel-btn" 
+        :disabled="!isDirty" 
+        @click="handleCancel"
+      >
+        取消
+      </button>
+      <button 
         class="save-btn" 
         :class="{ 'breath-green': isDirty }"
         :disabled="!isDirty" 
         @click="handleSave"
       >
-        💾 保存配置
-      </button>
-      <button 
-        class="cancel-btn" 
-        :disabled="!isDirty" 
-        @click="handleCancel"
-      >
-        ↩️ 取消
+        保存
       </button>
     </div>
   </div>
@@ -919,7 +919,7 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
   gap: 16px;
-  padding-bottom: 56px; /* 留出底部保存按钮空间 */
+  padding-bottom: 76px; /* 增加内边距防止浮动底部栏遮挡内容 */
 }
 
 /* 左侧页签 160px */
@@ -1199,44 +1199,53 @@ onMounted(async () => {
 /* 底部即改即生效控制栏 (呼吸绿) */
 .settings-bottom-actions {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 48px;
-  background-color: var(--bg-sidebar);
-  border-top: 1px solid var(--border-color);
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  height: 52px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   padding: 0 20px;
   gap: 12px;
   z-index: 10;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .save-btn {
-  height: 28px;
+  height: 30px;
   padding: 0 16px;
   border-radius: 4px;
   border: 1px solid var(--border-color);
-  background-color: rgba(255,255,255,0.03);
-  color: var(--text-muted);
+  background-color: rgba(0, 0, 0, 0.03);
+  color: var(--text-body);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   outline: none;
   transition: all 0.2s ease;
 }
 
+.save-btn:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.06);
+  border-color: var(--text-muted);
+}
+
 .save-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .save-btn.breath-green {
   background-color: var(--brand-primary);
   border-color: var(--brand-primary);
-  color: #000;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
-  animation: green-breath-anim 2s infinite ease-in-out;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+  animation: green-breath-anim 2.5s infinite ease-in-out;
 }
 
 @keyframes green-breath-anim {
@@ -1246,23 +1255,26 @@ onMounted(async () => {
 }
 
 .cancel-btn {
-  height: 28px;
+  height: 30px;
   padding: 0 16px;
   border-radius: 4px;
   border: 1px solid var(--border-color);
-  background-color: rgba(255,255,255,0.03);
+  background-color: transparent;
   color: var(--text-body);
   font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
   outline: none;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
 }
+
 .cancel-btn:hover:not(:disabled) {
-  background-color: var(--bg-active);
-  color: var(--text-title);
+  background-color: rgba(0, 0, 0, 0.03);
+  border-color: var(--text-muted);
 }
+
 .cancel-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
