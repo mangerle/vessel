@@ -64,7 +64,7 @@
       </div>
 
       <!-- 文件列表区域 -->
-      <div class="browser-body">
+      <div class="browser-body" @contextmenu="handleBgContext">
         <div v-if="loading && files.length === 0" class="list-loading">
           <n-spin size="medium" />
         </div>
@@ -89,6 +89,7 @@
               v-for="file in files" 
               :key="file.name" 
               @dblclick="handleDblClick(file)"
+              @contextmenu.stop="handleFileContext($event, file)"
               class="file-row"
             >
               <td class="file-name-cell">
@@ -189,6 +190,18 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- 右键菜单 -->
+    <n-dropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="x"
+      :y="y"
+      :options="currentOptions"
+      :show="showDropdown"
+      :on-clickoutside="onClickOutside"
+      @select="handleMenuSelect"
+    />
   </div>
 </template>
 
@@ -201,9 +214,11 @@ import {
 import { 
   CloudOfflineOutline, ArrowUpOutline, AddOutline, 
   CloudUploadOutline, RefreshOutline, FolderOutline, 
-  FolderOpenOutline, DocumentOutline 
+  FolderOpenOutline, DocumentOutline, CloudDownloadOutline,
+  CreateOutline, TrashOutline, CopyOutline, DocumentTextOutline
 } from '@vicons/ionicons5'
 import { invoke } from '@tauri-apps/api/core'
+import { useContextMenu, MenuOption } from '../../hooks/useContextMenu'
 
 const props = defineProps<{
   containerId: string
@@ -211,6 +226,10 @@ const props = defineProps<{
 }>()
 
 const message = useMessage()
+const { 
+  showDropdown, x, y, currentOptions, currentTarget, 
+  handleContextMenu, onClickOutside, renderIcon 
+} = useContextMenu()
 
 // 核心路径与列表状态
 const currentPath = ref('/')
@@ -239,6 +258,97 @@ const uploadOptions = [
   { label: '上传文件', key: 'file' },
   { label: '上传文件夹', key: 'dir' }
 ]
+
+// 文件项右键菜单选项
+const fileItemOptions = (file: any): MenuOption[] => [
+  ...(isTextFile(file.name) ? [{
+    label: '编辑',
+    key: 'edit',
+    icon: renderIcon(DocumentTextOutline)
+  }] : []),
+  {
+    label: '下载',
+    key: 'download',
+    icon: renderIcon(CloudDownloadOutline)
+  },
+  {
+    label: '重命名',
+    key: 'rename',
+    icon: renderIcon(CreateOutline)
+  },
+  {
+    label: '复制路径',
+    key: 'copy_path',
+    icon: renderIcon(CopyOutline)
+  },
+  {
+    type: 'divider',
+    key: 'd1'
+  },
+  {
+    label: '删除',
+    key: 'delete',
+    icon: renderIcon(TrashOutline)
+  }
+]
+
+// 文件夹背景右键菜单选项
+const folderBackgroundOptions: MenuOption[] = [
+  {
+    label: '新建',
+    key: 'create',
+    icon: renderIcon(AddOutline)
+  },
+  {
+    label: '刷新',
+    key: 'refresh',
+    icon: renderIcon(RefreshOutline)
+  }
+]
+
+// 处理文件项右键点击
+const handleFileContext = (e: MouseEvent, file: any) => {
+  handleContextMenu(e, fileItemOptions(file), file)
+}
+
+// 处理背景右键点击
+const handleBgContext = (e: MouseEvent) => {
+  handleContextMenu(e, folderBackgroundOptions)
+}
+
+// 统一处理菜单选择动作
+const handleMenuSelect = (key: string) => {
+  showDropdown.value = false
+  const data = currentTarget.value
+  
+  switch (key) {
+    case 'edit':
+      openEditor(data)
+      break
+    case 'download':
+      handleDownload(data)
+      break
+    case 'rename':
+      openRename(data)
+      break
+    case 'delete':
+      handleDelete(data)
+      break
+    case 'create':
+      showCreateModal.value = true
+      break
+    case 'refresh':
+      fetchFiles()
+      break
+    case 'copy_path':
+      const divider = currentPath.value === '/' ? '' : '/'
+      const fullPath = `${currentPath.value}${divider}${data.name}`
+      navigator.clipboard.writeText(fullPath).then(() => {
+        message.success('路径已复制到剪贴板')
+      })
+      break
+  }
+}
 
 // 格式化文件大小
 const formatBytes = (bytes: number) => {
