@@ -201,6 +201,7 @@ import { formatBytes } from '../../utils/format'
 const props = defineProps<{
   containerId: string
   containerStatus: boolean
+  active: boolean
 }>()
 
 const message = useMessage()
@@ -215,6 +216,7 @@ const currentPath = ref('/')
 const pathInput = ref('/')
 const files = ref<any[]>([])
 const loading = ref(false)
+const lastLoadedContainerId = ref('') // 记录最后成功加载文件树的容器 ID
 
 // 路径拼接助手函数
 const joinPath = (base: string, name: string) => {
@@ -307,7 +309,7 @@ const handleBgContext = (e: MouseEvent) => {
 // 统一处理菜单选择动作
 const handleMenuSelect = (key: string) => {
   showDropdown.value = false
-  const data = currentTarget.value
+  const data = currentTarget.value as any
   
   switch (key) {
     case 'edit':
@@ -368,6 +370,7 @@ const fetchFiles = async () => {
     })
     files.value = list
     pathInput.value = currentPath.value
+    lastLoadedContainerId.value = props.containerId
   } catch (e: any) {
     message.error(`加载文件列表失败: ${e}`)
   } finally {
@@ -575,19 +578,33 @@ const saveEditor = async () => {
 // 监听容器选择变更与运行状态变更
 watch(() => props.containerId, () => {
   currentPath.value = '/'
-  fetchFiles()
+  if (props.active) {
+    fetchFiles()
+  }
 })
 
 watch(() => props.containerStatus, (newVal) => {
   if (newVal) {
-    fetchFiles()
+    if (props.active) {
+      fetchFiles()
+    }
   } else {
     files.value = []
+    lastLoadedContainerId.value = ''
+  }
+})
+
+// 监听激活状态（在其他 Tab 时切换容器，回到文件浏览器时再触发加载）
+watch(() => props.active, (newActive) => {
+  if (newActive && lastLoadedContainerId.value !== props.containerId) {
+    fetchFiles()
   }
 })
 
 onMounted(() => {
-  fetchFiles()
+  if (props.active) {
+    fetchFiles()
+  }
 })
 </script>
 

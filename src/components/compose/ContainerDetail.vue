@@ -213,7 +213,7 @@
 
         <!-- 5. 文件浏览 -->
         <div v-show="activeTab === 'files'" class="files-pane">
-          <ContainerFileBrowser :container-id="container.id" :container-status="isUp" />
+          <ContainerFileBrowser :container-id="container.id" :container-status="isUp" :active="activeTab === 'files'" />
         </div>
       </div>
     </template>
