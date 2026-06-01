@@ -5,7 +5,8 @@ use bollard::container::ListContainersOptions;
 use std::collections::HashMap;
 use tauri::AppHandle;
 use tauri::Emitter;
-use tokio::io::AsyncBufReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use std::process::Stdio;
 
 /// 获取 Compose 项目列表
 #[tauri::command]
@@ -116,13 +117,21 @@ pub async fn write_compose_file(
         {
             cmd.args(["-d", &d]);
         }
-        let shell_cmd = format!("cat << 'EOF' > \"{}\"\n{}\nEOF", path, content);
-        cmd.args(["-u", "root", "--", "sh", "-c", &shell_cmd]);
+        // 使用 stdin 传递内容，避免 content 注入风险
+        // 使用 $1 传递路径，避免 path 注入风险
+        cmd.args(["-u", "root", "--", "sh", "-c", "cat > \"$1\"", "--", &path]);
+        cmd.stdin(Stdio::piped());
 
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
 
-        let out = cmd.output().await?;
+        let mut child = cmd.spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(content.as_bytes()).await?;
+            drop(stdin);
+        }
+
+        let out = child.wait_with_output().await?;
         if out.status.success() {
             log::info!("Compose 文件写入成功 (WSL): {}", path);
             Ok(())
@@ -168,11 +177,15 @@ pub async fn run_compose_command(
         {
             c.args(["-d", &d]);
         }
+        // 使用 $1 传递 project_dir，使用 $@ 传递 args，避免注入风险
         c.args([
             "sh",
             "-c",
-            &format!("cd \"{}\" && docker compose {}", project_dir, args_str),
+            "cd \"$1\" && shift && docker compose \"$@\"",
+            "--",
+            &project_dir,
         ]);
+        c.args(args);
         c
     } else {
         let mut c = tokio::process::Command::new("docker");

@@ -43,6 +43,10 @@ pub async fn update_connection_config(mode: String, distro: Option<String>) {
 
 /// 获取 Docker 客户端
 pub async fn get_docker_client() -> AppResult<Docker> {
+    // 1. 获取配置 (先拿这个锁)
+    let config = CONNECTION_CONFIG.lock().await.clone();
+
+    // 2. 检查缓存 (后拿这个锁)
     let mut client_lock = DOCKER_CLIENT.lock().await;
 
     if let Some(client) = &*client_lock {
@@ -50,7 +54,6 @@ pub async fn get_docker_client() -> AppResult<Docker> {
     }
 
     log::info!("正在尝试建立新的 Docker 连接...");
-    let config = CONNECTION_CONFIG.lock().await.clone();
 
     // 根据配置选择连接方式
     if config.mode == "wsl" {

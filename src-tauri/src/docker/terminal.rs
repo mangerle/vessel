@@ -121,11 +121,13 @@ pub async fn create_container_terminal(
 /// 向终端写入数据
 #[tauri::command]
 pub async fn write_to_terminal(exec_id: String, data: Vec<u8>) -> Result<(), String> {
-    let sessions = TERMINAL_SESSIONS.lock().await;
-    if let Some(session) = sessions.get(&exec_id) {
-        session
-            .stdin_tx
-            .send(data)
+    let tx = {
+        let sessions = TERMINAL_SESSIONS.lock().await;
+        sessions.get(&exec_id).map(|s| s.stdin_tx.clone())
+    };
+
+    if let Some(tx) = tx {
+        tx.send(data)
             .await
             .map_err(|e| format!("写入终端失败: {}", e))?;
         Ok(())
