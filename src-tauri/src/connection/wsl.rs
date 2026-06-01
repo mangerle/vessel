@@ -78,8 +78,20 @@ impl WslBridge {
                     let child = cmd.spawn();
 
                     if let Ok(mut child) = child {
-                        let mut stdin = child.stdin.take().unwrap();
-                        let mut stdout = child.stdout.take().unwrap();
+                        let mut stdin = match child.stdin.take() {
+                            Some(s) => s,
+                            None => {
+                                log::error!("无法获取 WSL 进程的 stdin");
+                                return;
+                            }
+                        };
+                        let mut stdout = match child.stdout.take() {
+                            Some(s) => s,
+                            None => {
+                                log::error!("无法获取 WSL 进程的 stdout");
+                                return;
+                            }
+                        };
 
                         let (client_reader, client_writer) = client_socket.split();
 

@@ -190,8 +190,8 @@ pub async fn run_compose_command(
 
     let mut child = cmd.spawn()?;
 
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
+    let stdout = child.stdout.take().ok_or_else(|| "无法获取 compose 进程的 stdout")?;
+    let stderr = child.stderr.take().ok_or_else(|| "无法获取 compose 进程的 stderr")?;
 
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {

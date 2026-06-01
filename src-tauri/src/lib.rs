@@ -51,11 +51,15 @@ pub fn run() {
             let quit_i = MenuItem::with_id(app, "quit", "退出 Vessel", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
-
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let mut tray_builder = TrayIconBuilder::new()
                 .menu(&menu)
-                .show_menu_on_left_click(false)
+                .show_menu_on_left_click(false);
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _tray = tray_builder
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
                         // 在退出前销毁所有窗口，避免 1412 错误
@@ -96,7 +100,7 @@ pub fn run() {
                 
                 // 默认拦截并隐藏，由前端设置决定是否退出
                 api.prevent_close();
-                window.hide().unwrap();
+                let _ = window.hide();
             }
         })
         .invoke_handler(tauri::generate_handler![
