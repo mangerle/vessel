@@ -1,4 +1,5 @@
-use super::{handle_docker_op, NetworkDetails, NetworkInfo};
+use crate::handle_docker_op;
+use super::{NetworkDetails, NetworkInfo};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::network::InspectNetworkOptions;

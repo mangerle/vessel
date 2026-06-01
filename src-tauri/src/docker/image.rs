@@ -1,5 +1,6 @@
+use crate::handle_docker_op;
 use super::{
-    handle_docker_op, ImageDetails, ImageErrorPayload, ImageExportProgressPayload,
+    ImageDetails, ImageErrorPayload, ImageExportProgressPayload,
     ImageHistoryInfo, ImageImportErrorPayload, ImageImportProgressPayload, ImageInfo,
     ImageProgressPayload, ImageSearchResult, PruneImagesResult,
 };
@@ -460,11 +461,12 @@ pub async fn import_image(app: AppHandle, path: String) -> AppResult<()> {
         }
     };
 
-    let byte_stream = ReaderStream::new(file).map(|res| {
-        res.map_err(|e| {
+    let byte_stream = ReaderStream::new(file).map(|res| match res {
+        Ok(bytes) => bytes,
+        Err(e) => {
             log::error!("读取 Tar 文件出错: {}", e);
-            e
-        })
+            Bytes::new()
+        }
     });
 
     let mut stream =

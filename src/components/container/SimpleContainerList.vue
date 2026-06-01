@@ -258,7 +258,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-}
   white-space: nowrap;
   outline: none;
 }

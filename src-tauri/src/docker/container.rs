@@ -1,9 +1,10 @@
-use super::{ContainerDetails, ContainerInfo, LOGS_STREAMS, STATS_STREAMS, handle_docker_op, spawn_stream_handler};
+use crate::handle_docker_op;
+use super::{ContainerDetails, ContainerInfo, LOGS_STREAMS, STATS_STREAMS, spawn_stream_handler};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::container::{ListContainersOptions, LogsOptions, StatsOptions};
 use futures_util::stream::StreamExt;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 
 /// 获取本地 Docker 容器列表的命令
 #[tauri::command]
@@ -77,7 +78,7 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()>
         app,
         id.clone(),
         stream,
-        STATS_STREAMS.clone(),
+        &*STATS_STREAMS,
         format!("container-stats-{}", id),
         "统计",
     )
@@ -118,7 +119,7 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> 
         app,
         id.clone(),
         mapped_stream,
-        LOGS_STREAMS.clone(),
+        &*LOGS_STREAMS,
         format!("container-logs-{}", id),
         "日志",
     )

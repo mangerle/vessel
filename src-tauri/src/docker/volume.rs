@@ -1,4 +1,5 @@
-use super::{handle_docker_op, VolumeInfo, VolumeUser};
+use crate::handle_docker_op;
+use super::{VolumeInfo, VolumeUser};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::container::ListContainersOptions;
@@ -47,7 +48,8 @@ pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> 
         let id = c.id?;
         let docker_clone = docker.clone();
         Some(async move {
-            (id, docker_clone.inspect_container(&id, None).await)
+            let result = docker_clone.inspect_container(&id, None).await;
+            (id, result)
         })
     });
 

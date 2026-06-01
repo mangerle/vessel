@@ -161,7 +161,7 @@ const currentConnectionMode = computed(() => {
   return activeConn?.type || 'desktop'
 })
 
-const selectConnection = async (conn: any) => {
+const selectConnection = async (conn: { id: string; name: string; type: string; wslDistro?: string }) => {
   settingsStore.activeConnectionId = conn.id
   await settingsStore.saveSettings()
   showSwitcher.value = false
@@ -180,7 +180,7 @@ const selectConnection = async (conn: any) => {
   // 2. 强制刷新连接
   try {
     connecting.value = true
-    await checkDockerConnection()
+    await invoke('ping_docker')
     message.success(`已连接到: ${conn.name}`)
   } catch (e) {
     isConnected.value = false
@@ -230,7 +230,7 @@ watch(() => route.name, (newName) => {
     activeKey.value = newName as string
   }
 })
-const isConnected = ref(true)
+
 
 // 使用通用轮询 Hook 进行心跳检测，具备竞态保护和自动清理
 const { start: startHeartbeat, stop: stopHeartbeat } = usePolling(async () => {

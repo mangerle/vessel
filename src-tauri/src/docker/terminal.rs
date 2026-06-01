@@ -2,7 +2,7 @@ use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults};
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use tokio::sync::{mpsc, Mutex};
 use tauri::{AppHandle, Emitter};
 use futures_util::stream::StreamExt;

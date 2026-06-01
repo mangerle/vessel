@@ -2,7 +2,7 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
 
@@ -21,12 +21,12 @@ pub async fn spawn_stream_handler<S, T, E>(
     app: AppHandle,
     id: String,
     mut stream: S,
-    stream_map: Arc<Mutex<StreamMap>>,
+    stream_map: &'static Mutex<StreamMap>,
     event_name: String,
     stream_type: &str,
 ) where
     S: futures_util::Stream<Item = Result<T, E>> + Unpin + Send + 'static,
-    T: Serialize + Send + 'static,
+    T: Serialize + Clone + Send + 'static,
     E: std::fmt::Display + Send + 'static,
 {
     let (tx, mut rx) = oneshot::channel::<()>();

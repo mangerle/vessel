@@ -290,6 +290,7 @@ pub async fn upload_file_to_container(
             builder.append_file(file_name, &mut file).map_err(|e| e.to_string())?;
         }
         builder.finish().map_err(|e| e.to_string())?;
+        drop(builder);
         Ok(data)
     }).await.map_err(|e| format!("线程池错误: {}", e))??;
 

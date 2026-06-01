@@ -1,7 +1,7 @@
 use crate::error::AppResult;
 use bollard::Docker;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 use tokio::sync::RwLock;
 
 pub mod wsl;
