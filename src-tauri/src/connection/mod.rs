@@ -1,54 +1,89 @@
 use crate::error::AppResult;
 use bollard::Docker;
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 pub mod wsl;
+
+/// 连接模式枚举
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectionMode {
+    Wsl,
+    Ssh,
+    Desktop,
+}
+
+impl From<String> for ConnectionMode {
+    fn from(s: String) -> Self {
+        match s.to_lowercase().as_str() {
+            "wsl" => ConnectionMode::Wsl,
+            "ssh" => ConnectionMode::Ssh,
+            "desktop" => ConnectionMode::Desktop,
+            _ => ConnectionMode::Desktop, // 默认回退
+        }
+    }
+}
 
 /// 连接配置结构体
 #[derive(Clone)]
 pub struct ConnectionConfig {
-    pub mode: String,
+    pub mode: ConnectionMode,
     pub distro: Option<String>,
 }
 
 /// 全局连接配置
-pub static CONNECTION_CONFIG: Lazy<Arc<Mutex<ConnectionConfig>>> = Lazy::new(|| {
-    Arc::new(Mutex::new(ConnectionConfig {
-        mode: "wsl".to_string(),
+pub static CONNECTION_CONFIG: Lazy<Arc<RwLock<ConnectionConfig>>> = Lazy::new(|| {
+    Arc::new(RwLock::new(ConnectionConfig {
+        mode: ConnectionMode::Wsl,
         distro: None,
     }))
 });
 
 /// 全局 Docker 客户端实例
-static DOCKER_CLIENT: Lazy<Arc<Mutex<Option<Docker>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+static DOCKER_CLIENT: Lazy<Arc<RwLock<Option<Docker>>>> = Lazy::new(|| Arc::new(RwLock::new(None)));
 
 /// 清除 Docker 客户端缓存，强制重新连接
 pub async fn clear_client_cache() {
-    let mut client_lock = DOCKER_CLIENT.lock().await;
+    let mut client_lock = DOCKER_CLIENT.write().await;
     *client_lock = None;
 }
 
 /// 更新全局连接配置的命令
 #[tauri::command]
 pub async fn update_connection_config(mode: String, distro: Option<String>) {
-    log::info!("正在更新连接配置: mode={}, distro={:?}", mode, distro);
-    let mut config = CONNECTION_CONFIG.lock().await;
-    config.mode = mode;
+    let mode_enum = ConnectionMode::from(mode);
+    log::info!("正在更新连接配置: mode={:?}, distro={:?}", mode_enum, distro);
+    let mut config = CONNECTION_CONFIG.write().await;
+    config.mode = mode_enum;
     config.distro = distro;
     // 配置改变后，必须清除客户端缓存以触发重新连接
-    clear_client_cache().await;
+    let mut client_lock = DOCKER_CLIENT.write().await;
+    *client_lock = None;
 }
 
 /// 获取 Docker 客户端
 pub async fn get_docker_client() -> AppResult<Docker> {
-    // 1. 获取配置 (先拿这个锁)
-    let config = CONNECTION_CONFIG.lock().await.clone();
+    // 1. 获取配置 (使用读锁)
+    let (mode, distro) = {
+        let config = CONNECTION_CONFIG.read().await;
+        (config.mode, config.distro.clone())
+    };
 
-    // 2. 检查缓存 (后拿这个锁)
-    let mut client_lock = DOCKER_CLIENT.lock().await;
+    // 2. 检查缓存 (先试读锁)
+    {
+        let client_lock = DOCKER_CLIENT.read().await;
+        if let Some(client) = &*client_lock {
+            return Ok(client.clone());
+        }
+    }
 
+    // 3. 缓存不存在，获取写锁并创建客户端
+    let mut client_lock = DOCKER_CLIENT.write().await;
+
+    // Double-check pattern
     if let Some(client) = &*client_lock {
         return Ok(client.clone());
     }
@@ -56,8 +91,8 @@ pub async fn get_docker_client() -> AppResult<Docker> {
     log::info!("正在尝试建立新的 Docker 连接...");
 
     // 根据配置选择连接方式
-    if config.mode == "wsl" {
-        match wsl::WslBridge::new(config.distro).connect().await {
+    if mode == ConnectionMode::Wsl {
+        match wsl::WslBridge::new(distro).connect().await {
             Ok(docker) => {
                 log::info!("Docker WSL 连接成功");
                 *client_lock = Some(docker.clone());
@@ -84,7 +119,7 @@ pub async fn get_docker_client() -> AppResult<Docker> {
         // SSH 或其他模式暂未完全实现，回退到命名管道
         #[cfg(windows)]
         {
-            log::info!("当前非 WSL 模式，尝试通过命名管道连接...");
+            log::info!("当前非 WSL 模式 ({:?})，尝试通过命名管道连接...", mode);
             if let Ok(docker) = Docker::connect_with_named_pipe_defaults()
                 && docker.ping().await.is_ok()
             {

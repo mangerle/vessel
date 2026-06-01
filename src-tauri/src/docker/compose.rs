@@ -1,5 +1,5 @@
 use super::{handle_docker_op, ComposeProject};
-use crate::connection::get_docker_client;
+use crate::connection::{get_docker_client, ConnectionMode};
 use crate::error::AppResult;
 use bollard::container::ListContainersOptions;
 use std::collections::HashMap;
@@ -78,7 +78,8 @@ pub async fn read_compose_file(
     mode: String,
     distro: Option<String>,
 ) -> AppResult<String> {
-    if mode == "wsl" {
+    let mode_enum = ConnectionMode::from(mode);
+    if mode_enum == ConnectionMode::Wsl {
         let mut cmd = tokio::process::Command::new("wsl");
         if let Some(d) = distro
             && !d.is_empty()
@@ -110,7 +111,8 @@ pub async fn write_compose_file(
     distro: Option<String>,
 ) -> AppResult<()> {
     log::info!("正在写入 Compose 文件: {}", path);
-    if mode == "wsl" {
+    let mode_enum = ConnectionMode::from(mode);
+    if mode_enum == ConnectionMode::Wsl {
         let mut cmd = tokio::process::Command::new("wsl");
         if let Some(d) = distro
             && !d.is_empty()
@@ -154,14 +156,16 @@ pub async fn run_compose_command(
     mode: String,
     distro: Option<String>,
 ) -> AppResult<()> {
+    let mode_enum = ConnectionMode::from(mode);
     let args_str = args.join(" ");
     log::info!(
-        "正在执行 Compose 命令: docker compose {} (目录: {})",
+        "正在执行 Compose 命令: docker compose {} (目录: {}, 模式: {:?})",
         args_str,
-        project_dir
+        project_dir,
+        mode_enum
     );
 
-    let mut cmd = if mode == "wsl" {
+    let mut cmd = if mode_enum == ConnectionMode::Wsl {
         let mut c = tokio::process::Command::new("wsl");
         if let Some(d) = distro
             && !d.is_empty()
