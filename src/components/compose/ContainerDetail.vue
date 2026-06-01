@@ -746,9 +746,13 @@ watch(() => props.logsList, () => {
   })
 }, { deep: true })
 
+const closeUserMenu = () => {
+  showUserMenu.value = false
+}
+
 let resizeObserver: ResizeObserver | null = null
 onMounted(() => {
-  document.addEventListener('click', () => { showUserMenu.value = false })
+  document.addEventListener('click', closeUserMenu)
   window.addEventListener('resize', handleWindowResize)
   window.addEventListener('keydown', handleKeyDown)
   
@@ -765,6 +769,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', closeUserMenu)
   if (resizeObserver) resizeObserver.disconnect()
   window.removeEventListener('resize', handleWindowResize)
   window.removeEventListener('keydown', handleKeyDown)

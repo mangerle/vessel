@@ -244,6 +244,8 @@ onUnmounted(() => {
 .filter-dropdown-wrapper,
 .batch-dropdown-wrapper {
   position: relative;
+}
+
 .toolbar-btn {
   height: 24px;
   background-color: rgba(255,255,255,0.03);
