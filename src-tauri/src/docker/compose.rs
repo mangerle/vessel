@@ -173,14 +173,8 @@ pub async fn run_compose_command(
         {
             c.args(["-d", &d]);
         }
-        // 使用 $1 传递 project_dir，使用 $@ 传递 args，避免注入风险
-        c.args([
-            "sh",
-            "-c",
-            "cd \"$1\" && shift && docker compose \"$@\"",
-            "--",
-            &project_dir,
-        ]);
+        // 使用 --cd 指定工作目录，使用 -- 传递 docker compose 命令，避免注入风险
+        c.args(["--cd", &project_dir, "--", "docker", "compose"]);
         c.args(args);
         c
     } else {
