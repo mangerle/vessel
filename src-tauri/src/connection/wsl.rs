@@ -1,14 +1,14 @@
-use bollard::{Docker, API_DEFAULT_VERSION};
+use bollard::{API_DEFAULT_VERSION, Docker};
+use std::pin::Pin;
 use std::process::Stdio;
-use tokio::net::TcpListener;
-use tokio::process::Command;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::TcpListener;
+use tokio::process::Command;
+use tokio::sync::Mutex;
 
 /// WSL 桥接驱动
 #[derive(Default)]
@@ -25,7 +25,8 @@ pub async fn reset_proxy_port() {
     *port_lock = None;
 }
 
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+#[cfg(windows)]
+use crate::docker::CREATE_NO_WINDOW;
 const TIMEOUT_CHECK_INTERVAL_SECS: u64 = 5;
 const IDLE_TIMEOUT_SECS: u64 = 15;
 
@@ -44,7 +45,12 @@ impl WslBridge {
             .map_err(|e| format!("创建 Docker 客户端失败: {}", e))?;
 
         // 3. 验证连接
-        docker.ping().await.map_err(|e| format!("WSL Docker 未响应 (请确保 WSL 中已安装 Docker 且 wsl 命令可用): {}", e))?;
+        docker.ping().await.map_err(|e| {
+            format!(
+                "WSL Docker 未响应 (请确保 WSL 中已安装 Docker 且 wsl 命令可用): {}",
+                e
+            )
+        })?;
 
         Ok(docker)
     }
@@ -52,13 +58,14 @@ impl WslBridge {
     /// 确保 TCP 代理服务器正在运行
     async fn ensure_proxy(&self) -> Result<u16, String> {
         let mut port_lock = PROXY_PORT.lock().await;
-        
+
         if let Some(port) = *port_lock {
             return Ok(port);
         }
 
         // 绑定到随机可用端口
-        let listener = TcpListener::bind("127.0.0.1:0").await
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
             .map_err(|e| format!("无法绑定代理端口: {}", e))?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
@@ -72,9 +79,10 @@ impl WslBridge {
                     // 为每个连接启动一个 wsl 进程
                     let mut cmd = Command::new("wsl");
                     if let Some(d) = distro_clone
-                        && !d.is_empty() {
-                            cmd.args(["-d", &d]);
-                        }
+                        && !d.is_empty()
+                    {
+                        cmd.args(["-d", &d]);
+                    }
                     cmd.args(["docker", "system", "dial-stdio"])
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
@@ -119,7 +127,10 @@ impl WslBridge {
                         let last_activity_clone = last_activity.clone();
                         let timeout_task = async move {
                             loop {
-                                tokio::time::sleep(std::time::Duration::from_secs(TIMEOUT_CHECK_INTERVAL_SECS)).await;
+                                tokio::time::sleep(std::time::Duration::from_secs(
+                                    TIMEOUT_CHECK_INTERVAL_SECS,
+                                ))
+                                .await;
                                 let now = get_elapsed_seconds();
                                 let last = last_activity_clone.load(Ordering::Relaxed);
                                 if now - last > IDLE_TIMEOUT_SECS {
@@ -140,7 +151,7 @@ impl WslBridge {
                             _ = copy_task => {},
                             _ = timeout_task => {},
                         }
-                        
+
                         // 显式释放所有 IO 句柄与管道，向 wsl 发送 EOF，引导其自动关闭
                         drop(stdin);
                         drop(stdout);
@@ -149,10 +160,9 @@ impl WslBridge {
 
                         // 强行终止子进程并带有超时保护地等待其退出，防止发生协程卡死
                         let _ = child.kill().await;
-                        let _ = tokio::time::timeout(
-                            std::time::Duration::from_secs(1),
-                            child.wait()
-                        ).await;
+                        let _ =
+                            tokio::time::timeout(std::time::Duration::from_secs(1), child.wait())
+                                .await;
                     }
                 });
             }
@@ -193,7 +203,8 @@ impl<T: AsyncRead + Unpin> AsyncRead for TimeoutIO<T> {
         match Pin::new(&mut self.inner).poll_read(cx, buf) {
             Poll::Ready(Ok(())) => {
                 if buf.filled().len() > before {
-                    self.last_activity.store(get_elapsed_seconds(), Ordering::Relaxed);
+                    self.last_activity
+                        .store(get_elapsed_seconds(), Ordering::Relaxed);
                 }
                 Poll::Ready(Ok(()))
             }
@@ -211,7 +222,8 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for TimeoutIO<T> {
         match Pin::new(&mut self.inner).poll_write(cx, buf) {
             Poll::Ready(Ok(n)) => {
                 if n > 0 {
-                    self.last_activity.store(get_elapsed_seconds(), Ordering::Relaxed);
+                    self.last_activity
+                        .store(get_elapsed_seconds(), Ordering::Relaxed);
                 }
                 Poll::Ready(Ok(n))
             }
@@ -219,11 +231,17 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for TimeoutIO<T> {
         }
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
         Pin::new(&mut self.inner).poll_flush(cx)
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }

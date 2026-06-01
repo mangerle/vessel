@@ -219,14 +219,14 @@ pub async fn download_file_from_container(
                 let extracted_path = parent.join(container_file_name);
                 if extracted_path.exists() && extracted_path != local_path_buf {
                     if local_path_buf.exists() {
-                        let _ = std::fs::remove_file(local_path_buf);
+                        let _ = tokio::fs::remove_file(local_path_buf).await;
                     }
-                    std::fs::rename(&extracted_path, local_path_buf)?;
+                    tokio::fs::rename(&extracted_path, local_path_buf).await?;
                 }
             }
         }
 
-        let _ = std::fs::remove_file(&temp_file_path);
+        let _ = tokio::fs::remove_file(&temp_file_path).await;
 
         Ok(())
     }
@@ -279,20 +279,24 @@ pub async fn upload_file_to_container(
         let file_name = local_path_buf
             .file_name()
             .and_then(|n| n.to_str())
-            .ok_or_else(|| {
-                format!("无法获取本地文件名: {}", local_path_clone)
-            })?;
+            .ok_or_else(|| format!("无法获取本地文件名: {}", local_path_clone))?;
 
         if local_path_buf.is_dir() {
-            builder.append_dir_all(file_name, &local_path_buf).map_err(|e| e.to_string())?;
+            builder
+                .append_dir_all(file_name, &local_path_buf)
+                .map_err(|e| e.to_string())?;
         } else {
             let mut file = std::fs::File::open(&local_path_buf).map_err(|e| e.to_string())?;
-            builder.append_file(file_name, &mut file).map_err(|e| e.to_string())?;
+            builder
+                .append_file(file_name, &mut file)
+                .map_err(|e| e.to_string())?;
         }
         builder.finish().map_err(|e| e.to_string())?;
         drop(builder);
         Ok(data)
-    }).await.map_err(|e| format!("线程池错误: {}", e))??;
+    })
+    .await
+    .map_err(|e| format!("线程池错误: {}", e))??;
 
     let options = bollard::container::UploadToContainerOptions {
         path: container_dir.clone(),

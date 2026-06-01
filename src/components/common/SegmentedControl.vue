@@ -18,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 
 const props = defineProps<{
   options: { label: string, value: string }[],
@@ -42,6 +42,12 @@ const select = (value: string, index: number) => {
   emit('update:modelValue', value)
   updatePill(index)
 }
+
+// 监听外部 modelValue 变化，同步更新 pill 位置
+watch(() => props.modelValue, (newVal) => {
+  const index = props.options.findIndex(o => o.value === newVal)
+  if (index >= 0) updatePill(index)
+})
 
 onMounted(() => {
   nextTick(() => {

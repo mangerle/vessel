@@ -21,7 +21,7 @@ export function useContextMenu() {
   const x = ref(0)
   const y = ref(0)
   const currentOptions = ref<MenuOption[]>([])
-  const currentTarget = ref<any>(null)
+  const currentTarget = ref<unknown>(null)
 
   /**
    * 处理右键菜单弹出逻辑
@@ -29,7 +29,7 @@ export function useContextMenu() {
    * @param options 菜单项配置
    * @param data 关联的数据（如容器对象）
    */
-  const handleContextMenu = (e: MouseEvent, options: MenuOption[], data?: any) => {
+  const handleContextMenu = (e: MouseEvent, options: MenuOption[], data?: unknown) => {
     e.preventDefault()
     showDropdown.value = false
     

@@ -110,6 +110,7 @@
 <script lang="ts" setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { NScrollbar, NIcon } from 'naive-ui'
+import type { ContainerInfo } from '../../api/types'
 import { 
   FilterOutline, 
   LayersOutline, 
@@ -120,7 +121,7 @@ import {
 } from '@vicons/ionicons5'
 
 const props = defineProps<{
-  items: any[]
+  items: ContainerInfo[]
   selectedId: string | null
 }>()
 

@@ -248,6 +248,7 @@ export const useSettingsStore = defineStore('settings', () => {
     sshPassword,
     connections,
     activeConnectionId,
+    activeConnection,
     registries,
     currentRegistryId,
     loadSettings,

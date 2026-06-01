@@ -1,13 +1,13 @@
-use crate::handle_docker_op;
 use super::ComposeProject;
-use crate::connection::{get_docker_client, ConnectionMode};
+use crate::connection::{ConnectionMode, get_docker_client};
 use crate::error::AppResult;
+use crate::handle_docker_op;
 use bollard::container::ListContainersOptions;
 use std::collections::HashMap;
+use std::process::Stdio;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-use std::process::Stdio;
 
 /// 获取 Compose 项目列表
 #[tauri::command]
@@ -90,7 +90,7 @@ pub async fn read_compose_file(
         cmd.args(["-u", "root", "--", "cat", &path]);
 
         #[cfg(windows)]
-        cmd.creation_flags(0x08000000);
+        cmd.creation_flags(super::CREATE_NO_WINDOW);
 
         let out = cmd.output().await?;
         if out.status.success() {
@@ -126,7 +126,7 @@ pub async fn write_compose_file(
         cmd.stdin(Stdio::piped());
 
         #[cfg(windows)]
-        cmd.creation_flags(0x08000000);
+        cmd.creation_flags(super::CREATE_NO_WINDOW);
 
         let mut child = cmd.spawn()?;
         if let Some(mut stdin) = child.stdin.take() {
@@ -194,13 +194,19 @@ pub async fn run_compose_command(
 
     #[cfg(windows)]
     {
-        cmd.creation_flags(0x08000000);
+        cmd.creation_flags(super::CREATE_NO_WINDOW);
     }
 
     let mut child = cmd.spawn()?;
 
-    let stdout = child.stdout.take().ok_or_else(|| "无法获取 compose 进程的 stdout")?;
-    let stderr = child.stderr.take().ok_or_else(|| "无法获取 compose 进程的 stderr")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "无法获取 compose 进程的 stdout")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法获取 compose 进程的 stderr")?;
 
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {

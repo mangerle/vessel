@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import * as volumeApi from '../api/volume'
+import { volumeApi } from '../api/volume'
 import type { VolumeInfo, VolumeUser } from '../api/types'
 
 /**
@@ -23,7 +23,7 @@ export const useVolumeStore = defineStore('volume', {
       try {
         const result = await actionFn()
         if (refresh) {
-          this.volumes = await volumeApi.listVolumes()
+          this.volumes = await volumeApi.list()
         }
         return result
       } catch (err) {
@@ -45,7 +45,7 @@ export const useVolumeStore = defineStore('volume', {
      */
     async fetchVolumeUsers(name: string) {
       await this.executeAction('获取卷使用者', async () => {
-        this.volumeUsers = await volumeApi.listVolumeContainers(name)
+        this.volumeUsers = await volumeApi.listContainers(name)
       }, false)
     },
     /**
@@ -53,20 +53,20 @@ export const useVolumeStore = defineStore('volume', {
      * @param path 卷路径
      */
     async openPath(path: string) {
-      await this.executeAction('打开卷路径', () => volumeApi.openVolumePath(path), false)
+      await this.executeAction('打开卷路径', () => volumeApi.openPath(path), false)
     },
     /**
      * 删除数据卷
      * @param name 卷名称
      */
     async removeVolume(name: string) {
-      await this.executeAction('删除卷', () => volumeApi.removeVolume(name))
+      await this.executeAction('删除卷', () => volumeApi.remove(name))
     },
     /**
      * 清理未使用的数据卷
      */
     async pruneVolumes() {
-      await this.executeAction('清理卷', () => volumeApi.pruneVolumes())
+      await this.executeAction('清理卷', () => volumeApi.prune())
     }
   }
 })

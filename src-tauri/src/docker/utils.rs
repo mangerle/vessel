@@ -1,18 +1,20 @@
 use futures_util::StreamExt;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
+
+/// Windows 平台创建无窗口进程的标志
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 pub type StreamMap = HashMap<String, (oneshot::Sender<()>, u64)>;
 
-pub static STATS_STREAMS: LazyLock<Mutex<StreamMap>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+pub static STATS_STREAMS: LazyLock<Mutex<StreamMap>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub static LOGS_STREAMS: LazyLock<Mutex<StreamMap>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+pub static LOGS_STREAMS: LazyLock<Mutex<StreamMap>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub static STREAM_COUNTER: AtomicU64 = AtomicU64::new(0);
 

@@ -43,6 +43,7 @@ import {
 import { useTaskStore } from '../store/task'
 import { useSettingsStore } from '../store/settings'
 import { formatBytes, timeAgo } from '../utils/format'
+import type { ImageDetails, ImageInfo, ImageSearchResult } from '../api/types'
 
 const router = useRouter()
 const imageStore = useImageStore()
@@ -56,7 +57,7 @@ if (_unused.length < 0) console.log(_unused)
 
 // --- 状态控制 ---
 const selectedId = ref<string | null>(null)
-const selectedDetails = ref<any>(null)
+const selectedDetails = ref<ImageDetails | null>(null)
 const loadingDetails = ref(false)
 const pullImageName = ref('')
 const activeTab = ref('pull') // 默认：pull 🔍 镜像仓库
@@ -109,7 +110,7 @@ const restartOptions = [
 ]
 
 // Hub 镜像详情查看
-const selectedHubImage = ref<any>(null)
+const selectedHubImage = ref<ImageSearchResult & { label?: string; value?: string } | null>(null)
 
 // 字符树飞梭控制
 const wrapLayers = ref(true)
@@ -134,7 +135,7 @@ const activeImageTasks = computed(() => {
   )
 })
 
-const viewHubImage = (image: any) => {
+const viewHubImage = (image: ImageSearchResult) => {
   selectedHubImage.value = image
 }
 
@@ -174,7 +175,7 @@ const onSelect = async (id: string) => {
   }
 }
 
-const isDangling = (item: any) => {
+const isDangling = (item: ImageInfo) => {
   const firstTag = item.tags?.[0]
   // 确保使用 .includes
   return !firstTag || firstTag.includes('<none>')
@@ -188,7 +189,7 @@ const pruneDanglingImages = async () => {
     message.success(`清理完毕！成功清理 ${result.deleted_count} 个镜像，释放了 ${reclaimedMB} MB 磁盘空间。`)
     selectedId.value = null
     selectedDetails.value = null
-  } catch (err: any) {
+  } catch (err) {
     message.error(`清理失败: ${err}`)
   }
 }
@@ -244,7 +245,7 @@ const handleTagSubmit = async () => {
     if (selectedId.value === tagTargetImageId.value) {
       await onSelect(selectedId.value)
     }
-  } catch (err: any) {
+  } catch (err) {
     message.error('追加标签失败: ' + err)
   }
 }
@@ -279,7 +280,7 @@ const handleImportImage = async () => {
   message.info('正在启动镜像导入任务...')
   try {
     await imageStore.importImage(path, customTag || undefined)
-  } catch (err: any) {
+  } catch (err) {
     message.error(`导入镜像失败: ${err}`)
   }
 }
@@ -288,7 +289,7 @@ const exportImage = async (id: string, tag: string) => {
   try {
     await imageStore.exportImage(id, tag)
     message.info('镜像后台导出中，请稍候在任务面板查看进度')
-  } catch (err: any) {
+  } catch (err) {
     message.error(`导出镜像失败: ${err}`)
   }
 }
@@ -404,14 +405,14 @@ const handleRunImage = async () => {
 
     message.success('容器已成功创建并启动！')
     router.push({ name: 'containers' })
-  } catch (e: any) {
+  } catch (e) {
     console.error('运行镜像失败:', e)
     message.error('启动失败: ' + e)
   }
 }
 
 // --- Hub 镜像拉取 ---
-let searchTimer: any = null
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 const handleSearchInput = (val: string) => {
   pullImageName.value = val
   if (searchTimer) clearTimeout(searchTimer)
@@ -498,6 +499,7 @@ const autoCompleteOptions = computed(() => {
   return imageStore.searchResults.map(res => ({
     label: res.name,
     value: res.name,
+    name: res.name,
     description: res.description,
     is_official: res.is_official,
     star_count: res.star_count
@@ -508,7 +510,7 @@ const autoCompleteOptions = computed(() => {
 const showMenu = ref(false)
 const x = ref(0)
 const y = ref(0)
-const menuTarget = ref<any>(null)
+const menuTarget = ref<ImageInfo | null>(null)
 
 const menuOptions = [
   { label: '详情', key: 'detail', icon: () => h(NIcon, null, { default: () => h(SearchOutline) }) },
@@ -518,7 +520,7 @@ const menuOptions = [
   { label: '彻底删除', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }
 ]
 
-const handleContextMenu = (e: MouseEvent, item: any) => {
+const handleContextMenu = (e: MouseEvent, item: ImageInfo) => {
   e.preventDefault()
   showMenu.value = false
   nextTick(() => {

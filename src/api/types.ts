@@ -2,6 +2,7 @@ export interface ContainerInfo {
   id: string
   name: string
   state: string
+  status?: string
   image: string
   compose_project?: string
 }
@@ -57,6 +58,8 @@ export interface ImageDetails extends Omit<ImageInfo, 'created'> {
   exposed_ports: string[]
   cmd: string[]
   entrypoint: string[]
+  author?: string
+  docker_version?: string
 }
 
 export interface ImageSearchResult {

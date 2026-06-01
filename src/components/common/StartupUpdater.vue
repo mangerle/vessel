@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { check } from '@tauri-apps/plugin-updater'
 import { useDialog } from 'naive-ui'
 import { useRouter } from 'vue-router'
@@ -7,9 +7,11 @@ import { useRouter } from 'vue-router'
 const dialog = useDialog()
 const router = useRouter()
 
+let timerId: ReturnType<typeof setTimeout> | null = null
+
 onMounted(async () => {
   // 延迟检查，避免干扰应用启动时的其他重要初始化
-  setTimeout(async () => {
+  timerId = setTimeout(async () => {
     try {
       const update = await check()
       if (update) {
@@ -27,6 +29,13 @@ onMounted(async () => {
       console.error('[StartupUpdater] 自动检查更新失败:', e)
     }
   }, 3000)
+})
+
+onUnmounted(() => {
+  if (timerId !== null) {
+    clearTimeout(timerId)
+    timerId = null
+  }
 })
 </script>
 

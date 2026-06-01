@@ -1,11 +1,11 @@
-use crate::handle_docker_op;
 use super::{
-    ImageDetails, ImageErrorPayload, ImageExportProgressPayload,
-    ImageHistoryInfo, ImageImportErrorPayload, ImageImportProgressPayload, ImageInfo,
-    ImageProgressPayload, ImageSearchResult, PruneImagesResult,
+    ImageDetails, ImageErrorPayload, ImageExportProgressPayload, ImageHistoryInfo,
+    ImageImportErrorPayload, ImageImportProgressPayload, ImageInfo, ImageProgressPayload,
+    ImageSearchResult, PruneImagesResult,
 };
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
+use crate::handle_docker_op;
 use bollard::container::Config;
 use bollard::image::{
     CreateImageOptions, ImportImageOptions, ListImagesOptions, PruneImagesOptions, TagImageOptions,
@@ -284,14 +284,11 @@ pub async fn run_image(
 pub async fn list_wsl_distros() -> AppResult<Vec<String>> {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        use std::process::Command;
-
-        let mut cmd = Command::new("wsl.exe");
+        let mut cmd = tokio::process::Command::new("wsl.exe");
         cmd.args(["-l", "-q"]);
-        cmd.creation_flags(0x08000000);
+        cmd.creation_flags(super::CREATE_NO_WINDOW);
 
-        let output = cmd.output()?;
+        let output = cmd.output().await?;
 
         if !output.status.success() {
             return Err("WSL 命令执行失败".into());
@@ -350,7 +347,7 @@ pub async fn open_config_dir(app: AppHandle) -> AppResult<()> {
 pub async fn open_log_dir(app: tauri::AppHandle) -> crate::error::AppResult<()> {
     let log_dir = app.path().app_log_dir()?;
     if !log_dir.exists() {
-        std::fs::create_dir_all(&log_dir)?;
+        tokio::fs::create_dir_all(&log_dir).await?;
     }
     app.opener()
         .open_path(log_dir.to_string_lossy().to_string(), None::<String>)?;
@@ -541,5 +538,9 @@ pub async fn tag_image(image_name: String, repo: String, tag: String) -> AppResu
         tag: tag.clone(),
     };
 
-    handle_docker_op!("镜像打标签", image_name, docker.tag_image(&image_name, Some(options)))
+    handle_docker_op!(
+        "镜像打标签",
+        image_name,
+        docker.tag_image(&image_name, Some(options))
+    )
 }

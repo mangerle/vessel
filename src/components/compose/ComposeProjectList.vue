@@ -55,6 +55,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { NScrollbar, NIcon } from 'naive-ui'
+import type { ComposeProject, ContainerInfo } from '../../api/types'
 import { 
   CubeOutline, 
   AddOutline,
@@ -62,8 +63,8 @@ import {
 } from '@vicons/ionicons5'
 
 const props = defineProps<{
-  projects: any[]
-  containers: any[]
+  projects: ComposeProject[]
+  containers: ContainerInfo[]
   selectedId: string | null
 }>()
 

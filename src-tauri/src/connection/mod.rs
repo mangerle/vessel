@@ -56,10 +56,16 @@ pub async fn clear_client_cache() {
 #[tauri::command]
 pub async fn update_connection_config(mode: String, distro: Option<String>) {
     let mode_enum = ConnectionMode::from(mode);
-    log::info!("正在更新连接配置: mode={:?}, distro={:?}", mode_enum, distro);
-    let mut config = CONNECTION_CONFIG.write().await;
-    config.mode = mode_enum;
-    config.distro = distro;
+    log::info!(
+        "正在更新连接配置: mode={:?}, distro={:?}",
+        mode_enum,
+        distro
+    );
+    {
+        let mut config = CONNECTION_CONFIG.write().await;
+        config.mode = mode_enum;
+        config.distro = distro;
+    }
     // 配置改变后，必须清除客户端缓存以触发重新连接
     let mut client_lock = DOCKER_CLIENT.write().await;
     *client_lock = None;

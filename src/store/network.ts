@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import * as networkApi from '../api/network'
+import { networkApi } from '../api/network'
 import type { NetworkInfo, NetworkDetails } from '../api/types'
 
 /**
@@ -23,7 +23,7 @@ export const useNetworkStore = defineStore('network', {
       try {
         const result = await actionFn()
         if (refresh) {
-          this.networks = await networkApi.listNetworks()
+          this.networks = await networkApi.list()
         }
         return result
       } catch (err) {
@@ -46,7 +46,7 @@ export const useNetworkStore = defineStore('network', {
      */
     async fetchNetworkDetails(id: string) {
       return await this.executeAction('获取网络详情', async () => {
-        this.currentNetwork = await networkApi.getNetworkDetails(id)
+        this.currentNetwork = await networkApi.getDetails(id)
         return this.currentNetwork
       }, false)
     },
@@ -55,13 +55,13 @@ export const useNetworkStore = defineStore('network', {
      * @param id 网络 ID
      */
     async removeNetwork(id: string) {
-      await this.executeAction('删除网络', () => networkApi.removeNetwork(id))
+      await this.executeAction('删除网络', () => networkApi.remove(id))
     },
     /**
      * 清理未使用的网络
      */
     async pruneNetworks() {
-      await this.executeAction('清理网络', () => networkApi.pruneNetworks())
+      await this.executeAction('清理网络', () => networkApi.prune())
     },
     /**
      * 断开容器网络连接
@@ -70,8 +70,8 @@ export const useNetworkStore = defineStore('network', {
      */
     async disconnectContainer(networkId: string, containerId: string) {
       await this.executeAction('断开网络连接', async () => {
-        await networkApi.disconnectNetwork(networkId, containerId)
-        this.currentNetwork = await networkApi.getNetworkDetails(networkId)
+        await networkApi.disconnect(networkId, containerId)
+        this.currentNetwork = await networkApi.getDetails(networkId)
       }, false)
     }
   }

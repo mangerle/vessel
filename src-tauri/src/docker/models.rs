@@ -1,10 +1,10 @@
+use bollard::models::{
+    ContainerInspectResponse, ContainerSummary, CreateImageInfo, HistoryResponseItem, ImageInspect,
+    ImageSearchResponseItem, ImageSummary, MountPoint, Network, NetworkContainer, PortBinding,
+    Volume,
+};
 use serde::Serialize;
 use std::collections::HashMap;
-use bollard::models::{
-    ContainerSummary, ImageSummary, ImageSearchResponseItem, HistoryResponseItem, 
-    Network, Volume, ContainerInspectResponse, ImageInspect,
-    NetworkContainer, PortBinding, MountPoint, CreateImageInfo
-};
 
 /// 容器信息结构体
 #[derive(Serialize)]
@@ -18,12 +18,16 @@ pub struct ContainerInfo {
 
 impl From<ContainerSummary> for ContainerInfo {
     fn from(c: ContainerSummary) -> Self {
-        let compose_project = c.labels.as_ref()
+        let compose_project = c
+            .labels
+            .as_ref()
             .and_then(|labels| labels.get("com.docker.compose.project").cloned());
-        
+
         Self {
             id: c.id.unwrap_or_default(),
-            name: c.names.as_ref()
+            name: c
+                .names
+                .as_ref()
                 .and_then(|names| names.first())
                 .map(|name| name.trim_start_matches('/').to_string())
                 .unwrap_or_else(|| "未知".to_string()),
@@ -309,7 +313,9 @@ impl From<ContainerInspectResponse> for ContainerDetails {
                         match v {
                             Some(bindings) => bindings
                                 .iter()
-                                .map(move |b| PortMapping::from_port_binding(private_port, type_.clone(), b))
+                                .map(move |b| {
+                                    PortMapping::from_port_binding(private_port, type_.clone(), b)
+                                })
                                 .collect::<Vec<_>>(),
                             None => vec![PortMapping {
                                 private_port,
@@ -345,12 +351,7 @@ impl From<ContainerInspectResponse> for ContainerDetails {
                 .to_string(),
             image: config.and_then(|c| c.image.clone()).unwrap_or_default(),
             image_id: details.image.unwrap_or_default(),
-            status: details
-                .state
-                .as_ref()
-                .and_then(|s| s.status)
-                .map(|s| format!("{:?}", s).to_lowercase())
-                .unwrap_or(state.clone()),
+            status: state.clone(),
             state,
             created: details.created.unwrap_or_default(),
             env: config.and_then(|c| c.env.clone()).unwrap_or_default(),
@@ -392,7 +393,9 @@ impl From<ImageInspect> for ImageDetails {
                 .map(|p| p.keys().cloned().collect())
                 .unwrap_or_default(),
             cmd: config.and_then(|c| c.cmd.clone()).unwrap_or_default(),
-            entrypoint: config.and_then(|c| c.entrypoint.clone()).unwrap_or_default(),
+            entrypoint: config
+                .and_then(|c| c.entrypoint.clone())
+                .unwrap_or_default(),
         }
     }
 }
@@ -407,7 +410,11 @@ pub struct PruneImagesResult {
 impl From<bollard::models::ImagePruneResponse> for PruneImagesResult {
     fn from(response: bollard::models::ImagePruneResponse) -> Self {
         Self {
-            deleted_count: response.images_deleted.as_ref().map(|v| v.len()).unwrap_or(0),
+            deleted_count: response
+                .images_deleted
+                .as_ref()
+                .map(|v| v.len())
+                .unwrap_or(0),
             space_reclaimed: response.space_reclaimed.unwrap_or(0),
         }
     }

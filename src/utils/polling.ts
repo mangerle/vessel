@@ -8,7 +8,7 @@ import { onUnmounted, ref } from 'vue'
  */
 export function usePolling(fn: () => Promise<void>, interval: number, immediate = true) {
   const isPolling = ref(false)
-  let timer: any = null
+  let timer: ReturnType<typeof setInterval> | null = null
 
   const poll = async () => {
     if (isPolling.value) return
