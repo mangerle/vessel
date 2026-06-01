@@ -244,6 +244,10 @@ const handleMenuSelect = (key: string) => {
   }
 }
 
+const sortedVolumes = computed(() => {
+  return [...volumeStore.volumes].sort((a, b) => a.name.localeCompare(b.name))
+})
+
 onMounted(() => {
   volumeStore.fetchVolumes()
 })
@@ -263,7 +267,7 @@ onMounted(() => {
 
       <n-scrollbar class="list-scroll-box">
         <div 
-          v-for="item in volumeStore.volumes" 
+          v-for="item in sortedVolumes" 
           :key="item.name" 
           class="volume-item-row"
           :class="{ active: selectedId === item.name }"

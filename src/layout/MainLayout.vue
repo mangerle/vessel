@@ -134,6 +134,11 @@ import {
   FlashOutline
 } from '@vicons/ionicons5'
 import { useSettingsStore } from '../store/settings'
+import { useComposeStore } from '../store/compose'
+import { useContainerStore } from '../store/container'
+import { useImageStore } from '../store/image'
+import { useNetworkStore } from '../store/network'
+import { useVolumeStore } from '../store/volume'
 import { invoke } from '@tauri-apps/api/core'
 
 import { usePolling } from '../utils/polling'
@@ -232,11 +237,38 @@ watch(() => route.name, (newName) => {
 })
 
 
+let preloaded = false
+
+// 在首次连通 Docker 后并发拉取基础数据存入 Pinia 缓存，实现首屏列表秒开
+const preloadData = async () => {
+  try {
+    const composeStore = useComposeStore()
+    const containerStore = useContainerStore()
+    const imageStore = useImageStore()
+    const networkStore = useNetworkStore()
+    const volumeStore = useVolumeStore()
+
+    await Promise.allSettled([
+      composeStore.fetchProjects(),
+      containerStore.fetchContainers(),
+      imageStore.fetchImages(),
+      networkStore.fetchNetworks(),
+      volumeStore.fetchVolumes()
+    ])
+  } catch (e) {
+    console.error('预载数据失败:', e)
+  }
+}
+
 // 使用通用轮询 Hook 进行心跳检测，具备竞态保护和自动清理
 const { start: startHeartbeat, stop: stopHeartbeat } = usePolling(async () => {
   try {
     await invoke('ping_docker')
     isConnected.value = true
+    if (!preloaded) {
+      preloaded = true
+      preloadData()
+    }
   } catch (err) {
     console.error('Docker 连接探测失败:', err)
     isConnected.value = false

@@ -118,12 +118,20 @@ const wrapLayers = ref(true)
 // 本地镜像资产清单的动态前端检索过滤
 const filteredImages = computed(() => {
   let list = imageStore.images
-  if (!localSearchQuery.value) return list
-  const q = localSearchQuery.value.toLowerCase()
-  return list.filter(item => {
-    const firstTag = item.tags?.[0] || ''
-    // 确保使用 .includes
-    return firstTag.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
+  if (localSearchQuery.value) {
+    const q = localSearchQuery.value.toLowerCase()
+    list = list.filter(item => {
+      const firstTag = item.tags?.[0] || ''
+      // 确保使用 .includes
+      return firstTag.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
+    })
+  }
+
+  // 按标签名称字母序做稳定排序，若无标签则按 ID
+  return [...list].sort((a, b) => {
+    const tagA = a.tags?.[0] || a.id || ''
+    const tagB = b.tags?.[0] || b.id || ''
+    return tagA.localeCompare(tagB)
   })
 })
 

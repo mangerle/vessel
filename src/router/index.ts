@@ -1,5 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '../layout/MainLayout.vue'
+import Compose from '../views/Compose.vue'
+import Containers from '../views/Containers.vue'
+import ContainerDetail from '../views/ContainerDetail.vue'
+import Images from '../views/Images.vue'
+import Networks from '../views/Networks.vue'
+import Volumes from '../views/Volumes.vue'
+import Settings from '../views/Settings.vue'
 
 const routes = [
   {
@@ -13,38 +20,37 @@ const routes = [
       {
         path: 'compose',
         name: 'compose',
-        component: () => import('../views/Compose.vue')
+        component: Compose
       },
       {
         path: 'containers',
         name: 'containers',
-        component: () => import('../views/Containers.vue')
+        component: Containers
       },
       {
         path: 'containers/:id',
         name: 'container-detail',
-        component: () => import('../views/ContainerDetail.vue')
+        component: ContainerDetail
       },
-
       {
         path: 'images',
         name: 'images',
-        component: () => import('../views/Images.vue')
+        component: Images
       },
       {
         path: 'networks',
         name: 'networks',
-        component: () => import('../views/Networks.vue')
+        component: Networks
       },
       {
         path: 'volumes',
         name: 'volumes',
-        component: () => import('../views/Volumes.vue')
+        component: Volumes
       },
       {
         path: 'settings',
         name: 'settings',
-        component: () => import('../views/Settings.vue')
+        component: Settings
       }
     ]
   }

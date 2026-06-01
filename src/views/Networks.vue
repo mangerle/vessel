@@ -107,6 +107,10 @@ const handleMenuSelect = (key: string) => {
   else if (key === 'detail') onSelect(menuTarget.value.id)
 }
 
+const sortedNetworks = computed(() => {
+  return [...networkStore.networks].sort((a, b) => a.name.localeCompare(b.name))
+})
+
 onMounted(() => {
   networkStore.fetchNetworks()
 })
@@ -126,7 +130,7 @@ onMounted(() => {
 
       <n-scrollbar class="list-scroll-box">
         <div 
-          v-for="item in networkStore.networks" 
+          v-for="item in sortedNetworks" 
           :key="item.id" 
           class="network-item-row"
           :class="{ active: selectedId === item.id }"

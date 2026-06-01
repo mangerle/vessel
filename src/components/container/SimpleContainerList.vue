@@ -145,9 +145,13 @@ const filteredItems = computed(() => {
     list = list.filter(i => (i.state || i.status) !== 'running')
   }
   
-  if (!searchQuery.value) return list
-  const q = searchQuery.value.toLowerCase()
-  return list.filter(i => i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
+  if (searchQuery.value) {
+    const q = searchQuery.value.trim().toLowerCase()
+    list = list.filter(i => i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
+  }
+  
+  // 进行稳定排序，按容器名称字母序排列
+  return [...list].sort((a, b) => a.name.localeCompare(b.name))
 })
 
 const isAllSelected = computed(() => {

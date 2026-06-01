@@ -82,10 +82,20 @@ const toggleProject = (name: string) => {
 }
 
 const tree = computed(() => {
-  return props.projects.map(p => ({
-    ...p,
-    containers: props.containers.filter(c => c.compose_project === p.name)
-  }))
+  // 对项目名称进行稳定排序
+  const sortedProjects = [...props.projects].sort((a, b) => a.name.localeCompare(b.name))
+  
+  return sortedProjects.map(p => {
+    // 对项目下的子容器按名称进行稳定排序
+    const sortedContainers = [...props.containers]
+      .filter(c => c.compose_project === p.name)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      
+    return {
+      ...p,
+      containers: sortedContainers
+    }
+  })
 })
 
 // 默认展开所有项目
