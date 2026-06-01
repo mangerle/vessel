@@ -134,3 +134,11 @@ pub async fn get_docker_client() -> AppResult<Docker> {
             .into())
     }
 }
+
+/// 轻量级 Docker 连通性测试命令
+#[tauri::command]
+pub async fn ping_docker() -> AppResult<()> {
+    let docker = get_docker_client().await?;
+    docker.ping().await?;
+    Ok(())
+}

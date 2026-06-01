@@ -136,6 +136,8 @@ import {
 import { useSettingsStore } from '../store/settings'
 import { invoke } from '@tauri-apps/api/core'
 
+import { usePolling } from '../utils/polling'
+
 const router = useRouter()
 const route = useRoute()
 const message = useMessage()
@@ -228,19 +230,19 @@ watch(() => route.name, (newName) => {
     activeKey.value = newName as string
   }
 })
+const isConnected = ref(true)
 
-// 定时轮询 Docker 连接状态
-let statusTimer: any = null
-const checkDockerConnection = async () => {
+// 使用通用轮询 Hook 进行心跳检测，具备竞态保护和自动清理
+const { start: startHeartbeat, stop: stopHeartbeat } = usePolling(async () => {
   try {
-    // 尝试调用列出容器，若成功则表明 Docker 正常连接
-    await invoke('list_local_containers')
+    await invoke('ping_docker')
     isConnected.value = true
   } catch (err) {
     console.error('Docker 连接探测失败:', err)
     isConnected.value = false
   }
-}
+}, 8000)
+
 
 const handleTabClick = (key: string) => {
   activeKey.value = key
@@ -259,14 +261,12 @@ const closeSwitcher = () => {
 
 onMounted(() => {
   document.addEventListener('click', closeSwitcher)
-  checkDockerConnection()
-  // 每 8 秒进行一次轻量心跳检测
-  statusTimer = setInterval(checkDockerConnection, 8000)
+  startHeartbeat()
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeSwitcher)
-  if (statusTimer) clearInterval(statusTimer)
+  stopHeartbeat()
 })
 </script>
 

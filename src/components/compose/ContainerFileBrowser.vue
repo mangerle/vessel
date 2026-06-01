@@ -196,6 +196,7 @@ import {
 } from '@vicons/ionicons5'
 import { invoke } from '@tauri-apps/api/core'
 import { useContextMenu, MenuOption } from '../../hooks/useContextMenu'
+import { formatBytes } from '../../utils/format'
 
 const props = defineProps<{
   containerId: string
@@ -336,15 +337,6 @@ const handleMenuSelect = (key: string) => {
       })
       break
   }
-}
-
-// 格式化文件大小
-const formatBytes = (bytes: number) => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 // 格式化修改时间
