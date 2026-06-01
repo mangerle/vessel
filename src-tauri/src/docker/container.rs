@@ -1,25 +1,9 @@
-use super::{ContainerDetails, ContainerInfo};
+use super::{ContainerDetails, ContainerInfo, LOGS_STREAMS, STATS_STREAMS, handle_docker_op, spawn_stream_handler};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::container::{ListContainersOptions, LogsOptions, StatsOptions};
 use futures_util::stream::StreamExt;
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::Mutex;
-use tokio::sync::oneshot;
-
-pub type StreamMap = HashMap<String, (oneshot::Sender<()>, u64)>;
-
-pub static STATS_STREAMS: Lazy<Arc<Mutex<StreamMap>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
-
-pub static LOGS_STREAMS: Lazy<Arc<Mutex<StreamMap>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
-
-static STREAM_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// 获取本地 Docker 容器列表的命令
 #[tauri::command]
@@ -41,16 +25,7 @@ pub async fn list_local_containers() -> AppResult<Vec<ContainerInfo>> {
 pub async fn start_container(id: String) -> AppResult<()> {
     log::info!("正在启动容器: {}", id);
     let docker = get_docker_client().await?;
-    match docker.start_container::<String>(&id, None).await {
-        Ok(_) => {
-            log::info!("容器 {} 启动成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("启动容器 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("启动容器", id, docker.start_container::<String>(&id, None))
 }
 
 /// 停止容器
@@ -58,16 +33,7 @@ pub async fn start_container(id: String) -> AppResult<()> {
 pub async fn stop_container(id: String) -> AppResult<()> {
     log::info!("正在停止容器: {}", id);
     let docker = get_docker_client().await?;
-    match docker.stop_container(&id, None).await {
-        Ok(_) => {
-            log::info!("容器 {} 停止成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("停止容器 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("停止容器", id, docker.stop_container(&id, None))
 }
 
 /// 重启容器
@@ -75,16 +41,7 @@ pub async fn stop_container(id: String) -> AppResult<()> {
 pub async fn restart_container(id: String) -> AppResult<()> {
     log::info!("正在重启容器: {}", id);
     let docker = get_docker_client().await?;
-    match docker.restart_container(&id, None).await {
-        Ok(_) => {
-            log::info!("容器 {} 重启成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("重启容器 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("重启容器", id, docker.restart_container(&id, None))
 }
 
 /// 获取容器详情
@@ -101,23 +58,14 @@ pub async fn inspect_container(id: String) -> AppResult<ContainerDetails> {
 pub async fn remove_container(id: String) -> AppResult<()> {
     log::info!("正在删除容器: {}", id);
     let docker = get_docker_client().await?;
-    match docker.remove_container(&id, None).await {
-        Ok(_) => {
-            log::info!("容器 {} 删除成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("删除容器 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("删除容器", id, docker.remove_container(&id, None))
 }
 
 /// 实时流式传输容器统计信息
 #[tauri::command]
 pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
-    let mut stream = docker.stats(
+    let stream = docker.stats(
         &id,
         Some(StatsOptions {
             stream: true,
@@ -125,52 +73,15 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()>
         }),
     );
 
-    let (tx, mut rx) = oneshot::channel::<()>();
-    let token = STREAM_COUNTER.fetch_add(1, Ordering::SeqCst);
-
-    {
-        let mut streams = STATS_STREAMS.lock().await;
-        if let Some((old_tx, _)) = streams.insert(id.clone(), (tx, token)) {
-            let _ = old_tx.send(());
-        }
-    }
-
-    let id_clone = id.clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = &mut rx => {
-                    log::debug!("收到停止信号，停止统计流: {}", id_clone);
-                    break;
-                }
-                msg = stream.next() => {
-                    match msg {
-                        Some(Ok(stats)) => {
-                            let event_name = format!("container-stats-{}", id_clone);
-                            if let Err(e) = app.emit(&event_name, stats) {
-                                log::error!("发送统计事件失败: {}", e);
-                                break;
-                            }
-                        }
-                        Some(Err(e)) => {
-                            log::error!("获取统计数据失败: {}", e);
-                            break;
-                        }
-                        None => {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        // 协程退出时清理
-        let mut streams = STATS_STREAMS.lock().await;
-        if let Some((_, t)) = streams.get(&id_clone)
-            && *t == token
-        {
-            streams.remove(&id_clone);
-        }
-    });
+    spawn_stream_handler(
+        app,
+        id.clone(),
+        stream,
+        STATS_STREAMS.clone(),
+        format!("container-stats-{}", id),
+        "统计",
+    )
+    .await;
 
     Ok(())
 }
@@ -189,7 +100,7 @@ pub async fn close_container_stats(id: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> {
     let docker = get_docker_client().await?;
-    let mut stream = docker.logs(
+    let stream = docker.logs(
         &id,
         Some(LogsOptions {
             follow: true,
@@ -201,52 +112,17 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> 
         }),
     );
 
-    let (tx, mut rx) = oneshot::channel::<()>();
-    let token = STREAM_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let mapped_stream = stream.map(|res| res.map(|log| log.to_string()));
 
-    {
-        let mut streams = LOGS_STREAMS.lock().await;
-        if let Some((old_tx, _)) = streams.insert(id.clone(), (tx, token)) {
-            let _ = old_tx.send(());
-        }
-    }
-
-    let id_clone = id.clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = &mut rx => {
-                    log::debug!("收到停止信号，停止日志流: {}", id_clone);
-                    break;
-                }
-                msg = stream.next() => {
-                    match msg {
-                        Some(Ok(log)) => {
-                            let event_name = format!("container-logs-{}", id_clone);
-                            if let Err(e) = app.emit(&event_name, log.to_string()) {
-                                log::error!("发送日志事件失败: {}", e);
-                                break;
-                            }
-                        }
-                        Some(Err(e)) => {
-                            log::error!("获取日志流出错: {}", e);
-                            break;
-                        }
-                        None => {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        // 协程退出时清理
-        let mut streams = LOGS_STREAMS.lock().await;
-        if let Some((_, t)) = streams.get(&id_clone)
-            && *t == token
-        {
-            streams.remove(&id_clone);
-        }
-    });
+    spawn_stream_handler(
+        app,
+        id.clone(),
+        mapped_stream,
+        LOGS_STREAMS.clone(),
+        format!("container-logs-{}", id),
+        "日志",
+    )
+    .await;
 
     Ok(())
 }
@@ -271,16 +147,7 @@ pub async fn rename_container(id: String, new_name: String) -> AppResult<()> {
         name: new_name.clone(),
     };
 
-    match docker.rename_container(&id, options).await {
-        Ok(_) => {
-            log::info!("容器 {} 重命名成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("重命名容器 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("重命名容器", id, docker.rename_container(&id, options))
 }
 
 /// 提交容器为新镜像
@@ -326,16 +193,7 @@ pub async fn commit_container(
 pub async fn pause_container(id: String) -> AppResult<()> {
     log::info!("正在暂停容器: {}", id);
     let docker = get_docker_client().await?;
-    match docker.pause_container(&id).await {
-        Ok(_) => {
-            log::info!("容器 {} 暂停成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("暂停容器 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("暂停容器", id, docker.pause_container(&id))
 }
 
 /// 恢复容器
@@ -343,16 +201,7 @@ pub async fn pause_container(id: String) -> AppResult<()> {
 pub async fn unpause_container(id: String) -> AppResult<()> {
     log::info!("正在恢复容器: {}", id);
     let docker = get_docker_client().await?;
-    match docker.unpause_container(&id).await {
-        Ok(_) => {
-            log::info!("容器 {} 恢复成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("恢复容器 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("恢复容器", id, docker.unpause_container(&id))
 }
 
 /// 进程 Top 响应结构

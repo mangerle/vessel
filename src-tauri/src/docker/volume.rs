@@ -1,4 +1,4 @@
-use super::{VolumeInfo, VolumeUser};
+use super::{handle_docker_op, VolumeInfo, VolumeUser};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::container::ListContainersOptions;
@@ -20,16 +20,7 @@ pub async fn list_volumes() -> AppResult<Vec<VolumeInfo>> {
 pub async fn remove_volume(name: String) -> AppResult<()> {
     log::info!("正在删除卷: {}", name);
     let docker = get_docker_client().await?;
-    match docker.remove_volume(&name, None).await {
-        Ok(_) => {
-            log::info!("卷 {} 删除成功", name);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("删除卷 {} 失败: {}", name, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("删除卷", name, docker.remove_volume(&name, None))
 }
 
 /// 清理未使用的卷
@@ -37,16 +28,7 @@ pub async fn remove_volume(name: String) -> AppResult<()> {
 pub async fn prune_volumes() -> AppResult<()> {
     log::info!("正在清理未使用的卷...");
     let docker = get_docker_client().await?;
-    match docker.prune_volumes::<String>(None).await {
-        Ok(_) => {
-            log::info!("卷清理完成");
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("卷清理失败: {}", e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("卷清理", "所有未使用的卷", docker.prune_volumes::<String>(None))
 }
 
 /// 获取使用特定卷的容器列表
@@ -98,14 +80,5 @@ pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> 
 #[tauri::command]
 pub async fn open_volume_path(app: AppHandle, path: String) -> AppResult<()> {
     log::info!("正在文件管理器中打开路径: {}", path);
-    match app.opener().open_path(&path, None::<String>) {
-        Ok(_) => {
-            log::info!("已成功打开路径: {}", path);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("打开路径 {} 失败: {}", path, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("打开路径", path, async { app.opener().open_path(&path, None::<String>) })
 }

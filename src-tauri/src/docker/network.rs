@@ -1,4 +1,4 @@
-use super::{NetworkDetails, NetworkInfo};
+use super::{handle_docker_op, NetworkDetails, NetworkInfo};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::network::InspectNetworkOptions;
@@ -17,16 +17,7 @@ pub async fn list_networks() -> AppResult<Vec<NetworkInfo>> {
 pub async fn remove_network(id: String) -> AppResult<()> {
     log::info!("正在删除网络: {}", id);
     let docker = get_docker_client().await?;
-    match docker.remove_network(&id).await {
-        Ok(_) => {
-            log::info!("网络 {} 删除成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("删除网络 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("删除网络", id, docker.remove_network(&id))
 }
 
 /// 清理未使用的网络
@@ -34,16 +25,7 @@ pub async fn remove_network(id: String) -> AppResult<()> {
 pub async fn prune_networks() -> AppResult<()> {
     log::info!("正在清理未使用的网络...");
     let docker = get_docker_client().await?;
-    match docker.prune_networks::<String>(None).await {
-        Ok(_) => {
-            log::info!("网络清理完成");
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("网络清理失败: {}", e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("网络清理", "所有未使用的网络", docker.prune_networks::<String>(None))
 }
 
 /// 断开网络连接
@@ -51,30 +33,17 @@ pub async fn prune_networks() -> AppResult<()> {
 pub async fn disconnect_network(network_id: String, container_id: String) -> AppResult<()> {
     log::info!("正在从网络 {} 断开容器 {}", network_id, container_id);
     let docker = get_docker_client().await?;
-    match docker
-        .disconnect_network(
+    handle_docker_op!(
+        "从网络断开容器",
+        format!("容器 {} 从网络 {}", container_id, network_id),
+        docker.disconnect_network(
             &network_id,
             bollard::network::DisconnectNetworkOptions {
                 container: container_id.clone(),
                 force: false,
             },
         )
-        .await
-    {
-        Ok(_) => {
-            log::info!("容器 {} 已成功从网络 {} 断开", container_id, network_id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!(
-                "从网络 {} 断开容器 {} 失败: {}",
-                network_id,
-                container_id,
-                e
-            );
-            Err(e.into())
-        }
-    }
+    )
 }
 
 /// 获取网络详情

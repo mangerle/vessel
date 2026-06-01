@@ -1,4 +1,8 @@
-use super::{ImageDetails, ImageHistoryInfo, ImageInfo, ImageSearchResult, PruneImagesResult};
+use super::{
+    handle_docker_op, ImageDetails, ImageErrorPayload, ImageExportProgressPayload,
+    ImageHistoryInfo, ImageImportErrorPayload, ImageImportProgressPayload, ImageInfo,
+    ImageProgressPayload, ImageSearchResult, PruneImagesResult,
+};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::container::Config;
@@ -7,7 +11,6 @@ use bollard::image::{
 };
 use bollard::models::{HostConfig, PortBinding};
 use futures_util::stream::StreamExt;
-use serde::Serialize;
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
@@ -44,16 +47,7 @@ pub async fn inspect_image(id: String) -> AppResult<ImageDetails> {
 pub async fn remove_image(id: String) -> AppResult<()> {
     log::info!("正在删除镜像: {}", id);
     let docker = get_docker_client().await?;
-    match docker.remove_image(&id, None, None).await {
-        Ok(_) => {
-            log::info!("镜像 {} 删除成功", id);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("删除镜像 {} 失败: {}", id, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("删除镜像", id, docker.remove_image(&id, None, None))
 }
 
 /// 搜索镜像
@@ -128,14 +122,9 @@ pub async fn pull_image(
         while let Some(msg) = stream.next().await {
             match msg {
                 Ok(info) => {
-                    #[derive(Serialize, Clone)]
-                    struct ProgressPayload {
-                        image: String,
-                        info: bollard::models::CreateImageInfo,
-                    }
                     let _ = app_handle.emit(
                         "image-pull-progress",
-                        ProgressPayload {
+                        ImageProgressPayload {
                             image: name_for_events.clone(),
                             info,
                         },
@@ -143,14 +132,9 @@ pub async fn pull_image(
                 }
                 Err(e) => {
                     log::error!("拉取镜像 {} 出错: {}", name_for_events, e);
-                    #[derive(Serialize, Clone)]
-                    struct ErrorPayload {
-                        image: String,
-                        error: String,
-                    }
                     let _ = app_handle.emit(
                         "image-pull-error",
-                        ErrorPayload {
+                        ImageErrorPayload {
                             image: name_for_events.clone(),
                             error: e.to_string(),
                         },
@@ -389,14 +373,9 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
             Err(e) => {
                 let err_msg = format!("创建目标文件失败: {}", e);
                 log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
-                #[derive(Clone, serde::Serialize)]
-                struct ExportErrPayload {
-                    image: String,
-                    error: String,
-                }
                 let _ = app_handle.emit(
                     "image-export-error",
-                    ExportErrPayload {
+                    ImageErrorPayload {
                         image: name_clone,
                         error: err_msg,
                     },
@@ -414,14 +393,9 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
                     if let Err(e) = file.write_all(&bytes).await {
                         let err_msg = format!("写入镜像数据失败: {}", e);
                         log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
-                        #[derive(Clone, serde::Serialize)]
-                        struct ExportErrPayload {
-                            image: String,
-                            error: String,
-                        }
                         let _ = app_handle.emit(
                             "image-export-error",
-                            ExportErrPayload {
+                            ImageErrorPayload {
                                 image: name_clone,
                                 error: err_msg,
                             },
@@ -429,14 +403,9 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
                         return;
                     }
 
-                    #[derive(Clone, serde::Serialize)]
-                    struct ExportProgressPayload {
-                        image: String,
-                        bytes_written: i64,
-                    }
                     let _ = app_handle.emit(
                         "image-export-progress",
-                        ExportProgressPayload {
+                        ImageExportProgressPayload {
                             image: name_clone.clone(),
                             bytes_written: total_bytes,
                         },
@@ -445,14 +414,9 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
                 Err(e) => {
                     let err_msg = format!("读取镜像导出流失败: {}", e);
                     log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
-                    #[derive(Clone, serde::Serialize)]
-                    struct ExportErrPayload {
-                        image: String,
-                        error: String,
-                    }
                     let _ = app_handle.emit(
                         "image-export-error",
-                        ExportErrPayload {
+                        ImageErrorPayload {
                             image: name_clone,
                             error: err_msg,
                         },
@@ -465,14 +429,9 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
         if let Err(e) = file.flush().await {
             let err_msg = format!("刷新文件失败: {}", e);
             log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
-            #[derive(Clone, serde::Serialize)]
-            struct ExportErrPayload {
-                image: String,
-                error: String,
-            }
             let _ = app_handle.emit(
                 "image-export-error",
-                ExportErrPayload {
+                ImageErrorPayload {
                     image: name_clone,
                     error: err_msg,
                 },
@@ -518,15 +477,7 @@ pub async fn import_image(app: AppHandle, path: String) -> AppResult<()> {
         while let Some(msg) = stream.next().await {
             match msg {
                 Ok(info) => {
-                    #[derive(Clone, serde::Serialize)]
-                    struct ImportProgressPayload {
-                        path: String,
-                        status: Option<String>,
-                        stream: Option<String>,
-                        error: Option<String>,
-                        progress: Option<String>,
-                    }
-                    let payload = ImportProgressPayload {
+                    let payload = ImageImportProgressPayload {
                         path: path_clone.clone(),
                         status: info.status,
                         stream: info.stream,
@@ -537,14 +488,9 @@ pub async fn import_image(app: AppHandle, path: String) -> AppResult<()> {
                 }
                 Err(e) => {
                     log::error!("导入镜像 {} 出错: {}", path_clone, e);
-                    #[derive(Clone, serde::Serialize)]
-                    struct ImportErrPayload {
-                        path: String,
-                        error: String,
-                    }
                     let _ = app_handle.emit(
                         "image-import-error",
-                        ImportErrPayload {
+                        ImageImportErrorPayload {
                             path: path_clone.clone(),
                             error: e.to_string(),
                         },
@@ -593,14 +539,5 @@ pub async fn tag_image(image_name: String, repo: String, tag: String) -> AppResu
         tag: tag.clone(),
     };
 
-    match docker.tag_image(&image_name, Some(options)).await {
-        Ok(_) => {
-            log::info!("镜像 {} 打标签成功: {}:{}", image_name, repo, tag);
-            Ok(())
-        }
-        Err(e) => {
-            log::error!("镜像 {} 打标签失败: {}", image_name, e);
-            Err(e.into())
-        }
-    }
+    handle_docker_op!("镜像打标签", image_name, docker.tag_image(&image_name, Some(options)))
 }

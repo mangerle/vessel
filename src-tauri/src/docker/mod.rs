@@ -1,4 +1,5 @@
 pub mod models;
+pub mod utils;
 pub mod container;
 pub mod image;
 pub mod volume;
@@ -8,6 +9,7 @@ pub mod terminal;
 pub mod fs;
 
 pub use models::*;
+pub use utils::*;
 pub use container::*;
 pub use image::*;
 pub use volume::*;

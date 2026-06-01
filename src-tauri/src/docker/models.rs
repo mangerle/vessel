@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bollard::models::{
     ContainerSummary, ImageSummary, ImageSearchResponseItem, HistoryResponseItem, 
     Network, Volume, ContainerInspectResponse, ImageInspect,
-    NetworkContainer, PortBinding, MountPoint
+    NetworkContainer, PortBinding, MountPoint, CreateImageInfo
 };
 
 /// 容器信息结构体
@@ -419,4 +419,42 @@ pub struct ContainerFileInfo {
     pub size: u64,
     pub mtime: u64, // 毫秒级 Unix 时间戳
     pub permissions: String,
+}
+
+/// 镜像操作进度负载
+#[derive(Serialize, Clone)]
+pub struct ImageProgressPayload {
+    pub image: String,
+    pub info: CreateImageInfo,
+}
+
+/// 镜像操作错误负载
+#[derive(Serialize, Clone)]
+pub struct ImageErrorPayload {
+    pub image: String,
+    pub error: String,
+}
+
+/// 镜像导出进度负载
+#[derive(Serialize, Clone)]
+pub struct ImageExportProgressPayload {
+    pub image: String,
+    pub bytes_written: i64,
+}
+
+/// 镜像导入进度负载
+#[derive(Serialize, Clone)]
+pub struct ImageImportProgressPayload {
+    pub path: String,
+    pub status: Option<String>,
+    pub stream: Option<String>,
+    pub error: Option<String>,
+    pub progress: Option<String>,
+}
+
+/// 镜像导入错误负载
+#[derive(Serialize, Clone)]
+pub struct ImageImportErrorPayload {
+    pub path: String,
+    pub error: String,
 }

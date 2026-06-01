@@ -1,4 +1,4 @@
-use super::ComposeProject;
+use super::{handle_docker_op, ComposeProject};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::container::ListContainersOptions;
@@ -141,16 +141,7 @@ pub async fn write_compose_file(
             Err(err.into())
         }
     } else {
-        match tokio::fs::write(&path, content).await {
-            Ok(_) => {
-                log::info!("Compose 文件写入成功: {}", path);
-                Ok(())
-            }
-            Err(e) => {
-                log::error!("Compose 文件写入失败 {}: {}", path, e);
-                Err(e.into())
-            }
-        }
+        handle_docker_op!("Compose 文件写入", path, tokio::fs::write(&path, content))
     }
 }
 
