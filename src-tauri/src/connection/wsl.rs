@@ -4,7 +4,7 @@ use tokio::net::TcpListener;
 use tokio::process::Command;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use std::pin::Pin;
@@ -17,7 +17,17 @@ pub struct WslBridge {
 }
 
 /// 存储代理端口，避免重复启动代理服务器
-static PROXY_PORT: Lazy<Arc<Mutex<Option<u16>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+static PROXY_PORT: LazyLock<Mutex<Option<u16>>> = LazyLock::new(|| Mutex::new(None));
+
+/// 重置代理端口缓存
+pub async fn reset_proxy_port() {
+    let mut port_lock = PROXY_PORT.lock().await;
+    *port_lock = None;
+}
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+const TIMEOUT_CHECK_INTERVAL_SECS: u64 = 5;
+const IDLE_TIMEOUT_SECS: u64 = 15;
 
 impl WslBridge {
     pub fn new(distro: Option<String>) -> Self {
@@ -62,7 +72,7 @@ impl WslBridge {
                     // 为每个连接启动一个 wsl 进程
                     let mut cmd = Command::new("wsl");
                     if let Some(d) = distro_clone
-                        && !d.is_empty() && !d.contains("发行版名称") {
+                        && !d.is_empty() {
                             cmd.args(["-d", &d]);
                         }
                     cmd.args(["docker", "system", "dial-stdio"])
@@ -72,7 +82,7 @@ impl WslBridge {
 
                     #[cfg(windows)]
                     {
-                        cmd.creation_flags(0x08000000);
+                        cmd.creation_flags(CREATE_NO_WINDOW);
                     }
 
                     let child = cmd.spawn();
@@ -109,10 +119,10 @@ impl WslBridge {
                         let last_activity_clone = last_activity.clone();
                         let timeout_task = async move {
                             loop {
-                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                                tokio::time::sleep(std::time::Duration::from_secs(TIMEOUT_CHECK_INTERVAL_SECS)).await;
                                 let now = get_elapsed_seconds();
                                 let last = last_activity_clone.load(Ordering::Relaxed);
-                                if now - last > 15 {
+                                if now - last > IDLE_TIMEOUT_SECS {
                                     // 超过 15 秒无任何数据收发，则判定为空闲，主动断开连接
                                     break;
                                 }
@@ -146,6 +156,11 @@ impl WslBridge {
                     }
                 });
             }
+            // 监听循环结束（listener 关闭），清除端口缓存
+            let mut port_lock = PROXY_PORT.lock().await;
+            if *port_lock == Some(port) {
+                *port_lock = None;
+            }
         });
 
         *port_lock = Some(port);
@@ -155,7 +170,7 @@ impl WslBridge {
 
 // ================== WSL 进程与连接空闲清理辅助组件 ==================
 
-static START_INSTANT: Lazy<std::time::Instant> = Lazy::new(std::time::Instant::now);
+static START_INSTANT: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
 
 /// 获取应用启动后的累计秒数，用于防 NTP 时钟回拨的单调递增时间戳
 fn get_elapsed_seconds() -> u64 {

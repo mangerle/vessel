@@ -461,9 +461,9 @@ pub async fn import_image(app: AppHandle, path: String) -> AppResult<()> {
     };
 
     let byte_stream = ReaderStream::new(file).map(|res| {
-        res.unwrap_or_else(|e| {
+        res.map_err(|e| {
             log::error!("读取 Tar 文件出错: {}", e);
-            Bytes::new()
+            e
         })
     });
 

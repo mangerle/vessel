@@ -269,32 +269,29 @@ pub async fn upload_file_to_container(
     );
     let docker = get_docker_client().await?;
 
-    let local_path_buf = Path::new(&local_path);
-    if !local_path_buf.exists() {
-        log::error!("上传失败：宿主机文件或目录不存在: {}", local_path);
-        return Err("宿主机文件或目录不存在".to_string().into());
-    }
+    let local_path_buf = Path::new(&local_path).to_path_buf();
+    let local_path_clone = local_path.clone();
 
-    let mut tar_data = Vec::new();
-    {
-        let mut builder = Builder::new(&mut tar_data);
+    let tar_data = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let mut data = Vec::new();
+        let mut builder = Builder::new(&mut data);
 
         let file_name = local_path_buf
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| {
-                log::error!("上传失败：无法获取本地文件名: {}", local_path);
-                "无法获取本地文件名".to_string()
+                format!("无法获取本地文件名: {}", local_path_clone)
             })?;
 
         if local_path_buf.is_dir() {
-            builder.append_dir_all(file_name, &local_path)?;
+            builder.append_dir_all(file_name, &local_path_buf).map_err(|e| e.to_string())?;
         } else {
-            let mut file = std::fs::File::open(&local_path)?;
-            builder.append_file(file_name, &mut file)?;
+            let mut file = std::fs::File::open(&local_path_buf).map_err(|e| e.to_string())?;
+            builder.append_file(file_name, &mut file).map_err(|e| e.to_string())?;
         }
-        builder.finish()?;
-    }
+        builder.finish().map_err(|e| e.to_string())?;
+        Ok(data)
+    }).await.map_err(|e| format!("线程池错误: {}", e))??;
 
     let options = bollard::container::UploadToContainerOptions {
         path: container_dir.clone(),

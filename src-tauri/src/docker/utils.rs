@@ -1,20 +1,18 @@
 use futures_util::StreamExt;
-use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::Mutex;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex};
 
 pub type StreamMap = HashMap<String, (oneshot::Sender<()>, u64)>;
 
-pub static STATS_STREAMS: Lazy<Arc<Mutex<StreamMap>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+pub static STATS_STREAMS: LazyLock<Mutex<StreamMap>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub static LOGS_STREAMS: Lazy<Arc<Mutex<StreamMap>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+pub static LOGS_STREAMS: LazyLock<Mutex<StreamMap>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub static STREAM_COUNTER: AtomicU64 = AtomicU64::new(0);
 

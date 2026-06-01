@@ -329,6 +329,13 @@ impl From<ContainerInspectResponse> for ContainerDetails {
             .map(|m| m.iter().map(MountInfo::from).collect())
             .unwrap_or_default();
 
+        let state = details
+            .state
+            .as_ref()
+            .and_then(|s| s.status)
+            .map(|s| format!("{:?}", s).to_lowercase())
+            .unwrap_or_else(|| "unknown".to_string());
+
         Self {
             id: details.id.unwrap_or_default(),
             name: details
@@ -338,18 +345,13 @@ impl From<ContainerInspectResponse> for ContainerDetails {
                 .to_string(),
             image: config.and_then(|c| c.image.clone()).unwrap_or_default(),
             image_id: details.image.unwrap_or_default(),
-            state: details
-                .state
-                .as_ref()
-                .and_then(|s| s.status)
-                .map(|s| format!("{:?}", s).to_lowercase())
-                .unwrap_or_default(),
             status: details
                 .state
                 .as_ref()
                 .and_then(|s| s.status)
                 .map(|s| format!("{:?}", s).to_lowercase())
-                .unwrap_or_default(),
+                .unwrap_or(state.clone()),
+            state,
             created: details.created.unwrap_or_default(),
             env: config.and_then(|c| c.env.clone()).unwrap_or_default(),
             ports,

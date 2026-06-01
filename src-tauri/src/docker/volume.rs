@@ -43,12 +43,19 @@ pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> 
         }))
         .await?;
 
+    let inspect_futures = containers.into_iter().filter_map(|c| {
+        let id = c.id?;
+        let docker_clone = docker.clone();
+        Some(async move {
+            (id, docker_clone.inspect_container(&id, None).await)
+        })
+    });
+
+    let inspect_results = futures_util::future::join_all(inspect_futures).await;
     let mut users = Vec::new();
 
-    for container in containers {
-        if let Some(id) = container.id {
-            let details = docker.inspect_container(&id, None).await?;
-
+    for (id, result) in inspect_results {
+        if let Ok(details) = result {
             if let Some(mounts) = details.mounts {
                 for mount in mounts {
                     if mount.name.as_deref() == Some(&name)

@@ -5218,7 +5218,6 @@ dependencies = [
  "hyper",
  "hyper-util",
  "log",
- "once_cell",
  "pin-project",
  "serde",
  "serde_json",

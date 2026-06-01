@@ -1,8 +1,7 @@
 use crate::error::AppResult;
 use bollard::Docker;
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tokio::sync::RwLock;
 
 pub mod wsl;
@@ -35,20 +34,22 @@ pub struct ConnectionConfig {
 }
 
 /// 全局连接配置
-pub static CONNECTION_CONFIG: Lazy<Arc<RwLock<ConnectionConfig>>> = Lazy::new(|| {
-    Arc::new(RwLock::new(ConnectionConfig {
+pub static CONNECTION_CONFIG: LazyLock<RwLock<ConnectionConfig>> = LazyLock::new(|| {
+    RwLock::new(ConnectionConfig {
         mode: ConnectionMode::Wsl,
         distro: None,
-    }))
+    })
 });
 
 /// 全局 Docker 客户端实例
-static DOCKER_CLIENT: Lazy<Arc<RwLock<Option<Docker>>>> = Lazy::new(|| Arc::new(RwLock::new(None)));
+static DOCKER_CLIENT: LazyLock<RwLock<Option<Docker>>> = LazyLock::new(|| RwLock::new(None));
 
 /// 清除 Docker 客户端缓存，强制重新连接
 pub async fn clear_client_cache() {
     let mut client_lock = DOCKER_CLIENT.write().await;
     *client_lock = None;
+    // 重置 WSL 代理端口缓存
+    wsl::reset_proxy_port().await;
 }
 
 /// 更新全局连接配置的命令
