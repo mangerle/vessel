@@ -735,7 +735,7 @@ const updateScrollbar = () => {
   thumbTop.value = scrollRatio * (ch - thumbHeight.value)
 }
 
-watch(() => props.logsList, () => {
+watch(() => props.logsList.length, () => {
   nextTick(() => {
     const el = logTextRef.value
     if (!el) return
@@ -744,7 +744,7 @@ watch(() => props.logsList, () => {
     }
     updateScrollbar()
   })
-}, { deep: true })
+})
 
 const closeUserMenu = () => {
   showUserMenu.value = false

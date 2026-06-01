@@ -91,7 +91,29 @@ const topContainerName = ref('')
 const showImportModal = ref(false)
 const importPath = ref('D:/code/project/docker-compose.yml')
 
+// 节流缓冲区与刷新定时器
+let logBuffer: string[] = []
+let logFlushTimer: ReturnType<typeof setInterval> | null = null
+
+// 清理当前的流与定时器
+const cleanupCurrentStreams = () => {
+  if (logsUnlisten) {
+    logsUnlisten()
+    logsUnlisten = null
+  }
+  if (logFlushTimer) {
+    clearInterval(logFlushTimer)
+    logFlushTimer = null
+  }
+  if (containerDetails.value?.id) {
+    const oldId = containerDetails.value.id
+    invoke('close_container_logs', { id: oldId }).catch(() => {})
+    invoke('close_container_stats', { id: oldId }).catch(() => {})
+  }
+}
+
 const onSelect = async (id: string) => {
+  cleanupCurrentStreams()
   selectedId.value = id
   if (id.startsWith('project:')) {
     selectedType.value = 'project'
@@ -488,11 +510,6 @@ const handleConfirmImport = async () => {
 }
 
 const fetchDetails = async (id: string) => {
-  if (containerDetails.value && containerDetails.value.id !== id) {
-    const oldId = containerDetails.value.id
-    invoke('close_container_logs', { id: oldId }).catch(() => {})
-    invoke('close_container_stats', { id: oldId }).catch(() => {})
-  }
   loadingDetails.value = true
   try {
     containerDetails.value = await invoke('inspect_container', { id })
@@ -514,19 +531,24 @@ const logsList = ref<string[]>([])
 let logsUnlisten: any = null
 
 const startLogsStream = async (id: string) => {
-  if (logsUnlisten) {
-    logsUnlisten()
-    logsUnlisten = null
-  }
   logsList.value = []
-  
-  logsUnlisten = await listen(`container-logs-${id}`, (event: any) => {
-    logsList.value.push(event.payload)
-    if (logsList.value.length > 2000) {
-      logsList.value.shift()
+  logBuffer = []
+
+  // 每 80ms 批量刷入响应式数据
+  logFlushTimer = setInterval(() => {
+    if (logBuffer.length > 0) {
+      logsList.value.push(...logBuffer)
+      logBuffer = []
+      if (logsList.value.length > 2000) {
+        logsList.value.splice(0, logsList.value.length - 2000)
+      }
     }
+  }, 80)
+
+  logsUnlisten = await listen(`container-logs-${id}`, (event: any) => {
+    logBuffer.push(event.payload)
   })
-  
+
   try {
     await invoke('stream_container_logs', { id })
   } catch (e) {
@@ -561,13 +583,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (logsUnlisten) logsUnlisten()
+  cleanupCurrentStreams()
   stopStatsStream()
-  if (containerDetails.value?.id) {
-    const oldId = containerDetails.value.id
-    invoke('close_container_logs', { id: oldId }).catch(() => {})
-    invoke('close_container_stats', { id: oldId }).catch(() => {})
-  }
 })
 </script>
 
