@@ -7,6 +7,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { info, error, warn } from '@tauri-apps/plugin-log'
+import { toConnectionConfig } from '../api/connection'
 import {
   NSelect,
   NSwitch,
@@ -182,16 +183,7 @@ const handleSave = async () => {
   if (activeConn) {
     try {
       // 序列化整个活动连接为 ConnectionConfig 形状再下发给后端
-      const config = {
-        mode: activeConn.type,
-        name: activeConn.name,
-        wsl_distro: activeConn.type === 'wsl' ? (activeConn.wslDistro ?? null) : null,
-        ssh_host: activeConn.type === 'ssh' ? (activeConn.sshHost ?? null) : null,
-        ssh_port: activeConn.type === 'ssh' ? (activeConn.sshPort ?? 22) : null,
-        ssh_user: activeConn.type === 'ssh' ? (activeConn.sshUser ?? null) : null,
-        ssh_password: activeConn.type === 'ssh' ? (activeConn.sshPassword ?? null) : null,
-        use_sudo: activeConn.type === 'ssh' ? (activeConn.useSudo ?? false) : false
-      }
+      const config = toConnectionConfig(activeConn)
       await invoke('update_connection_config', { config })
       // 主动 ping 一次，立即验证配置生效
       try {
@@ -300,17 +292,6 @@ const diagRunning = ref(false)
 const diagResult = ref<any>(null)
 const diagError = ref('')
 
-const buildConfigForTest = (nc: any) => ({
-  mode: nc.type,
-  name: nc.name || '诊断测试',
-  wsl_distro: nc.type === 'wsl' ? (nc.wslDistro ?? null) : null,
-  ssh_host: nc.type === 'ssh' ? (nc.sshHost ?? null) : null,
-  ssh_port: nc.type === 'ssh' ? (nc.sshPort ?? 22) : null,
-  ssh_user: nc.type === 'ssh' ? (nc.sshUser ?? null) : null,
-  ssh_password: nc.type === 'ssh' ? (nc.sshPassword ?? null) : null,
-  use_sudo: nc.type === 'ssh' ? (nc.useSudo ?? false) : false
-})
-
 const handleTestConnection = async () => {
   if (newConnection.value.type === 'ssh') {
     if (!newConnection.value.sshHost.trim() || !newConnection.value.sshUser.trim()) {
@@ -325,7 +306,11 @@ const handleTestConnection = async () => {
   diagError.value = ''
   diagResult.value = null
   try {
-    const config = buildConfigForTest(newConnection.value)
+    const config = toConnectionConfig({
+      ...newConnection.value,
+      id: 'diagnose_temp',
+      name: newConnection.value.name || '诊断测试'
+    } as any)
     diagResult.value = await invoke('diagnose_ssh_connection', { config })
     showDiagModal.value = true
   } catch (e: any) {
@@ -411,7 +396,6 @@ const handleOpenLogDir = async () => {
 // 恢复出厂设置
 const handleResetFactory = async () => {
   warn('用户触发恢复出厂设置！')
-  localStorage.clear()
   try {
     await settingsStore.resetSettings()
     info('本地物理配置已擦除')

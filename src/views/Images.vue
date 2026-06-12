@@ -12,7 +12,6 @@ import {
   NSpace,
   NTag,
   NInput,
-  NSelect,
   useMessage,
   NAutoComplete,
   NProgress,
@@ -20,7 +19,6 @@ import {
 } from 'naive-ui'
 import {
   StarOutline,
-  ShieldCheckmarkOutline,
   PlayOutline,
   SearchOutline,
   TrashOutline,
@@ -50,10 +48,6 @@ const imageStore = useImageStore()
 const taskStore = useTaskStore()
 const settingsStore = useSettingsStore()
 const message = useMessage()
-
-// 防止静态检测对 h 函数里引用过的组件报未使用警告
-const _unused = [NIcon, NSpace, NTag, StarOutline, ShieldCheckmarkOutline, PlayOutline]
-if (_unused.length < 0) console.log(_unused)
 
 // --- 状态控制 ---
 const selectedId = ref<string | null>(null)

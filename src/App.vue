@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { exit } from '@tauri-apps/plugin-process'
 import { invoke } from '@tauri-apps/api/core'
 import { useSettingsStore } from './store/settings'
 import SingleInstanceListener from './components/common/SingleInstanceListener.vue'
 import StartupUpdater from './components/common/StartupUpdater.vue'
-import { 
-  NConfigProvider, 
-  NMessageProvider, 
-  NDialogProvider, 
-  NNotificationProvider, 
-  NGlobalStyle, 
-  zhCN, 
+import {
+  NConfigProvider,
+  NMessageProvider,
+  NDialogProvider,
+  NNotificationProvider,
+  NGlobalStyle,
+  zhCN,
   dateZhCN,
   GlobalThemeOverrides,
   darkTheme,
@@ -142,14 +140,8 @@ onMounted(async () => {
     console.warn('启动时 Docker 连通性探测失败:', e)
   }
   
-  // 监听窗口关闭事件
-  const appWindow = getCurrentWindow()
-  await appWindow.onCloseRequested(async (_event) => {
-    if (!settingsStore.closeToTray) {
-      await appWindow.destroy()
-      await exit(0)
-    }
-  })
+  // 窗口关闭事件由后端 lib.rs 的 on_window_event 统一拦截（关闭即隐藏到托盘）；
+  // 真正的「真正退出」由托盘菜单或单实例插件触发，不再在前端重复注册
 })
 </script>
 

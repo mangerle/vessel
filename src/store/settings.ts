@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { Store } from '@tauri-apps/plugin-store'
+import { emptyWslConfig, toConnectionConfig } from '../api/connection'
+import type { ConnectionConfigPayload } from '../api/connection'
 
 // 声明全局惰性 Store 实例
 let storeInstance: Store | null = null
@@ -34,37 +36,7 @@ export interface DockerConnection {
   useSudo?: boolean
 }
 
-/**
- * 统一的连接配置（与 Rust 端 ConnectionConfig 形状完全一致）。
- * 用于调用 update_connection_config 时序列化。
- */
-export interface ConnectionConfigPayload {
-  mode: 'wsl' | 'ssh' | 'desktop'
-  name: string
-  wsl_distro: string | null
-  ssh_host: string | null
-  ssh_port: number | null
-  ssh_user: string | null
-  ssh_password: string | null
-  use_sudo: boolean
-}
-
-/**
- * 把前端的 DockerConnection 序列化为后端 ConnectionConfig 形状。
- * 仅取活动连接（activeConnection）的数据；未填写的可选字段统一置 null。
- */
-const toConnectionConfig = (conn: DockerConnection): ConnectionConfigPayload => {
-  return {
-    mode: conn.type,
-    name: conn.name,
-    wsl_distro: conn.type === 'wsl' ? (conn.wslDistro ?? null) : null,
-    ssh_host: conn.type === 'ssh' ? (conn.sshHost ?? null) : null,
-    ssh_port: conn.type === 'ssh' ? (conn.sshPort ?? 22) : null,
-    ssh_user: conn.type === 'ssh' ? (conn.sshUser ?? null) : null,
-    ssh_password: conn.type === 'ssh' ? (conn.sshPassword ?? null) : null,
-    use_sudo: conn.type === 'ssh' ? (conn.useSudo ?? false) : false
-  }
-}
+export type { ConnectionConfigPayload }
 
 export const useSettingsStore = defineStore('settings', () => {
   const autoStart = ref(false)
@@ -276,16 +248,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const conn = connections.value.find(c => c.id === activeConnectionId.value)
       || connections.value[0]
     if (!conn) {
-      return {
-        mode: 'wsl',
-        name: 'WSL',
-        wsl_distro: null,
-        ssh_host: null,
-        ssh_port: null,
-        ssh_user: null,
-        ssh_password: null,
-        use_sudo: false
-      }
+      return emptyWslConfig()
     }
     return toConnectionConfig(conn)
   }
