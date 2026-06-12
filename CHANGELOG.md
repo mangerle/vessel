@@ -1,5 +1,32 @@
 # Changelog
 
+### [0.1.10](https://github.com/mangerle/vessel/compare/v0.1.9...v0.1.10) (2026-06-12)
+
+
+### 🚀 新增功能 (Features)
+
+* **compose:** 优化ContainerFileBrowser文件加载逻辑 ([23c4440](https://github.com/mangerle/vessel/commit/23c444097e1ccf65f0d896f2bba3604c98a7ba36))
+* **connection:** 统一支持 SSH 远程 Docker 与多连接引擎 ([a03f7fc](https://github.com/mangerle/vessel/commit/a03f7fc00f7ce919d90d55d8f26babe81d7a5354))
+* **log:** 完善日志记录 ([cd39917](https://github.com/mangerle/vessel/commit/cd3991715a98a21e634684283612aac918d3adfa))
+* **ssh:** 增加远端 Docker 环境一键诊断 ([b259351](https://github.com/mangerle/vessel/commit/b2593514de8b201115a2f35570cf0bec01092a70))
+* **ssh:** 支持 sudo 提升权限以兼容非 root 用户 ([43ba373](https://github.com/mangerle/vessel/commit/43ba373a83ae861c373ce1751e18282fbb6746bb))
+
+
+### ⚡ 性能优化 (Performance)
+
+* **rust:** 优化连接管理锁竞争并增强类型安全 ([69bcb00](https://github.com/mangerle/vessel/commit/69bcb0020581da57cd36bc30b505dea1e0074766))
+* **settings:** saveSettings 仅写变更 key，避免每次全量落盘 ([59eef4c](https://github.com/mangerle/vessel/commit/59eef4ce2ed326138edfe729aafa44428431a629))
+
+
+### 🐛 Bug 修复 (Bug Fixes)
+
+* 修复 CSS 语法错误、内存泄漏并增强 CSP 安全策略 ([600dd85](https://github.com/mangerle/vessel/commit/600dd85599c15829d837c8135ff6d5f6974559f7))
+* **compose:** 优化容器日志流的节流处理 ([8182500](https://github.com/mangerle/vessel/commit/818250032e31da0269716c9a7ed68e631bd281b5))
+* **docker:** 优化 docker compose 命令参数传递方式 ([aaa6a05](https://github.com/mangerle/vessel/commit/aaa6a05c8d50ab50a306d9c93854d5b6f60e0186))
+* **rust:** 修复死锁风险、命令注入漏洞及终端锁阻塞问题 ([e007da1](https://github.com/mangerle/vessel/commit/e007da107c88a0780c4b53b87419044b43084495))
+* **rust:** 移除后端代码中潜在的 unwrap() panic 风险 ([6a1a5e3](https://github.com/mangerle/vessel/commit/6a1a5e3ef5f9d09dc0fd9bfd322a8e77dc936ea2))
+* **wsl:** 移除 client_socket 多余的 mut 标记 ([88beca8](https://github.com/mangerle/vessel/commit/88beca8db6617bbc78776deda9efd884c9f8a61b))
+
 ### [0.1.9](https://github.com/mangerle/vessel/compare/v0.1.8...v0.1.9) (2026-05-30)
 
 
