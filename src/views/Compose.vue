@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useContainerStats } from '../hooks/useContainerStats'
-import { open } from '@tauri-apps/plugin-dialog'
 import { useComposeStore } from '../store/compose'
 import { useContainerStore } from '../store/container'
 import { invoke } from '@tauri-apps/api/core'
@@ -470,6 +469,7 @@ const handleRunExec = async () => {
 
 const pickComposeFile = async () => {
   try {
+    const { open } = await import('@tauri-apps/plugin-dialog')
     const selected = await open({
       multiple: false,
       directory: false,
