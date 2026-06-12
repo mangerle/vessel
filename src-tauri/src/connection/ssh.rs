@@ -242,6 +242,208 @@ impl SshBridge {
 
         Ok(session)
     }
+
+    /// 诊断 SSH 远端 Docker 环境：返回每一步是否通过与可读的错误信息，
+    /// 方便用户在 UI 上自助排查。
+    pub async fn diagnose(&self) -> SshDiagnostic {
+        let mut diag = SshDiagnostic::default();
+
+        // 1. SSH 连通性 + 基本环境探测
+        let session = match self.create_session().await {
+            Ok(s) => {
+                diag.ssh_ok = true;
+                s
+            }
+            Err(e) => {
+                diag.ssh_error = Some(e);
+                diag.recommendation =
+                    "无法连接 SSH 服务器，请检查主机地址、端口、网络与凭据".to_string();
+                return diag;
+            }
+        };
+
+        // 2. 当前用户与所属组
+        match self.run_remote_cmd(&session, "id -un").await {
+            Ok(out) => {
+                diag.current_user = out.trim().to_string();
+            }
+            Err(e) => {
+                diag.remote_error = Some(format!("id 命令失败: {}", e));
+            }
+        }
+
+        match self.run_remote_cmd(&session, "id -Gn").await {
+            Ok(out) => {
+                let groups: Vec<String> = out
+                    .trim()
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect();
+                diag.groups = groups.clone();
+                diag.user_in_docker_group = groups.iter().any(|g| g == "docker");
+            }
+            Err(e) => {
+                diag.remote_error = Some(format!("id -Gn 命令失败: {}", e));
+            }
+        }
+
+        // 3. docker socket 信息
+        match self.run_remote_cmd(&session, "ls -la /var/run/docker.sock 2>/dev/null || ls -la /run/docker.sock 2>/dev/null || echo 'NOT_FOUND'").await {
+            Ok(out) => {
+                let trimmed = out.trim();
+                if trimmed == "NOT_FOUND" {
+                    diag.docker_socket_path = "未找到".to_string();
+                    diag.docker_socket_perms = "".to_string();
+                } else {
+                    // 拆分路径与权限字符串
+                    // 输出形如: "/var/run/docker.sock -> ../../srw-rw---- 1 root docker ..."
+                    if let Some((path, rest)) = trimmed.split_once("->") {
+                        diag.docker_socket_path = path.trim().to_string();
+                        let rest = rest.trim();
+                        // 权限段是第 2 列（空格分隔后第 2 段）
+                        let parts: Vec<&str> = rest.split_whitespace().collect();
+                        if parts.len() >= 2 {
+                            diag.docker_socket_perms = parts[1].to_string();
+                            let group = parts.get(3).copied().unwrap_or("");
+                            diag.docker_socket_group = group.to_string();
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                diag.remote_error = Some(format!("查看 docker socket 失败: {}", e));
+            }
+        }
+
+        // 4. 不带 sudo 跑 docker ps
+        match self
+            .run_remote_cmd(&session, "docker ps --format '{{.ID}}' 2>&1")
+            .await
+        {
+            Ok(out) => {
+                let trimmed = out.trim();
+                if trimmed.is_empty() {
+                    diag.docker_works_without_sudo = true;
+                } else {
+                    diag.docker_error_without_sudo = Some(trimmed.to_string());
+                }
+            }
+            Err(e) => {
+                diag.docker_error_without_sudo = Some(e);
+            }
+        }
+
+        // 5. 带 sudo 跑 docker ps
+        match self
+            .run_remote_cmd(&session, "sudo -n docker ps --format '{{.ID}}' 2>&1")
+            .await
+        {
+            Ok(out) => {
+                let trimmed = out.trim();
+                if trimmed.is_empty() {
+                    diag.docker_works_with_sudo = true;
+                } else {
+                    diag.docker_error_with_sudo = Some(trimmed.to_string());
+                }
+            }
+            Err(e) => {
+                diag.docker_error_with_sudo = Some(e);
+            }
+        }
+
+        // 6. 给出建议
+        diag.recommendation = build_recommendation(&diag);
+        diag
+    }
+
+    /// 在已建立的 SSH 会话上执行一条命令并返回 stdout
+    async fn run_remote_cmd(
+        &self,
+        session: &Handle<TrustAllHostKeyHandler>,
+        cmd: &str,
+    ) -> Result<String, String> {
+        let mut channel: SshChannel = session
+            .channel_open_session()
+            .await
+            .map_err(|e| format!("打开 SSH 通道失败: {}", e))?;
+        channel
+            .exec(true, cmd)
+            .await
+            .map_err(|e| format!("执行远程命令失败: {}", e))?;
+        let mut output = Vec::new();
+        loop {
+            match channel.wait().await {
+                Some(ChannelMsg::Data { data }) => output.extend_from_slice(&data),
+                Some(ChannelMsg::ExtendedData { data, .. }) => {
+                    output.extend_from_slice(&data);
+                }
+                Some(ChannelMsg::Eof)
+                | Some(ChannelMsg::Close)
+                | Some(ChannelMsg::ExitStatus { .. })
+                | None => break,
+                Some(_) => continue,
+            }
+        }
+        let _ = channel.eof().await;
+        let _ = channel.close().await;
+        Ok(String::from_utf8_lossy(&output).to_string())
+    }
+}
+
+/// SSH 远端 Docker 环境诊断结果
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct SshDiagnostic {
+    /// SSH 凭据与网络是否可达
+    pub ssh_ok: bool,
+    pub ssh_error: Option<String>,
+
+    /// 当前 SSH 登录的用户
+    pub current_user: String,
+    /// 用户所属的附加组列表
+    pub groups: Vec<String>,
+    /// 是否在 docker 组
+    pub user_in_docker_group: bool,
+
+    /// docker socket 路径
+    pub docker_socket_path: String,
+    /// docker socket 权限串
+    pub docker_socket_perms: String,
+    /// docker socket 属组
+    pub docker_socket_group: String,
+
+    /// `docker ps` 不带 sudo 是否成功
+    pub docker_works_without_sudo: bool,
+    pub docker_error_without_sudo: Option<String>,
+
+    /// `sudo -n docker ps` 是否成功
+    pub docker_works_with_sudo: bool,
+    pub docker_error_with_sudo: Option<String>,
+
+    /// 远端环境其他错误
+    pub remote_error: Option<String>,
+
+    /// 自动给出的修复建议
+    pub recommendation: String,
+}
+
+fn build_recommendation(d: &SshDiagnostic) -> String {
+    if !d.ssh_ok {
+        return "请先确认 SSH 主机、端口、用户名密码正确无误".to_string();
+    }
+    if d.docker_socket_path == "未找到" {
+        return "远端未检测到 docker socket，请先安装并启动 Docker 守护进程".to_string();
+    }
+    if d.docker_works_without_sudo {
+        return "当前用户已具备 docker 权限，可直接连接，无需 sudo".to_string();
+    }
+    if d.docker_works_with_sudo {
+        return "需在连接配置中勾选「使用 sudo 提升权限」，并确认远端已配置 NOPASSWD sudo"
+            .to_string();
+    }
+    if !d.user_in_docker_group {
+        return "当前用户既不在 docker 组，sudo 也不可用。请将用户加入 docker 组（需要重新登录生效）：sudo usermod -aG docker <user>".to_string();
+    }
+    "请检查远端 Docker 服务是否正常运行 (systemctl status docker)，或检查 SELinux/AppArmor 是否拦截".to_string()
 }
 
 /// 处理一个 TCP 代理连接：建立 russh 会话 + 透传到 channel

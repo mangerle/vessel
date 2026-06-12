@@ -294,6 +294,48 @@ const openAddConnModal = () => {
   showAddConnModal.value = true
 }
 
+// 远端诊断状态
+const showDiagModal = ref(false)
+const diagRunning = ref(false)
+const diagResult = ref<any>(null)
+const diagError = ref('')
+
+const buildConfigForTest = (nc: any) => ({
+  mode: nc.type,
+  name: nc.name || '诊断测试',
+  wsl_distro: nc.type === 'wsl' ? (nc.wslDistro ?? null) : null,
+  ssh_host: nc.type === 'ssh' ? (nc.sshHost ?? null) : null,
+  ssh_port: nc.type === 'ssh' ? (nc.sshPort ?? 22) : null,
+  ssh_user: nc.type === 'ssh' ? (nc.sshUser ?? null) : null,
+  ssh_password: nc.type === 'ssh' ? (nc.sshPassword ?? null) : null,
+  use_sudo: nc.type === 'ssh' ? (nc.useSudo ?? false) : false
+})
+
+const handleTestConnection = async () => {
+  if (newConnection.value.type === 'ssh') {
+    if (!newConnection.value.sshHost.trim() || !newConnection.value.sshUser.trim()) {
+      message.warning('请先填写 SSH 主机地址与用户名')
+      return
+    }
+  } else {
+    message.info('该诊断仅针对 SSH 连接')
+    return
+  }
+  diagRunning.value = true
+  diagError.value = ''
+  diagResult.value = null
+  try {
+    const config = buildConfigForTest(newConnection.value)
+    diagResult.value = await invoke('diagnose_ssh_connection', { config })
+    showDiagModal.value = true
+  } catch (e: any) {
+    diagError.value = String(e)
+    showDiagModal.value = true
+  } finally {
+    diagRunning.value = false
+  }
+}
+
 const handleAddConnection = () => {
   if (!newConnection.value.name.trim()) {
     message.warning('请输入连接名称')
@@ -905,10 +947,91 @@ onMounted(async () => {
       </div>
 
       <div class="form-modal-actions">
+        <n-button size="small" @click="handleTestConnection" :loading="diagRunning">
+          🔍 测试连接
+        </n-button>
         <n-button type="primary" size="small" @click="handleAddConnection">确定添加</n-button>
         <n-button size="small" @click="showAddConnModal = false">取消</n-button>
       </div>
     </div>
+  </n-modal>
+
+  <!-- SSH 远端诊断结果弹窗 -->
+  <n-modal
+    v-model:show="showDiagModal"
+    preset="card"
+    title="🔍 SSH 远端 Docker 环境诊断"
+    style="width: 560px"
+  >
+    <div v-if="diagError" style="color: var(--brand-danger); font-size: 11px; line-height: 1.6;">
+      诊断执行失败：{{ diagError }}
+    </div>
+    <div v-else-if="diagResult" class="diag-list">
+      <div class="diag-row">
+        <span class="diag-label">SSH 连通性</span>
+        <span class="diag-value" :class="diagResult.ssh_ok ? 'ok' : 'fail'">
+          {{ diagResult.ssh_ok ? '✅ 正常' : '❌ 失败' }}
+        </span>
+      </div>
+      <div v-if="diagResult.ssh_error" class="diag-err">{{ diagResult.ssh_error }}</div>
+
+      <template v-if="diagResult.ssh_ok">
+        <div class="diag-row">
+          <span class="diag-label">当前 SSH 用户</span>
+          <span class="diag-value">{{ diagResult.current_user || '-' }}</span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-label">所属附加组</span>
+          <span class="diag-value mono">
+            {{ diagResult.groups && diagResult.groups.length > 0 ? diagResult.groups.join(', ') : '-' }}
+          </span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-label">是否在 docker 组</span>
+          <span class="diag-value" :class="diagResult.user_in_docker_group ? 'ok' : 'warn'">
+            {{ diagResult.user_in_docker_group ? '✅ 是' : '⚠️ 否' }}
+          </span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-label">docker socket 路径</span>
+          <span class="diag-value mono">{{ diagResult.docker_socket_path || '-' }}</span>
+        </div>
+        <div class="diag-row" v-if="diagResult.docker_socket_perms">
+          <span class="diag-label">socket 权限 / 属组</span>
+          <span class="diag-value mono">
+            {{ diagResult.docker_socket_perms }} / {{ diagResult.docker_socket_group }}
+          </span>
+        </div>
+        <div class="diag-row">
+          <span class="diag-label">docker 可直接调用</span>
+          <span class="diag-value" :class="diagResult.docker_works_without_sudo ? 'ok' : 'fail'">
+            {{ diagResult.docker_works_without_sudo ? '✅ 是' : '❌ 否' }}
+          </span>
+        </div>
+        <div v-if="diagResult.docker_error_without_sudo" class="diag-err">
+          {{ diagResult.docker_error_without_sudo }}
+        </div>
+        <div class="diag-row">
+          <span class="diag-label">sudo docker 可调用</span>
+          <span class="diag-value" :class="diagResult.docker_works_with_sudo ? 'ok' : 'fail'">
+            {{ diagResult.docker_works_with_sudo ? '✅ 是' : '❌ 否' }}
+          </span>
+        </div>
+        <div v-if="diagResult.docker_error_with_sudo" class="diag-err">
+          {{ diagResult.docker_error_with_sudo }}
+        </div>
+        <div v-if="diagResult.remote_error" class="diag-err">
+          远端环境信息：{{ diagResult.remote_error }}
+        </div>
+        <div class="diag-recommend">
+          <div class="diag-recommend-title">💡 修复建议</div>
+          <div class="diag-recommend-body">{{ diagResult.recommendation }}</div>
+        </div>
+      </template>
+    </div>
+    <template #footer>
+      <n-button size="small" @click="showDiagModal = false">关闭</n-button>
+    </template>
   </n-modal>
 
   <!-- 软件更新弹窗 -->
@@ -1574,6 +1697,82 @@ onMounted(async () => {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Diag Modal */
+.diag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.diag-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.diag-label {
+  color: var(--text-muted);
+}
+
+.diag-value {
+  color: var(--text-title);
+  font-weight: 600;
+}
+
+.diag-value.ok {
+  color: var(--brand-primary);
+}
+
+.diag-value.warn {
+  color: #f59e0b;
+}
+
+.diag-value.fail {
+  color: var(--brand-danger);
+}
+
+.diag-value.mono {
+  font-family: monospace;
+  font-weight: 400;
+}
+
+.diag-err {
+  background-color: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: var(--brand-danger);
+  font-size: 10px;
+  font-family: monospace;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.diag-recommend {
+  background-color: rgba(16, 185, 129, 0.04);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+
+.diag-recommend-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--brand-primary);
+  margin-bottom: 4px;
+}
+
+.diag-recommend-body {
+  font-size: 11px;
+  color: var(--text-body);
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 /* Update Modal & Progress styles */

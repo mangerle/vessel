@@ -200,3 +200,24 @@ pub async fn ping_docker() -> AppResult<()> {
     docker.ping().await?;
     Ok(())
 }
+
+/// 诊断 SSH 远端 Docker 环境：返回用户、组、socket 权限、sudo 状态及修复建议
+#[tauri::command]
+pub async fn diagnose_ssh_connection(config: ConnectionConfig) -> AppResult<ssh::SshDiagnostic> {
+    let ssh_cfg = ssh::SshConfig {
+        host: config
+            .ssh_host
+            .clone()
+            .ok_or_else(|| "SSH 主机未配置".to_string())?,
+        port: config.ssh_port.unwrap_or(22),
+        user: config
+            .ssh_user
+            .clone()
+            .ok_or_else(|| "SSH 用户未配置".to_string())?,
+        password: config.ssh_password.clone(),
+        use_sudo: config.use_sudo,
+    };
+    ssh_cfg.validate()?;
+    let bridge = ssh::SshBridge::new(ssh_cfg);
+    Ok(bridge.diagnose().await)
+}

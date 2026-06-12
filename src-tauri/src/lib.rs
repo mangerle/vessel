@@ -162,6 +162,7 @@ pub fn run() {
             docker::write_container_text_file,
             connection::update_connection_config,
             connection::ping_docker,
+            connection::diagnose_ssh_connection,
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用程序时出错");
