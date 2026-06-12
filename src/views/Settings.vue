@@ -156,6 +156,7 @@ const cleanConnections = (conns: any[]) => {
     if (c.sshPort !== undefined && c.sshPort !== null) clean.sshPort = c.sshPort
     if (c.sshUser !== undefined && c.sshUser !== null) clean.sshUser = c.sshUser
     if (c.sshPassword !== undefined && c.sshPassword !== null) clean.sshPassword = c.sshPassword
+    if (c.useSudo !== undefined && c.useSudo !== null) clean.useSudo = c.useSudo
     return clean
   })
 }
@@ -188,7 +189,8 @@ const handleSave = async () => {
         ssh_host: activeConn.type === 'ssh' ? (activeConn.sshHost ?? null) : null,
         ssh_port: activeConn.type === 'ssh' ? (activeConn.sshPort ?? 22) : null,
         ssh_user: activeConn.type === 'ssh' ? (activeConn.sshUser ?? null) : null,
-        ssh_password: activeConn.type === 'ssh' ? (activeConn.sshPassword ?? null) : null
+        ssh_password: activeConn.type === 'ssh' ? (activeConn.sshPassword ?? null) : null,
+        use_sudo: activeConn.type === 'ssh' ? (activeConn.useSudo ?? false) : false
       }
       await invoke('update_connection_config', { config })
       // 主动 ping 一次，立即验证配置生效
@@ -274,7 +276,8 @@ const newConnection = ref({
   sshHost: '192.168.1.105',
   sshPort: 22,
   sshUser: 'root',
-  sshPassword: ''
+  sshPassword: '',
+  useSudo: false
 })
 
 const openAddConnModal = () => {
@@ -285,7 +288,8 @@ const openAddConnModal = () => {
     sshHost: '192.168.1.105',
     sshPort: 22,
     sshUser: 'root',
-    sshPassword: ''
+    sshPassword: '',
+    useSudo: false
   }
   showAddConnModal.value = true
 }
@@ -305,7 +309,7 @@ const handleAddConnection = () => {
       return
     }
   }
-  
+
   const id = 'conn_' + Math.random().toString(36).substring(2, 11)
   draft.value.connections.push({
     id,
@@ -315,12 +319,13 @@ const handleAddConnection = () => {
     sshHost: newConnection.value.type === 'ssh' ? newConnection.value.sshHost.trim() : undefined,
     sshPort: newConnection.value.type === 'ssh' ? newConnection.value.sshPort : undefined,
     sshUser: newConnection.value.type === 'ssh' ? newConnection.value.sshUser.trim() : undefined,
-    sshPassword: newConnection.value.type === 'ssh' ? newConnection.value.sshPassword.trim() : undefined
+    sshPassword: newConnection.value.type === 'ssh' ? newConnection.value.sshPassword.trim() : undefined,
+    useSudo: newConnection.value.type === 'ssh' ? newConnection.value.useSudo : undefined
   })
 
   // 默认激活新增的连接
   draft.value.activeConnectionId = id
-  
+
   showAddConnModal.value = false
   message.success('已添加到草稿列表，请点击保存配置使其落盘')
 }
@@ -613,7 +618,10 @@ onMounted(async () => {
                     </td>
                     <td class="monospace">
                       <span v-if="conn.type === 'wsl'">分发版: {{ conn.wslDistro || '-' }}</span>
-                      <span v-else-if="conn.type === 'ssh'">{{ conn.sshUser }}@{{ conn.sshHost }}:{{ conn.sshPort }}</span>
+                      <span v-else-if="conn.type === 'ssh'">
+                        {{ conn.sshUser }}@{{ conn.sshHost }}:{{ conn.sshPort }}
+                        <span v-if="conn.useSudo" style="color: var(--brand-warning); margin-left: 4px;">[sudo]</span>
+                      </span>
                       <span v-else>默认本地命名管道</span>
                     </td>
                     <td style="text-align: center;">
@@ -887,6 +895,12 @@ onMounted(async () => {
         <div class="field-item">
           <span class="field-label">登录密码 (Password)</span>
           <n-input v-model:value="newConnection.sshPassword" type="password" size="small" placeholder="密码" />
+        </div>
+        <div class="field-item" style="grid-column: 1 / -1;">
+          <div style="display: flex; align-items: center; gap: 8px; padding-top: 4px;">
+            <n-checkbox v-model:checked="newConnection.useSudo" />
+            <span class="field-label" style="margin: 0;">使用 sudo 提升权限调用 docker（非 root 用户需在远端配置 NOPASSWD sudo）</span>
+          </div>
         </div>
       </div>
 

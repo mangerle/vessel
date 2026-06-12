@@ -21,6 +21,9 @@ pub struct SshConfig {
     pub port: u16,
     pub user: String,
     pub password: Option<String>,
+    /// 是否使用 sudo 提升权限调用 docker
+    /// 适用于远端用户不在 docker 组、但具备 NOPASSWD sudo 权限的场景
+    pub use_sudo: bool,
 }
 
 impl SshConfig {
@@ -243,7 +246,7 @@ impl SshBridge {
 
 /// 处理一个 TCP 代理连接：建立 russh 会话 + 透传到 channel
 async fn handle_proxy_connection(mut tcp: TcpStream, config: SshConfig) -> Result<(), String> {
-    let bridge = SshBridge::new(config);
+    let bridge = SshBridge::new(config.clone());
     let session = bridge.create_session().await?;
 
     let channel: SshChannel = session
@@ -252,7 +255,7 @@ async fn handle_proxy_connection(mut tcp: TcpStream, config: SshConfig) -> Resul
         .map_err(|e| format!("打开 SSH 通道失败: {}", e))?;
 
     channel
-        .exec(true, "docker system dial-stdio")
+        .exec(true, dial_stdio_command(&config).as_str())
         .await
         .map_err(|e| format!("执行 docker dial-stdio 失败: {}", e))?;
 
@@ -303,4 +306,13 @@ async fn handle_proxy_connection(mut tcp: TcpStream, config: SshConfig) -> Resul
         _ = copy_from_ssh => {},
     }
     Ok(())
+}
+
+/// 构造 dial-stdio 命令，必要时加 sudo 前缀
+fn dial_stdio_command(config: &SshConfig) -> String {
+    if config.use_sudo {
+        "sudo -n docker system dial-stdio".to_string()
+    } else {
+        "docker system dial-stdio".to_string()
+    }
 }

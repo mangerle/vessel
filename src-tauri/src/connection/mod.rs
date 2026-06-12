@@ -50,6 +50,9 @@ pub struct ConnectionConfig {
     pub ssh_user: Option<String>,
     #[serde(default)]
     pub ssh_password: Option<String>,
+    /// 是否使用 sudo 提升权限调用 docker（远端用户不在 docker 组时使用）
+    #[serde(default)]
+    pub use_sudo: bool,
 }
 
 impl ConnectionConfig {
@@ -63,6 +66,7 @@ impl ConnectionConfig {
             ssh_port: None,
             ssh_user: None,
             ssh_password: None,
+            use_sudo: false,
         }
     }
 }
@@ -77,6 +81,7 @@ pub static CONNECTION_CONFIG: LazyLock<RwLock<ConnectionConfig>> = LazyLock::new
         ssh_port: None,
         ssh_user: None,
         ssh_password: None,
+        use_sudo: false,
     })
 });
 
@@ -150,6 +155,7 @@ pub async fn get_docker_client() -> AppResult<Docker> {
                 port: config.ssh_port.unwrap_or(22),
                 user: config.ssh_user.clone().unwrap_or_default(),
                 password: config.ssh_password.clone(),
+                use_sudo: config.use_sudo,
             };
             let bridge = ssh::SshBridge::new(ssh_config);
             bridge.connect().await.map_err(|e| e.to_string())

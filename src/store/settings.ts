@@ -30,6 +30,8 @@ export interface DockerConnection {
   sshPort?: number
   sshUser?: string
   sshPassword?: string
+  /** SSH 模式下是否使用 sudo 提升权限调用 docker */
+  useSudo?: boolean
 }
 
 /**
@@ -44,6 +46,7 @@ export interface ConnectionConfigPayload {
   ssh_port: number | null
   ssh_user: string | null
   ssh_password: string | null
+  use_sudo: boolean
 }
 
 /**
@@ -58,7 +61,8 @@ const toConnectionConfig = (conn: DockerConnection): ConnectionConfigPayload => 
     ssh_host: conn.type === 'ssh' ? (conn.sshHost ?? null) : null,
     ssh_port: conn.type === 'ssh' ? (conn.sshPort ?? 22) : null,
     ssh_user: conn.type === 'ssh' ? (conn.sshUser ?? null) : null,
-    ssh_password: conn.type === 'ssh' ? (conn.sshPassword ?? null) : null
+    ssh_password: conn.type === 'ssh' ? (conn.sshPassword ?? null) : null,
+    use_sudo: conn.type === 'ssh' ? (conn.useSudo ?? false) : false
   }
 }
 
@@ -279,7 +283,8 @@ export const useSettingsStore = defineStore('settings', () => {
         ssh_host: null,
         ssh_port: null,
         ssh_user: null,
-        ssh_password: null
+        ssh_password: null,
+        use_sudo: false
       }
     }
     return toConnectionConfig(conn)

@@ -210,6 +210,7 @@ fn build_ssh_config(config: &ConnectionConfig) -> AppResult<ssh::SshConfig> {
             .clone()
             .ok_or_else(|| "SSH 用户未配置".to_string())?,
         password: config.ssh_password.clone(),
+        use_sudo: config.use_sudo,
     };
     ssh_cfg.validate()?;
     Ok(ssh_cfg)
@@ -347,11 +348,13 @@ fn build_ssh_compose_command(
         config.ssh_host.clone().unwrap_or_default()
     ));
 
-    // 拼接远端命令：cd <dir> && docker compose <args>
+    // 拼接远端命令：cd <dir> && [sudo] docker compose <args>
     // 对每个 arg 做单引号转义后用单引号包裹
+    let docker_prefix = if config.use_sudo { "sudo -n docker" } else { "docker" };
     let mut remote_cmd = format!(
-        "cd '{}' && docker compose",
-        project_dir.replace('\'', r"'\''")
+        "cd '{}' && {} compose",
+        project_dir.replace('\'', r"'\''"),
+        docker_prefix
     );
     for a in args {
         remote_cmd.push(' ');
