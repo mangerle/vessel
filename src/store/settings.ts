@@ -203,26 +203,67 @@ export const useSettingsStore = defineStore('settings', () => {
   }
   
   // 异步将当前的内存设置保存到本地物理 json 文件中
+  // 写入采用「只写变更 key」策略：首次保存全部字段，之后仅持久化与上次不同的字段
+  const lastSavedSnapshot = ref<Record<string, unknown> | null>(null)
+  const deepEqual = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true
+    if (a === null || b === null) return false
+    if (typeof a !== typeof b) return false
+    if (typeof a !== 'object') return false
+    if (Array.isArray(a) !== Array.isArray(b)) return false
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false
+      for (let i = 0; i < a.length; i++) {
+        if (!deepEqual(a[i], b[i])) return false
+      }
+      return true
+    }
+    const ka = Object.keys(a as object)
+    const kb = Object.keys(b as object)
+    if (ka.length !== kb.length) return false
+    for (const k of ka) {
+      if (!deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) {
+        return false
+      }
+    }
+    return true
+  }
+
   const saveSettings = async () => {
     try {
       const store = await getStore()
-      await store.set('autoStart', autoStart.value)
-      await store.set('closeToTray', closeToTray.value)
-      await store.set('theme', theme.value)
-      await store.set('refreshInterval', refreshInterval.value)
-      await store.set('visibleMenus', visibleMenus.value)
-      await store.set('connectionMode', connectionMode.value)
-      await store.set('wslDistro', wslDistro.value)
-      await store.set('sshHost', sshHost.value)
-      await store.set('sshPort', sshPort.value)
-      await store.set('sshUser', sshUser.value)
-      await store.set('sshPassword', sshPassword.value)
-      await store.set('connections', connections.value)
-      await store.set('activeConnectionId', activeConnectionId.value)
-      await store.set('registries', registries.value)
-      await store.set('currentRegistryId', currentRegistryId.value)
-      
-      // 执行物理落盘
+      // 待持久化的所有键值（与旧字段一并写出，确保旧版本兼容；后续可删除 legacy 字段）
+      const snapshot: Record<string, unknown> = {
+        autoStart: autoStart.value,
+        closeToTray: closeToTray.value,
+        theme: theme.value,
+        refreshInterval: refreshInterval.value,
+        visibleMenus: visibleMenus.value,
+        // legacy 字段保留写出，避免破坏旧版本兼容路径
+        connectionMode: connectionMode.value,
+        wslDistro: wslDistro.value,
+        sshHost: sshHost.value,
+        sshPort: sshPort.value,
+        sshUser: sshUser.value,
+        sshPassword: sshPassword.value,
+        connections: connections.value,
+        activeConnectionId: activeConnectionId.value,
+        registries: registries.value,
+        currentRegistryId: currentRegistryId.value
+      }
+      // 仅 set 与上次不同的 key，减少 IPC 次数
+      if (lastSavedSnapshot.value) {
+        for (const [k, v] of Object.entries(snapshot)) {
+          if (!deepEqual(v, lastSavedSnapshot.value[k])) {
+            await store.set(k, v)
+          }
+        }
+      } else {
+        for (const [k, v] of Object.entries(snapshot)) {
+          await store.set(k, v)
+        }
+      }
+      lastSavedSnapshot.value = snapshot
       await store.save()
     } catch (e) {
       console.error('保存配置到 settings.json 失败:', e)
