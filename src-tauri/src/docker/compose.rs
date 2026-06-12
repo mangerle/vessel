@@ -1,5 +1,5 @@
 use super::ComposeProject;
-use crate::connection::{ConnectionMode, get_docker_client};
+use crate::connection::{ConnectionConfig, ConnectionMode, current_config, get_docker_client, ssh};
 use crate::error::AppResult;
 use crate::handle_docker_op;
 use bollard::container::ListContainersOptions;
@@ -73,79 +73,146 @@ pub async fn list_compose_projects() -> AppResult<Vec<ComposeProject>> {
 }
 
 /// 读取 Compose 配置文件内容
+///
+/// 按当前活动连接模式自动分派：WSL 通过 wsl 命令、SSH 通过 SshBridge、
+/// Desktop 走本地文件系统。
 #[tauri::command]
-pub async fn read_compose_file(
-    path: String,
-    mode: String,
-    distro: Option<String>,
-) -> AppResult<String> {
-    let mode_enum = ConnectionMode::from(mode);
-    if mode_enum == ConnectionMode::Wsl {
-        let mut cmd = tokio::process::Command::new("wsl");
-        if let Some(d) = distro
-            && !d.is_empty()
-        {
-            cmd.args(["-d", &d]);
-        }
-        cmd.args(["-u", "root", "--", "cat", &path]);
+pub async fn read_compose_file(path: String) -> AppResult<String> {
+    let config = current_config().await;
+    log::info!("正在读取 Compose 文件: {} (模式: {:?})", path, config.mode);
+    read_file_via_config(&config, &path).await
+}
 
-        #[cfg(windows)]
-        cmd.creation_flags(super::CREATE_NO_WINDOW);
-
-        let out = cmd.output().await?;
-        if out.status.success() {
-            Ok(String::from_utf8_lossy(&out.stdout).to_string())
-        } else {
-            Err(String::from_utf8_lossy(&out.stderr).to_string().into())
-        }
-    } else {
-        Ok(tokio::fs::read_to_string(path).await?)
+async fn read_file_via_config(config: &ConnectionConfig, path: &str) -> AppResult<String> {
+    match config.mode {
+        ConnectionMode::Wsl => read_file_via_wsl(config.wsl_distro.as_deref(), path).await,
+        ConnectionMode::Ssh => read_file_via_ssh(config, path).await,
+        ConnectionMode::Desktop => Ok(tokio::fs::read_to_string(path).await?),
     }
+}
+
+async fn read_file_via_wsl(distro: Option<&str>, path: &str) -> AppResult<String> {
+    let mut cmd = tokio::process::Command::new("wsl");
+    if let Some(d) = distro
+        && !d.is_empty()
+    {
+        cmd.args(["-d", d]);
+    }
+    cmd.args(["-u", "root", "--", "cat", path]);
+
+    #[cfg(windows)]
+    cmd.creation_flags(super::CREATE_NO_WINDOW);
+
+    let out = cmd.output().await?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string().into())
+    }
+}
+
+async fn read_file_via_ssh(config: &ConnectionConfig, path: &str) -> AppResult<String> {
+    let ssh_config = build_ssh_config(config)?;
+    let bridge = ssh::SshBridge::new(ssh_config);
+    // 优先尝试单引号双层转义，保持远端路径原样
+    let escaped = path.replace('\'', r"'\''");
+    let cmd = format!("cat '{}'", escaped);
+    let out = bridge.exec_command(&cmd).await?;
+    Ok(out)
 }
 
 /// 写入 Compose 配置文件内容
 #[tauri::command]
-pub async fn write_compose_file(
-    path: String,
-    content: String,
-    mode: String,
-    distro: Option<String>,
+pub async fn write_compose_file(path: String, content: String) -> AppResult<()> {
+    let config = current_config().await;
+    log::info!("正在写入 Compose 文件: {} (模式: {:?})", path, config.mode);
+    write_file_via_config(&config, &path, &content).await
+}
+
+async fn write_file_via_config(
+    config: &ConnectionConfig,
+    path: &str,
+    content: &str,
 ) -> AppResult<()> {
-    log::info!("正在写入 Compose 文件: {}", path);
-    let mode_enum = ConnectionMode::from(mode);
-    if mode_enum == ConnectionMode::Wsl {
-        let mut cmd = tokio::process::Command::new("wsl");
-        if let Some(d) = distro
-            && !d.is_empty()
-        {
-            cmd.args(["-d", &d]);
+    match config.mode {
+        ConnectionMode::Wsl => write_file_via_wsl(config.wsl_distro.as_deref(), path, content).await,
+        ConnectionMode::Ssh => write_file_via_ssh(config, path, content).await,
+        ConnectionMode::Desktop => {
+            handle_docker_op!("Compose 文件写入", path, tokio::fs::write(path, content))
         }
-        // 使用 stdin 传递内容，避免 content 注入风险
-        // 使用 $1 传递路径，避免 path 注入风险
-        cmd.args(["-u", "root", "--", "sh", "-c", "cat > \"$1\"", "--", &path]);
-        cmd.stdin(Stdio::piped());
-
-        #[cfg(windows)]
-        cmd.creation_flags(super::CREATE_NO_WINDOW);
-
-        let mut child = cmd.spawn()?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(content.as_bytes()).await?;
-            drop(stdin);
-        }
-
-        let out = child.wait_with_output().await?;
-        if out.status.success() {
-            log::info!("Compose 文件写入成功 (WSL): {}", path);
-            Ok(())
-        } else {
-            let err = String::from_utf8_lossy(&out.stderr).to_string();
-            log::error!("Compose 文件写入失败 (WSL) {}: {}", path, err);
-            Err(err.into())
-        }
-    } else {
-        handle_docker_op!("Compose 文件写入", path, tokio::fs::write(&path, content))
     }
+}
+
+async fn write_file_via_wsl(
+    distro: Option<&str>,
+    path: &str,
+    content: &str,
+) -> AppResult<()> {
+    let mut cmd = tokio::process::Command::new("wsl");
+    if let Some(d) = distro
+        && !d.is_empty()
+    {
+        cmd.args(["-d", d]);
+    }
+    // 使用 $1 接收路径，cat 通过 stdin 接收内容，避免 shell 注入
+    cmd.args(["-u", "root", "--", "sh", "-c", "cat > \"$1\"", "--", path]);
+    cmd.stdin(Stdio::piped());
+
+    #[cfg(windows)]
+    cmd.creation_flags(super::CREATE_NO_WINDOW);
+
+    let mut child = cmd.spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(content.as_bytes()).await?;
+        drop(stdin);
+    }
+
+    let out = child.wait_with_output().await?;
+    if out.status.success() {
+        log::info!("Compose 文件写入成功 (WSL): {}", path);
+        Ok(())
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr).to_string();
+        log::error!("Compose 文件写入失败 (WSL) {}: {}", path, err);
+        Err(err.into())
+    }
+}
+
+async fn write_file_via_ssh(
+    config: &ConnectionConfig,
+    path: &str,
+    content: &str,
+) -> AppResult<()> {
+    let ssh_config = build_ssh_config(config)?;
+    let bridge = ssh::SshBridge::new(ssh_config);
+    // 使用 base64 编码避免引号/换行/特殊字符的 shell 注入问题
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
+    let escaped_path = path.replace('\'', r"'\''");
+    let cmd = format!(
+        "echo '{}' | base64 -d > '{}'",
+        encoded, escaped_path
+    );
+    bridge.exec_command(&cmd).await?;
+    log::info!("Compose 文件写入成功 (SSH): {}", path);
+    Ok(())
+}
+
+fn build_ssh_config(config: &ConnectionConfig) -> AppResult<ssh::SshConfig> {
+    let ssh_cfg = ssh::SshConfig {
+        host: config
+            .ssh_host
+            .clone()
+            .ok_or_else(|| "SSH 主机未配置".to_string())?,
+        port: config.ssh_port.unwrap_or(22),
+        user: config
+            .ssh_user
+            .clone()
+            .ok_or_else(|| "SSH 用户未配置".to_string())?,
+        password: config.ssh_password.clone(),
+    };
+    ssh_cfg.validate()?;
+    Ok(ssh_cfg)
 }
 
 /// 执行 Compose 命令并实时流式传输输出
@@ -154,34 +221,17 @@ pub async fn run_compose_command(
     app: AppHandle,
     project_dir: String,
     args: Vec<String>,
-    mode: String,
-    distro: Option<String>,
 ) -> AppResult<()> {
-    let mode_enum = ConnectionMode::from(mode);
+    let config = current_config().await;
     let args_str = args.join(" ");
     log::info!(
         "正在执行 Compose 命令: docker compose {} (目录: {}, 模式: {:?})",
         args_str,
         project_dir,
-        mode_enum
+        config.mode
     );
 
-    let mut cmd = if mode_enum == ConnectionMode::Wsl {
-        let mut c = tokio::process::Command::new("wsl");
-        if let Some(d) = distro
-            && !d.is_empty()
-        {
-            c.args(["-d", &d]);
-        }
-        // 使用 --cd 指定工作目录，使用 -- 传递 docker compose 命令，避免注入风险
-        c.args(["--cd", &project_dir, "--", "docker", "compose"]);
-        c.args(args);
-        c
-    } else {
-        let mut c = tokio::process::Command::new("docker");
-        c.arg("compose").args(args).current_dir(&project_dir);
-        c
-    };
+    let mut cmd = build_compose_command(&config, &project_dir, &args)?;
 
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -243,4 +293,113 @@ pub async fn run_compose_command(
     });
 
     Ok(())
+}
+
+/// 按当前活动连接模式构造 compose 子进程命令
+fn build_compose_command(
+    config: &ConnectionConfig,
+    project_dir: &str,
+    args: &[String],
+) -> AppResult<tokio::process::Command> {
+    match config.mode {
+        ConnectionMode::Wsl => {
+            let mut c = tokio::process::Command::new("wsl");
+            if let Some(d) = config.wsl_distro.as_deref()
+                && !d.is_empty()
+            {
+                c.args(["-d", d]);
+            }
+            c.args(["--cd", project_dir, "--", "docker", "compose"]);
+            c.args(args);
+            Ok(c)
+        }
+        ConnectionMode::Ssh => build_ssh_compose_command(config, project_dir, args),
+        ConnectionMode::Desktop => {
+            let mut c = tokio::process::Command::new("docker");
+            c.arg("compose").args(args).current_dir(project_dir);
+            Ok(c)
+        }
+    }
+}
+
+/// 通过 SSH 执行 docker compose 命令：把 `cd <dir> && docker compose <args>` 远端执行
+fn build_ssh_compose_command(
+    config: &ConnectionConfig,
+    project_dir: &str,
+    args: &[String],
+) -> AppResult<tokio::process::Command> {
+    build_ssh_config(config)?; // 校验配置
+
+    let mut c = tokio::process::Command::new("ssh");
+    c.args([
+        "-o", "BatchMode=no",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", &format!(
+            "UserKnownHostsFile={}",
+            if cfg!(windows) { "NUL" } else { "/dev/null" }
+        ),
+        "-o", "LogLevel=ERROR",
+        "-p", &config.ssh_port.unwrap_or(22).to_string(),
+    ])
+    .arg(format!(
+        "{}@{}",
+        config.ssh_user.clone().unwrap_or_default(),
+        config.ssh_host.clone().unwrap_or_default()
+    ));
+
+    // 拼接远端命令：cd <dir> && docker compose <args>
+    // 对每个 arg 做单引号转义后用单引号包裹
+    let mut remote_cmd = format!(
+        "cd '{}' && docker compose",
+        project_dir.replace('\'', r"'\''")
+    );
+    for a in args {
+        remote_cmd.push(' ');
+        remote_cmd.push('\'');
+        remote_cmd.push_str(&a.replace('\'', r"'\''"));
+        remote_cmd.push('\'');
+    }
+
+    c.arg(remote_cmd);
+
+    if let Some(pw) = &config.ssh_password {
+        // 通过 SSH_ASKPASS 机制注入密码
+        let askpass_path =
+            write_askpass_script(pw).map_err(|e| format!("写入 askpass 脚本失败: {}", e))?;
+        c.env("SSH_ASKPASS", &askpass_path)
+            .env("SSH_ASKPASS_REQUIRE", "force");
+        #[cfg(not(windows))]
+        c.env("DISPLAY", ":0");
+    }
+
+    Ok(c)
+}
+
+fn write_askpass_script(password: &str) -> Result<std::path::PathBuf, String> {
+    let dir = std::env::temp_dir().join("vessel_ssh_askpass");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建 askpass 目录: {}", e))?;
+
+    #[cfg(windows)]
+    let (filename, content) = {
+        let filename = format!("compose_askpass_{}.bat", std::process::id());
+        let content = format!("@echo off\r\necho {}\r\n", password);
+        (filename, content)
+    };
+    #[cfg(not(windows))]
+    let (filename, content) = {
+        let filename = format!("compose_askpass_{}.sh", std::process::id());
+        let escaped = password.replace('\'', "'\\''");
+        let content = format!("#!/bin/sh\necho '{}'\n", escaped);
+        (filename, content)
+    };
+
+    let path = dir.join(&filename);
+    std::fs::write(&path, &content).map_err(|e| format!("无法写入 askpass 脚本: {}", e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("无法设置 askpass 脚本权限: {}", e))?;
+    }
+    Ok(path)
 }

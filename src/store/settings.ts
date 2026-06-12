@@ -32,6 +32,36 @@ export interface DockerConnection {
   sshPassword?: string
 }
 
+/**
+ * 统一的连接配置（与 Rust 端 ConnectionConfig 形状完全一致）。
+ * 用于调用 update_connection_config 时序列化。
+ */
+export interface ConnectionConfigPayload {
+  mode: 'wsl' | 'ssh' | 'desktop'
+  name: string
+  wsl_distro: string | null
+  ssh_host: string | null
+  ssh_port: number | null
+  ssh_user: string | null
+  ssh_password: string | null
+}
+
+/**
+ * 把前端的 DockerConnection 序列化为后端 ConnectionConfig 形状。
+ * 仅取活动连接（activeConnection）的数据；未填写的可选字段统一置 null。
+ */
+const toConnectionConfig = (conn: DockerConnection): ConnectionConfigPayload => {
+  return {
+    mode: conn.type,
+    name: conn.name,
+    wsl_distro: conn.type === 'wsl' ? (conn.wslDistro ?? null) : null,
+    ssh_host: conn.type === 'ssh' ? (conn.sshHost ?? null) : null,
+    ssh_port: conn.type === 'ssh' ? (conn.sshPort ?? 22) : null,
+    ssh_user: conn.type === 'ssh' ? (conn.sshUser ?? null) : null,
+    ssh_password: conn.type === 'ssh' ? (conn.sshPassword ?? null) : null
+  }
+}
+
 export const useSettingsStore = defineStore('settings', () => {
   const autoStart = ref(false)
   const closeToTray = ref(true)
@@ -233,7 +263,28 @@ export const useSettingsStore = defineStore('settings', () => {
       console.error('清除 settings.json 失败:', e)
     }
   }
-  
+
+  /**
+   * 取得当前活动连接的 ConnectionConfig 形状（用于 invoke update_connection_config）。
+   * 如果没有任何连接，则回退到 WSL 默认值。
+   */
+  const getActiveConnectionConfig = (): ConnectionConfigPayload => {
+    const conn = connections.value.find(c => c.id === activeConnectionId.value)
+      || connections.value[0]
+    if (!conn) {
+      return {
+        mode: 'wsl',
+        name: 'WSL',
+        wsl_distro: null,
+        ssh_host: null,
+        ssh_port: null,
+        ssh_user: null,
+        ssh_password: null
+      }
+    }
+    return toConnectionConfig(conn)
+  }
+
   return {
     autoStart,
     closeToTray,
@@ -256,7 +307,8 @@ export const useSettingsStore = defineStore('settings', () => {
     setCloseToTray,
     setTheme,
     saveSettings,
-    resetSettings
+    resetSettings,
+    getActiveConnectionConfig
   }
 })
 

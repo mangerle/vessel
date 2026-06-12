@@ -171,24 +171,29 @@ const selectConnection = async (conn: { id: string; name: string; type: string; 
   await settingsStore.saveSettings()
   showSwitcher.value = false
   message.info(`正在切换连接至: ${conn.name}...`)
-  
-  // 1. 同步给后端 Rust 环境
+
+  connecting.value = true
+  isConnected.value = true
+
+  // 1. 同步给后端 Rust 环境（传入完整 ConnectionConfig）
   try {
-    await invoke('update_connection_config', { 
-      mode: conn.type, 
-      distro: conn.wslDistro || null 
-    })
+    const config = settingsStore.getActiveConnectionConfig()
+    await invoke('update_connection_config', { config })
   } catch (e) {
     console.error('后端连接同步失败:', e)
+    isConnected.value = false
+    connecting.value = false
+    message.error('同步后端配置失败: ' + e)
+    return
   }
 
-  // 2. 强制刷新连接
+  // 2. 强制 ping 探测新连接
   try {
-    connecting.value = true
     await invoke('ping_docker')
     message.success(`已连接到: ${conn.name}`)
-  } catch (e) {
+  } catch (e: any) {
     isConnected.value = false
+    message.error(`连接 ${conn.name} 失败: ${e}`)
   } finally {
     connecting.value = false
   }
@@ -199,20 +204,19 @@ const handleAutoConnect = async () => {
   // 模拟拉起过程（根据轻量化环境自愈技术）
   setTimeout(async () => {
     try {
-      // 同步给后端
-      await invoke('update_connection_config', { 
-        mode: settingsStore.connectionMode, 
-        distro: settingsStore.wslDistro 
-      })
-      
+      // 同步给后端（完整配置）
+      const config = settingsStore.getActiveConnectionConfig()
+      await invoke('update_connection_config', { config })
+      await invoke('ping_docker')
+
       isConnected.value = true
       connecting.value = false
-      message.success('WSL 管道已成功拉起，数据已点亮！')
+      message.success('数据管道已成功拉起，数据已点亮！')
       // 触发刷新
       router.go(0)
     } catch (e) {
       connecting.value = false
-      message.error('拉起失败，请手动启动 WSL Docker 守护进程')
+      message.error('拉起失败: ' + e)
     }
   }, 1500)
 }

@@ -128,15 +128,18 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
 
 onMounted(async () => {
   await settingsStore.loadSettings()
-  
-  // 初始化后端连接上下文
+
+  // 初始化后端连接上下文：传入完整的活动连接配置 + 触发连通性探测
   try {
-    await invoke('update_connection_config', { 
-      mode: settingsStore.connectionMode, 
-      distro: settingsStore.wslDistro 
-    })
+    const config = settingsStore.getActiveConnectionConfig()
+    await invoke('update_connection_config', { config })
   } catch (e) {
     console.error('初始化后端配置失败:', e)
+  }
+  try {
+    await invoke('ping_docker')
+  } catch (e) {
+    console.warn('启动时 Docker 连通性探测失败:', e)
   }
   
   // 监听窗口关闭事件

@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
-import { useSettingsStore } from './settings'
 import { useContainerStore } from './container'
 import type { ComposeProject } from '../api/types'
 import { composeApi } from '../api/compose'
@@ -46,13 +45,8 @@ export const useComposeStore = defineStore('compose', {
     async fetchComposeFile(path: string) {
       this.loading = true
       this.error = null
-      const settingsStore = useSettingsStore()
       try {
-        this.currentProjectFile = await composeApi.readFile(
-          path,
-          settingsStore.connectionMode,
-          settingsStore.wslDistro
-        )
+        this.currentProjectFile = await composeApi.readFile(path)
       } catch (err) {
         console.error('读取 Compose 文件失败:', err)
         this.error = String(err)
@@ -68,14 +62,8 @@ export const useComposeStore = defineStore('compose', {
     async saveComposeFile(path: string, content: string) {
       this.loading = true
       this.error = null
-      const settingsStore = useSettingsStore()
       try {
-        await composeApi.writeFile(
-          path, 
-          content,
-          settingsStore.connectionMode,
-          settingsStore.wslDistro
-        )
+        await composeApi.writeFile(path, content)
         this.currentProjectFile = content
       } catch (err) {
         console.error('保存 Compose 文件失败:', err)
@@ -93,7 +81,6 @@ export const useComposeStore = defineStore('compose', {
       this.executing = true
       this.commandOutput = []
       this.error = null
-      const settingsStore = useSettingsStore()
 
       const unlistenList: UnlistenFn[] = []
 
@@ -129,12 +116,7 @@ export const useComposeStore = defineStore('compose', {
         })
         unlistenList.push(unlistenError)
 
-        await composeApi.runCommand(
-          projectDir, 
-          args,
-          settingsStore.connectionMode,
-          settingsStore.wslDistro
-        )
+        await composeApi.runCommand(projectDir, args)
       } catch (err) {
         console.error('执行 Compose 命令失败:', err)
         this.error = String(err)

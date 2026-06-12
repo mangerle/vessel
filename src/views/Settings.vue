@@ -180,10 +180,24 @@ const handleSave = async () => {
   const activeConn = draft.value.connections.find(c => c.id === draft.value.activeConnectionId)
   if (activeConn) {
     try {
-      await invoke('update_connection_config', { 
-        mode: activeConn.type, 
-        distro: activeConn.wslDistro || null 
-      })
+      // 序列化整个活动连接为 ConnectionConfig 形状再下发给后端
+      const config = {
+        mode: activeConn.type,
+        name: activeConn.name,
+        wsl_distro: activeConn.type === 'wsl' ? (activeConn.wslDistro ?? null) : null,
+        ssh_host: activeConn.type === 'ssh' ? (activeConn.sshHost ?? null) : null,
+        ssh_port: activeConn.type === 'ssh' ? (activeConn.sshPort ?? 22) : null,
+        ssh_user: activeConn.type === 'ssh' ? (activeConn.sshUser ?? null) : null,
+        ssh_password: activeConn.type === 'ssh' ? (activeConn.sshPassword ?? null) : null
+      }
+      await invoke('update_connection_config', { config })
+      // 主动 ping 一次，立即验证配置生效
+      try {
+        await invoke('ping_docker')
+      } catch (e) {
+        warn(`已保存配置，但当前活动连接 ping 失败: ${e}`)
+        message.warning('配置已保存，但当前活动引擎尚未连通')
+      }
     } catch (e) {
       error(`后端配置同步失败: ${e}`)
       console.error('后端配置同步失败:', e)
@@ -200,13 +214,13 @@ const handleSave = async () => {
     settingsStore.connections = draft.value.connections.map(c => ({ ...c }))
     settingsStore.activeConnectionId = draft.value.activeConnectionId
     settingsStore.registries = draft.value.registries.map(r => ({ ...r }))
-    
+
     await settingsStore.setAutoStart(draft.value.autoStart) // 会触发自启动插件并保存
     await settingsStore.saveSettings()
-    
+
     // 3. 重新同步草稿，使 isDirty 变为 false，按钮自动退去高亮
     syncDraftFromStore()
-    
+
     info('配置保存成功并已落盘')
     message.success('配置已成功落盘，系统通信管道已重载！')
   } catch (e) {

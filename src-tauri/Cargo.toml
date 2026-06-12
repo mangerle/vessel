@@ -49,4 +49,6 @@ http-body-util = "0.1"
 futures-util = "0.3"
 tauri-plugin-log = "2.8.0"
 log = "0.4.30"
+russh = { version = "0.54", default-features = false, features = ["ring"] }
+base64 = "0.22"
 
