@@ -404,5 +404,24 @@ fn write_askpass_script(password: &str) -> Result<std::path::PathBuf, String> {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
             .map_err(|e| format!("无法设置 askpass 脚本权限: {}", e))?;
     }
+    #[cfg(windows)]
+    {
+        // Windows 上使用 icacls 收紧 ACL：仅当前用户可读写，
+        // 避免其他低权限进程读到明文密码
+        let _ = std::process::Command::new("icacls")
+            .args([
+                path.to_str().unwrap_or(""),
+                "/inheritance:r",            // 移除继承的 ACL
+                "/grant:r",                  // 替换现有权限
+                &format!("{}:(R,W)", whoami_safe()), // 仅当前用户读写
+            ])
+            .output();
+    }
     Ok(path)
+}
+
+/// 安全获取当前 Windows 用户名（用于 icacls）
+#[cfg(windows)]
+fn whoami_safe() -> String {
+    std::env::var("USERNAME").unwrap_or_else(|_| "%USERNAME%".to_string())
 }
