@@ -10,25 +10,36 @@ use tokio::net::TcpListener;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
+#[cfg(windows)]
+use crate::docker::CREATE_NO_WINDOW;
+const TIMEOUT_CHECK_INTERVAL_SECS: u64 = 5;
+const IDLE_TIMEOUT_SECS: u64 = 15;
+
 /// WSL 桥接驱动
 #[derive(Default)]
 pub struct WslBridge {
     pub distro: Option<String>,
 }
 
-/// 存储代理端口，避免重复启动代理服务器
-static PROXY_PORT: LazyLock<Mutex<Option<u16>>> = LazyLock::new(|| Mutex::new(None));
-
-/// 重置代理端口缓存
-pub async fn reset_proxy_port() {
-    let mut port_lock = PROXY_PORT.lock().await;
-    *port_lock = None;
+/// 代理句柄：包含端口与取消信号，用于真正停止后台 listener 任务
+struct ProxyHandle {
+    port: u16,
+    cancel: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
-#[cfg(windows)]
-use crate::docker::CREATE_NO_WINDOW;
-const TIMEOUT_CHECK_INTERVAL_SECS: u64 = 5;
-const IDLE_TIMEOUT_SECS: u64 = 15;
+/// 全局 WSL 代理句柄，初始为空
+static PROXY_HANDLE: LazyLock<Mutex<Option<ProxyHandle>>> = LazyLock::new(|| Mutex::new(None));
+
+/// 关闭并清理当前 WSL TCP 代理（停止后台 listener 任务，释放端口）
+pub async fn reset_proxy_port() {
+    let mut guard = PROXY_HANDLE.lock().await;
+    if let Some(handle) = guard.take()
+        && let Some(tx) = handle.cancel
+    {
+        let _ = tx.send(());
+    }
+    log::info!("WSL 代理已收到关闭信号");
+}
 
 impl WslBridge {
     pub fn new(distro: Option<String>) -> Self {
@@ -57,11 +68,16 @@ impl WslBridge {
 
     /// 确保 TCP 代理服务器正在运行
     async fn ensure_proxy(&self) -> Result<u16, String> {
-        let mut port_lock = PROXY_PORT.lock().await;
-
-        if let Some(port) = *port_lock {
-            return Ok(port);
+        // 已有代理则直接复用
+        {
+            let guard = PROXY_HANDLE.lock().await;
+            if let Some(h) = guard.as_ref() {
+                return Ok(h.port);
+            }
         }
+
+        // 关闭可能残留的旧代理
+        reset_proxy_port().await;
 
         // 绑定到随机可用端口
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -69,116 +85,140 @@ impl WslBridge {
             .map_err(|e| format!("无法绑定代理端口: {}", e))?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
         let distro = self.distro.clone();
 
         // 在后台运行代理逻辑
         tokio::spawn(async move {
-            while let Ok((mut client_socket, _)) = listener.accept().await {
-                let distro_clone = distro.clone();
-                tokio::spawn(async move {
-                    // 为每个连接启动一个 wsl 进程
-                    let mut cmd = Command::new("wsl");
-                    if let Some(d) = distro_clone
-                        && !d.is_empty()
-                    {
-                        cmd.args(["-d", &d]);
+            loop {
+                tokio::select! {
+                    _ = &mut cancel_rx => {
+                        log::info!("WSL 代理收到关闭信号，停止监听");
+                        break;
                     }
-                    cmd.args(["docker", "system", "dial-stdio"])
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::null());
-
-                    #[cfg(windows)]
-                    {
-                        cmd.creation_flags(CREATE_NO_WINDOW);
-                    }
-
-                    let child = cmd.spawn();
-
-                    if let Ok(mut child) = child {
-                        let mut stdin = match child.stdin.take() {
-                            Some(s) => s,
-                            None => {
-                                log::error!("无法获取 WSL 进程的 stdin");
-                                return;
+                    accept = listener.accept() => {
+                        match accept {
+                            Ok((mut client_socket, _)) => {
+                                let distro_clone = distro.clone();
+                                tokio::spawn(async move {
+                                    handle_proxy_connection(client_socket, distro_clone).await;
+                                });
                             }
-                        };
-                        let mut stdout = match child.stdout.take() {
-                            Some(s) => s,
-                            None => {
-                                log::error!("无法获取 WSL 进程的 stdout");
-                                return;
+                            Err(e) => {
+                                log::error!("WSL 代理 accept 错误: {}", e);
+                                break;
                             }
-                        };
-
-                        let (client_reader, client_writer) = client_socket.split();
-
-                        let last_activity = Arc::new(AtomicU64::new(get_elapsed_seconds()));
-
-                        let mut reader = TimeoutIO {
-                            inner: client_reader,
-                            last_activity: last_activity.clone(),
-                        };
-                        let mut writer = TimeoutIO {
-                            inner: client_writer,
-                            last_activity: last_activity.clone(),
-                        };
-
-                        let last_activity_clone = last_activity.clone();
-                        let timeout_task = async move {
-                            loop {
-                                tokio::time::sleep(std::time::Duration::from_secs(
-                                    TIMEOUT_CHECK_INTERVAL_SECS,
-                                ))
-                                .await;
-                                let now = get_elapsed_seconds();
-                                let last = last_activity_clone.load(Ordering::Relaxed);
-                                if now - last > IDLE_TIMEOUT_SECS {
-                                    // 超过 15 秒无任何数据收发，则判定为空闲，主动断开连接
-                                    break;
-                                }
-                            }
-                        };
-
-                        let copy_task = async {
-                            tokio::select! {
-                                _ = tokio::io::copy(&mut reader, &mut stdin) => {},
-                                _ = tokio::io::copy(&mut stdout, &mut writer) => {},
-                            };
-                        };
-
-                        tokio::select! {
-                            _ = copy_task => {},
-                            _ = timeout_task => {},
                         }
-
-                        // 显式释放所有 IO 句柄与管道，向 wsl 发送 EOF，引导其自动关闭
-                        drop(stdin);
-                        drop(stdout);
-                        drop(reader);
-                        drop(writer);
-
-                        // 强行终止子进程并带有超时保护地等待其退出，防止发生协程卡死
-                        let _ = child.kill().await;
-                        let _ =
-                            tokio::time::timeout(std::time::Duration::from_secs(1), child.wait())
-                                .await;
                     }
-                });
+                }
             }
-            // 监听循环结束（listener 关闭），清除端口缓存
-            let mut port_lock = PROXY_PORT.lock().await;
-            if *port_lock == Some(port) {
-                *port_lock = None;
-            }
+            // listener 在此 drop，端口自动释放
         });
 
-        *port_lock = Some(port);
+        *PROXY_HANDLE.lock().await = Some(ProxyHandle {
+            port,
+            cancel: Some(cancel_tx),
+        });
+
+        log::info!("WSL TCP 代理已启动于 127.0.0.1:{}", port);
         Ok(port)
     }
 }
 
-// ================== WSL 进程与连接空闲清理辅助组件 ==================
+/// 处理单个 TCP 代理连接：启动一个 wsl 进程并透传字节流
+async fn handle_proxy_connection(
+    mut client_socket: tokio::net::TcpStream,
+    distro: Option<String>,
+) {
+    let mut cmd = Command::new("wsl");
+    if let Some(d) = distro.as_deref()
+        && !d.is_empty()
+    {
+        cmd.args(["-d", d]);
+    }
+    cmd.args(["docker", "system", "dial-stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("无法启动 wsl 子进程: {}", e);
+            return;
+        }
+    };
+
+    let mut stdin = match child.stdin.take() {
+        Some(s) => s,
+        None => {
+            log::error!("无法获取 WSL 进程的 stdin");
+            return;
+        }
+    };
+    let mut stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            log::error!("无法获取 WSL 进程的 stdout");
+            return;
+        }
+    };
+
+    let (client_reader, client_writer) = client_socket.split();
+
+    let last_activity = Arc::new(AtomicU64::new(get_elapsed_seconds()));
+
+    let mut reader = TimeoutIO {
+        inner: client_reader,
+        last_activity: last_activity.clone(),
+    };
+    let mut writer = TimeoutIO {
+        inner: client_writer,
+        last_activity: last_activity.clone(),
+    };
+
+    let last_activity_clone = last_activity.clone();
+    let timeout_task = async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(TIMEOUT_CHECK_INTERVAL_SECS)).await;
+            let now = get_elapsed_seconds();
+            let last = last_activity_clone.load(Ordering::Relaxed);
+            if now - last > IDLE_TIMEOUT_SECS {
+                // 超过 15 秒无任何数据收发，则判定为空闲，主动断开连接
+                break;
+            }
+        }
+    };
+
+    let copy_task = async {
+        tokio::select! {
+            _ = tokio::io::copy(&mut reader, &mut stdin) => {},
+            _ = tokio::io::copy(&mut stdout, &mut writer) => {},
+        };
+    };
+
+    tokio::select! {
+        _ = copy_task => {},
+        _ = timeout_task => {},
+    }
+
+    // 显式释放所有 IO 句柄与管道，向 wsl 发送 EOF，引导其自动关闭
+    drop(stdin);
+    drop(stdout);
+    drop(reader);
+    drop(writer);
+
+    // 强行终止子进程并带有超时保护地等待其退出，防止发生协程卡死
+    let _ = child.kill().await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), child.wait()).await;
+}
+
+// ================== 空闲清理辅助组件 ==================
 
 static START_INSTANT: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
 
