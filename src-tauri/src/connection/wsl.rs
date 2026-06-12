@@ -98,7 +98,7 @@ impl WslBridge {
                     }
                     accept = listener.accept() => {
                         match accept {
-                            Ok((mut client_socket, _)) => {
+                            Ok((client_socket, _)) => {
                                 let distro_clone = distro.clone();
                                 tokio::spawn(async move {
                                     handle_proxy_connection(client_socket, distro_clone).await;
