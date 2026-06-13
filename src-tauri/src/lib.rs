@@ -8,8 +8,33 @@ use tauri::{
     Emitter, Manager,
 };
 
+/// 修复 P1-11：构建并安装自定义 tokio multi-thread runtime 作为 tauri 全局 runtime。
+/// tauri 2 默认 runtime 是 multi-thread 但 worker 数依赖 tokio 默认启发式（=CPU 核数），
+/// 对本应用这种 I/O 密集 + 多 Docker 长连接流的场景偏保守。显式设置为
+/// `max(NUM_CPUS * 2, 8)`，让 bollard 流、SSH 子进程、HTTP 探测等可并行。
+/// 注意：必须持有 Runtime 至 run() 结束，否则 worker 线程会被 drop。
+fn install_async_runtime() -> tokio::runtime::Runtime {
+    let worker_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .saturating_mul(2)
+        .max(8);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .enable_all()
+        .thread_name("vessel-tokio")
+        .build()
+        .expect("构建 tokio runtime 失败");
+    // 将 runtime handle 设为 tauri 全局 async runtime，后续 tauri::async_runtime::spawn
+    // 与 #[tauri::command] 都将使用此 runtime。
+    tauri::async_runtime::set(runtime.handle().clone());
+    runtime
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 修复 P1-11：安装显式配置的 multi-thread runtime 作为全局 async runtime
+    let _async_runtime_guard = install_async_runtime();
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()

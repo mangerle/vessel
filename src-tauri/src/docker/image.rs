@@ -391,71 +391,58 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
         };
 
         let mut total_bytes = 0i64;
-        // 4Hz 节流：导出按 chunk 多次到达，1GB 镜像 ≈2000+ chunk
+        // 修复 P1-10：4Hz 节流——导出按 chunk 多次到达，1GB 镜像 ≈2000+ chunk。
+        // 初始 last_emit 倒退 250ms：保证首 chunk 立即发出首帧进度。
+        // 末尾循环外再 emit 一次最终字节数，确保 UI 进度条走到 100%。
         let mut last_emit = Instant::now() - Duration::from_millis(250);
         const EMIT_INTERVAL: Duration = Duration::from_millis(250);
+
+        // 提取 emit 闭包，避免重复代码
+        let emit_progress = |bytes: i64| {
+            let _ = app_handle.emit(
+                "image-export-progress",
+                ImageExportProgressPayload {
+                    image: name_clone.clone(),
+                    bytes_written: bytes,
+                },
+            );
+        };
+        let emit_error = |err_msg: String| {
+            log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
+            let _ = app_handle.emit(
+                "image-export-error",
+                ImageErrorPayload {
+                    image: name_clone.clone(),
+                    error: err_msg,
+                },
+            );
+        };
 
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
                     total_bytes += bytes.len() as i64;
                     if let Err(e) = file.write_all(&bytes).await {
-                        let err_msg = format!("写入镜像数据失败: {}", e);
-                        log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
-                        let _ = app_handle.emit(
-                            "image-export-error",
-                            ImageErrorPayload {
-                                image: name_clone,
-                                error: err_msg,
-                            },
-                        );
+                        emit_error(format!("写入镜像数据失败: {}", e));
                         return;
                     }
 
                     if last_emit.elapsed() >= EMIT_INTERVAL {
-                        let _ = app_handle.emit(
-                            "image-export-progress",
-                            ImageExportProgressPayload {
-                                image: name_clone.clone(),
-                                bytes_written: total_bytes,
-                            },
-                        );
+                        emit_progress(total_bytes);
                         last_emit = Instant::now();
                     }
                 }
                 Err(e) => {
-                    let err_msg = format!("读取镜像导出流失败: {}", e);
-                    log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
-                    let _ = app_handle.emit(
-                        "image-export-error",
-                        ImageErrorPayload {
-                            image: name_clone,
-                            error: err_msg,
-                        },
-                    );
+                    emit_error(format!("读取镜像导出流失败: {}", e));
                     return;
                 }
             }
         }
         // 末尾 flush 最后一帧，确保 UI 进度条走到 100%
-        let _ = app_handle.emit(
-            "image-export-progress",
-            ImageExportProgressPayload {
-                image: name_clone.clone(),
-                bytes_written: total_bytes,
-            },
-        );
+        emit_progress(total_bytes);
 
         if let Err(e) = file.flush().await {
-            let err_msg = format!("刷新文件失败: {}", e);
-            log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
-            let _ = app_handle.emit(
-                "image-export-error",
-                ImageErrorPayload {
-                    image: name_clone,
-                    error: err_msg,
-                },
-            );
+            emit_error(format!("刷新文件失败: {}", e));
             return;
         }
 

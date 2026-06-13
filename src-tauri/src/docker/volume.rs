@@ -33,6 +33,8 @@ pub async fn prune_volumes() -> AppResult<()> {
 }
 
 /// 获取使用特定卷的容器列表
+/// 修复 P1-9：ContainerSummary 自身已带 mounts 字段，无需逐个 inspect_container。
+/// 由 N 次 IPC（O(N) inspect）→ 0 次额外 IPC，仅一次 list_containers。
 #[tauri::command]
 pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> {
     let docker = get_docker_client().await?;
@@ -44,39 +46,33 @@ pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> 
         }))
         .await?;
 
-    let inspect_futures = containers.into_iter().filter_map(|c| {
-        let id = c.id?;
-        let docker_clone = docker.clone();
-        Some(async move {
-            let result = docker_clone.inspect_container(&id, None).await;
-            (id, result)
-        })
-    });
-
-    let inspect_results = futures_util::future::join_all(inspect_futures).await;
     let mut users = Vec::new();
 
-    for (id, result) in inspect_results {
-        if let Ok(details) = result {
-            if let Some(mounts) = details.mounts {
-                for mount in mounts {
-                    if mount.name.as_deref() == Some(&name)
-                        || mount.source.as_deref() == Some(&name)
-                    {
-                        users.push(VolumeUser {
-                            container_id: id.clone(),
-                            container_name: details
-                                .name
-                                .clone()
-                                .unwrap_or_default()
-                                .trim_start_matches('/')
-                                .to_string(),
-                            source: mount.source.unwrap_or_default(),
-                            destination: mount.destination.unwrap_or_default(),
-                            mode: mount.mode.unwrap_or_default(),
-                            rw: mount.rw.unwrap_or_default(),
-                        });
-                    }
+    for c in containers {
+        let id = match c.id {
+            Some(id) => id,
+            None => continue,
+        };
+        let container_name = c
+            .names
+            .as_ref()
+            .and_then(|names| names.first())
+            .map(|n| n.trim_start_matches('/').to_string())
+            .unwrap_or_default();
+        if let Some(mounts) = c.mounts {
+            for mount in mounts {
+                // 命名卷：mount.name 命中；bind mount：mount.source 命中
+                if mount.name.as_deref() == Some(&name)
+                    || mount.source.as_deref() == Some(&name)
+                {
+                    users.push(VolumeUser {
+                        container_id: id.clone(),
+                        container_name: container_name.clone(),
+                        source: mount.source.unwrap_or_default(),
+                        destination: mount.destination.unwrap_or_default(),
+                        mode: mount.mode.unwrap_or_default(),
+                        rw: mount.rw.unwrap_or_default(),
+                    });
                 }
             }
         }
