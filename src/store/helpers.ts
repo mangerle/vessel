@@ -11,6 +11,8 @@
  * - 错误重新抛出，让 view 层可继续捕获 toast，避免静默吞错。
  */
 
+import { error as logError } from '@tauri-apps/plugin-log'
+
 export interface LoadingErrorState {
   loading: boolean
   error: string | null
@@ -21,7 +23,7 @@ export interface LoadingErrorState {
  * 1. 进入时置 loading=true、清空 error；
  * 2. 执行 actionFn 并保留其返回值；
  * 3. 若提供 refresh，则在动作成功后调用之；
- * 4. 出错时记录 error 字段并 console.error，再向上抛出；
+ * 4. 出错时记录 error 字段并通过 tauri-plugin-log 落盘后端日志，再向上抛出；
  * 5. 无论成功失败 finally 关闭 loading。
  */
 export async function runStoreAction<T>(
@@ -39,7 +41,9 @@ export async function runStoreAction<T>(
     }
     return result
   } catch (err) {
-    console.error(`${actionName}失败:`, err)
+    // 走 tauri-plugin-log 而非 console.error：
+    // attachConsole 虽然能桥接，但显式调用更贴合错误路径语义，便于后端按 level 过滤。
+    logError(`${actionName}失败: ${err}`).catch(() => {})
     state.error = String(err)
     throw err
   } finally {

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 
 /**
  * settings.json 物理文件的 zod schema
@@ -76,7 +77,7 @@ export function safeParseField<T extends z.ZodTypeAny>(
   if (result.success) {
     return result.data
   }
-  console.warn(`settings.json 字段 ${key} 格式非法，已回退默认值:`, result.error.issues)
+  logWarn(`settings.json 字段 ${key} 格式非法，已回退默认值: ${JSON.stringify(result.error.issues)}`).catch(() => {})
   return fallback
 }
 

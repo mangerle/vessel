@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { Store } from '@tauri-apps/plugin-store'
-import { emptyWslConfig, matchesConnectionConfig, toConnectionConfig } from '../api/connection'
+import { error as logError, warn as logWarn } from '@tauri-apps/plugin-log'
+import { emptyWslConfig, matchesConnectionConfig, toConnectionConfig, DEFAULT_SSH_PORT } from '../api/connection'
 import { connectionApi } from '../api/connectionApi'
 import { safeParseField, settingsFieldSchemas } from './settingsSchema'
 import type { ConnectionConfigPayload } from '../api/connection'
@@ -77,7 +78,7 @@ export const useSettingsStore = defineStore('settings', () => {
   )
   const wslDistro = computed(() => activeConnection.value?.wslDistro || '')
   const sshHost = computed(() => activeConnection.value?.sshHost || '')
-  const sshPort = computed(() => activeConnection.value?.sshPort ?? 22)
+  const sshPort = computed(() => activeConnection.value?.sshPort ?? DEFAULT_SSH_PORT)
   const sshUser = computed(() => activeConnection.value?.sshUser || '')
   const sshPassword = computed(() => activeConnection.value?.sshPassword || '')
 
@@ -151,7 +152,7 @@ export const useSettingsStore = defineStore('settings', () => {
         const legacyPort = safeParseField(
           settingsFieldSchemas.sshPort,
           await store.get<number>('sshPort'),
-          22,
+          DEFAULT_SSH_PORT,
           'sshPort'
         )
         const legacyUser = safeParseField(
@@ -244,10 +245,10 @@ export const useSettingsStore = defineStore('settings', () => {
         await saveSettings()
       }
     } catch (e) {
-      console.error('从 settings.json 加载配置失败:', e)
+      logError(`从 settings.json 加载配置失败: ${e}`).catch(() => {})
     }
   }
-  
+
   const setAutoStart = async (value: boolean) => {
     try {
       if (value) {
@@ -258,7 +259,7 @@ export const useSettingsStore = defineStore('settings', () => {
       autoStart.value = value
       await saveSettings()
     } catch (e) {
-      console.error('设置自启动失败:', e)
+      logError(`设置自启动失败: ${e}`).catch(() => {})
     }
   }
 
@@ -349,10 +350,10 @@ export const useSettingsStore = defineStore('settings', () => {
       lastSavedSnapshot.value = cloneSnapshot(snapshot)
       await store.save()
     } catch (e) {
-      console.error('保存配置到 settings.json 失败:', e)
+      logError(`保存配置到 settings.json 失败: ${e}`).catch(() => {})
     }
   }
-  
+
   // 恢复出厂设置，直接清空本地配置文件
   const resetSettings = async () => {
     try {
@@ -360,7 +361,7 @@ export const useSettingsStore = defineStore('settings', () => {
       await store.clear()
       await store.save()
     } catch (e) {
-      console.error('清除 settings.json 失败:', e)
+      logError(`清除 settings.json 失败: ${e}`).catch(() => {})
     }
   }
 
@@ -425,7 +426,7 @@ export const useSettingsStore = defineStore('settings', () => {
         await connectionApi.ping()
         pingOk = true
       } catch (e) {
-        console.warn('已保存配置，但当前活动连接 ping 失败:', e)
+        logWarn(`已保存配置，但当前活动连接 ping 失败: ${e}`).catch(() => {})
         pingOk = false
       }
     }
