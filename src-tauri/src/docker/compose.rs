@@ -135,7 +135,9 @@ async fn write_file_via_config(
     content: &str,
 ) -> AppResult<()> {
     match config.mode {
-        ConnectionMode::Wsl => write_file_via_wsl(config.wsl_distro.as_deref(), path, content).await,
+        ConnectionMode::Wsl => {
+            write_file_via_wsl(config.wsl_distro.as_deref(), path, content).await
+        }
         ConnectionMode::Ssh => write_file_via_ssh(config, path, content).await,
         ConnectionMode::Desktop => {
             handle_docker_op!("Compose 文件写入", path, tokio::fs::write(path, content))
@@ -143,11 +145,7 @@ async fn write_file_via_config(
     }
 }
 
-async fn write_file_via_wsl(
-    distro: Option<&str>,
-    path: &str,
-    content: &str,
-) -> AppResult<()> {
+async fn write_file_via_wsl(distro: Option<&str>, path: &str, content: &str) -> AppResult<()> {
     // 修复 S1-10：原实现 `sh -c "cat > \"$1\"" -- "$path"` 在 path 含 `$`/双引号/`\` 时
     // 会被 shell 二次解释，存在命令注入风险。改为：
     // 1) 将 content 走 stdin 输入，避免任何 shell 解释
@@ -195,40 +193,32 @@ fn shell_escape_single_quote(s: &str) -> String {
     s.replace('\'', "'\\''")
 }
 
-async fn write_file_via_ssh(
-    config: &ConnectionConfig,
-    path: &str,
-    content: &str,
-) -> AppResult<()> {
+async fn write_file_via_ssh(config: &ConnectionConfig, path: &str, content: &str) -> AppResult<()> {
     let ssh_config = build_ssh_config(config)?;
     let bridge = ssh::SshBridge::new(ssh_config);
     // 使用 base64 编码避免引号/换行/特殊字符的 shell 注入问题
     use base64::Engine;
     let encoded = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
     let escaped_path = shell_escape_single_quote(path);
-    let cmd = format!(
-        "echo '{}' | base64 -d > '{}'",
-        encoded, escaped_path
-    );
+    let cmd = format!("echo '{}' | base64 -d > '{}'", encoded, escaped_path);
     bridge.exec_command(&cmd).await?;
     log::info!("Compose 文件写入成功 (SSH): {}", path);
     Ok(())
 }
 
 fn build_ssh_config(config: &ConnectionConfig) -> AppResult<ssh::SshConfig> {
-    let ssh_cfg = ssh::SshConfig {
-        host: config
-            .ssh_host
-            .clone()
-            .ok_or_else(|| crate::error::AppError::ConfigMissing("SSH 主机未配置".to_string()))?,
-        port: config.ssh_port.unwrap_or(22),
-        user: config
-            .ssh_user
-            .clone()
-            .ok_or_else(|| crate::error::AppError::ConfigMissing("SSH 用户未配置".to_string()))?,
-        password: config.ssh_password.clone(),
-        use_sudo: config.use_sudo,
-    };
+    let ssh_cfg =
+        ssh::SshConfig {
+            host: config.ssh_host.clone().ok_or_else(|| {
+                crate::error::AppError::ConfigMissing("SSH 主机未配置".to_string())
+            })?,
+            port: config.ssh_port.unwrap_or(22),
+            user: config.ssh_user.clone().ok_or_else(|| {
+                crate::error::AppError::ConfigMissing("SSH 用户未配置".to_string())
+            })?,
+            password: config.ssh_password.clone(),
+            use_sudo: config.use_sudo,
+        };
     ssh_cfg.validate()?;
     Ok(ssh_cfg)
 }
@@ -264,11 +254,11 @@ pub async fn run_compose_command(
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| "无法获取 compose 进程的 stdout")?;
+        .ok_or("无法获取 compose 进程的 stdout")?;
     let stderr = child
         .stderr
         .take()
-        .ok_or_else(|| "无法获取 compose 进程的 stderr")?;
+        .ok_or("无法获取 compose 进程的 stderr")?;
 
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -350,14 +340,19 @@ fn build_ssh_compose_command(
 
     let mut c = tokio::process::Command::new("ssh");
     c.args([
-        "-o", "BatchMode=no",
-        "-o", "StrictHostKeyChecking=no",
-        "-o", &format!(
+        "-o",
+        "BatchMode=no",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        &format!(
             "UserKnownHostsFile={}",
             if cfg!(windows) { "NUL" } else { "/dev/null" }
         ),
-        "-o", "LogLevel=ERROR",
-        "-p", &config.ssh_port.unwrap_or(22).to_string(),
+        "-o",
+        "LogLevel=ERROR",
+        "-p",
+        &config.ssh_port.unwrap_or(22).to_string(),
     ])
     .arg(format!(
         "{}@{}",
@@ -367,7 +362,11 @@ fn build_ssh_compose_command(
 
     // 拼接远端命令：cd <dir> && [sudo] docker compose <args>
     // 对每个 arg 做单引号转义后用单引号包裹
-    let docker_prefix = if config.use_sudo { "sudo -n docker" } else { "docker" };
+    let docker_prefix = if config.use_sudo {
+        "sudo -n docker"
+    } else {
+        "docker"
+    };
     let mut remote_cmd = format!(
         "cd '{}' && {} compose",
         shell_escape_single_quote(project_dir),
@@ -428,8 +427,8 @@ fn write_askpass_script(password: &str) -> Result<std::path::PathBuf, String> {
         let _ = std::process::Command::new("icacls")
             .args([
                 path.to_str().unwrap_or(""),
-                "/inheritance:r",            // 移除继承的 ACL
-                "/grant:r",                  // 替换现有权限
+                "/inheritance:r",                    // 移除继承的 ACL
+                "/grant:r",                          // 替换现有权限
                 &format!("{}:(R,W)", whoami_safe()), // 仅当前用户读写
             ])
             .output();

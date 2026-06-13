@@ -91,11 +91,11 @@ pub async fn spawn_stream_handler<S, T, E>(
                         }
                     }
                     _ = t.tick() => {
-                        if let Some(data) = pending.take() {
-                            if let Err(e) = app.emit(&event_name, data) {
-                                log::error!("发送 {} 事件失败: {}", stream_type, e);
-                                break;
-                            }
+                        if let Some(data) = pending.take()
+                            && let Err(e) = app.emit(&event_name, data)
+                        {
+                            log::error!("发送 {} 事件失败: {}", stream_type, e);
+                            break;
                         }
                     }
                 }

@@ -3,11 +3,11 @@ use russh::client::{self, Config, Handle, Handler};
 use russh::keys::PublicKey;
 use russh::{Channel, ChannelMsg};
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{oneshot, Mutex};
-use std::sync::LazyLock;
+use tokio::sync::{Mutex, oneshot};
 
 use crate::error::{AppError, AppResult};
 
@@ -55,10 +55,13 @@ impl SshConfig {
             )));
         }
         if self.host.len() > SSH_HOST_MAX_LEN
-            || self
-                .host
-                .chars()
-                .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '$' | '|' | '&' | ';' | '<' | '>' | '\\' | ' '))
+            || self.host.chars().any(|c| {
+                c.is_whitespace()
+                    || matches!(
+                        c,
+                        '"' | '\'' | '`' | '$' | '|' | '&' | ';' | '<' | '>' | '\\' | ' '
+                    )
+            })
         {
             return Err(AppError::SshBridge(format!(
                 "SSH 主机地址含非法字符或长度超过 {}",
@@ -256,7 +259,12 @@ impl SshBridge {
             client::connect(ssh_config, addr, TrustAllHostKeyHandler),
         )
         .await
-        .map_err(|_| format!("连接 SSH 服务器 {}:{} 超时", self.config.host, self.config.port))?
+        .map_err(|_| {
+            format!(
+                "连接 SSH 服务器 {}:{} 超时",
+                self.config.host, self.config.port
+            )
+        })?
         .map_err(|e| format!("SSH 连接失败: {}", e))?;
 
         let auth_result = match &self.config.password {
@@ -265,9 +273,7 @@ impl SshBridge {
                 .await
                 .map_err(|e| format!("密码鉴权失败: {}", e))?,
             None => {
-                return Err(
-                    "未配置密码且尚未实现密钥鉴权，请先在连接中配置密码".to_string(),
-                );
+                return Err("未配置密码且尚未实现密钥鉴权，请先在连接中配置密码".to_string());
             }
         };
 
@@ -312,11 +318,7 @@ impl SshBridge {
 
         match self.run_remote_cmd(&session, "id -Gn").await {
             Ok(out) => {
-                let groups: Vec<String> = out
-                    .trim()
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect();
+                let groups: Vec<String> = out.split_whitespace().map(|s| s.to_string()).collect();
                 diag.groups = groups.clone();
                 diag.user_in_docker_group = groups.iter().any(|g| g == "docker");
             }
@@ -481,7 +483,8 @@ fn build_recommendation(d: &SshDiagnostic) -> String {
     if !d.user_in_docker_group {
         return "当前用户既不在 docker 组，sudo 也不可用。请将用户加入 docker 组（需要重新登录生效）：sudo usermod -aG docker <user>".to_string();
     }
-    "请检查远端 Docker 服务是否正常运行 (systemctl status docker)，或检查 SELinux/AppArmor 是否拦截".to_string()
+    "请检查远端 Docker 服务是否正常运行 (systemctl status docker)，或检查 SELinux/AppArmor 是否拦截"
+        .to_string()
 }
 
 /// 处理一个 TCP 代理连接：建立 russh 会话 + 透传到 channel
