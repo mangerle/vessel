@@ -5,6 +5,7 @@ import { Store } from '@tauri-apps/plugin-store'
 import { error as logError, warn as logWarn } from '@tauri-apps/plugin-log'
 import { emptyWslConfig, matchesConnectionConfig, toConnectionConfig, DEFAULT_SSH_PORT } from '../api/connection'
 import { connectionApi } from '../api/connectionApi'
+import { secretsApi, sshPasswordKey, registryPasswordKey } from '../api/secrets'
 import { safeParseField, settingsFieldSchemas } from './settingsSchema'
 import type { ConnectionConfigPayload } from '../api/connection'
 
@@ -222,6 +223,26 @@ export const useSettingsStore = defineStore('settings', () => {
               }
             ]
             activeConnectionId.value = 'conn_default_ssh'
+            // 修复 P0-3：legacy 迁移路径同样要把密码搬到 keyring
+            if (legacyPassword) {
+              try {
+                await secretsApi.set(sshPasswordKey('conn_default_ssh'), legacyPassword)
+              } catch (e) {
+                logWarn(`legacy SSH 密码迁移到 keyring 失败: ${e}`).catch(() => {})
+              }
+            }
+          }
+        }
+
+        // 修复 P0-3：connections / registries 加载完成后，密码统一从 keyring 回填到内存
+        for (const c of connections.value) {
+          if (c.type === 'ssh' && !c.sshPassword) {
+            try {
+              const pw = await secretsApi.get(sshPasswordKey(c.id))
+              if (pw) c.sshPassword = pw
+            } catch (e) {
+              logWarn(`SSH 密码从 keyring 回填失败（${c.id}）: ${e}`).catch(() => {})
+            }
           }
         }
 
@@ -233,6 +254,17 @@ export const useSettingsStore = defineStore('settings', () => {
             registries.value,
             'registries'
           ) as Registry[]
+        }
+        // 修复 P0-3：仓库密码从 keyring 回填
+        for (const r of registries.value) {
+          if (!r.password) {
+            try {
+              const pw = await secretsApi.get(registryPasswordKey(r.id))
+              if (pw) r.password = pw
+            } catch (e) {
+              logWarn(`仓库密码从 keyring 回填失败（${r.id}）: ${e}`).catch(() => {})
+            }
+          }
         }
         currentRegistryId.value = safeParseField(
           settingsFieldSchemas.currentRegistryId,
@@ -320,6 +352,37 @@ export const useSettingsStore = defineStore('settings', () => {
   const saveSettings = async () => {
     try {
       const store = await getStore()
+      // 修复 P0-3：把 connections / registries 中的密码字段移到 OS Keychain，
+      // 落盘版本是脱敏副本（密码字段置 undefined），settings.json 不再含明文。
+      // 写入 keyring 失败不阻塞 settings 落盘——但会打日志，避免 UI 卡死。
+      const sanitizedConnections = await Promise.all(
+        connections.value.map(async (c) => {
+          if (c.type === 'ssh' && c.sshPassword) {
+            try {
+              await secretsApi.set(sshPasswordKey(c.id), c.sshPassword)
+            } catch (e) {
+              logWarn(`SSH 密码写入 keyring 失败（${c.id}）: ${e}`).catch(() => {})
+            }
+          }
+          // 移除密码字段
+          const { sshPassword: _omit, ...rest } = c
+          return rest
+        })
+      )
+      const sanitizedRegistries = await Promise.all(
+        registries.value.map(async (r) => {
+          if (r.password) {
+            try {
+              await secretsApi.set(registryPasswordKey(r.id), r.password)
+            } catch (e) {
+              logWarn(`仓库密码写入 keyring 失败（${r.id}）: ${e}`).catch(() => {})
+            }
+          }
+          const { password: _omit, ...rest } = r
+          return rest
+        })
+      )
+
       // 待持久化的键值：不再写 legacy 字段（connectionMode/wslDistro/sshHost/sshPort/sshUser/sshPassword），
       // 旧版本兼容由 loadSettings 一次性迁移路径承担。
       const snapshot: Record<string, unknown> = {
@@ -328,9 +391,9 @@ export const useSettingsStore = defineStore('settings', () => {
         theme: theme.value,
         refreshInterval: refreshInterval.value,
         visibleMenus: visibleMenus.value,
-        connections: connections.value,
+        connections: sanitizedConnections,
         activeConnectionId: activeConnectionId.value,
-        registries: registries.value,
+        registries: sanitizedRegistries,
         currentRegistryId: currentRegistryId.value
       }
       // 仅 set 与上次不同的 key，减少 IPC 次数

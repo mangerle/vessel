@@ -83,6 +83,11 @@ export const CMD = {
   updateConnectionConfig: 'update_connection_config',
   pingDocker: 'ping_docker',
   diagnoseSshConnection: 'diagnose_ssh_connection',
+
+  // 凭据库（修复 P0-3：SSH/Registry 密码改走 OS Keychain，不再明文存 settings.json）
+  setSecret: 'set_secret',
+  getSecret: 'get_secret',
+  deleteSecret: 'delete_secret',
 } as const
 
 export type TauriCommand = typeof CMD[keyof typeof CMD]

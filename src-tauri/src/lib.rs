@@ -1,6 +1,7 @@
 pub mod connection;
 pub mod docker;
 pub mod error;
+pub mod secrets;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -191,6 +192,9 @@ pub fn run() {
             connection::update_connection_config,
             connection::ping_docker,
             connection::diagnose_ssh_connection,
+            secrets::set_secret,
+            secrets::get_secret,
+            secrets::delete_secret,
         ])
         .run(tauri::generate_context!())
         .expect("运行 tauri 应用程序时出错");

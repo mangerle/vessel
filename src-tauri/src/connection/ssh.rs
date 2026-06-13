@@ -1,7 +1,9 @@
 use bollard::{API_DEFAULT_VERSION, Docker};
 use russh::client::{self, Config, Handle, Handler};
 use russh::keys::PublicKey;
+use russh::keys::ssh_key::HashAlg;
 use russh::{Channel, ChannelMsg};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -72,18 +74,129 @@ impl SshConfig {
     }
 }
 
-/// 跳过主机密钥校验的 Handler
-struct TrustAllHostKeyHandler;
+/// 修复 P0-1：替换原 TrustAllHostKeyHandler（永远 Ok(true)）。
+///
+/// 维护 app_data_dir/known_hosts.json 持久化文件，键 = "host:port"，
+/// 值 = SHA256 指纹（hex）。
+/// - 首次连接：保存指纹（TOFU，Trust On First Use）；
+/// - 后续连接：指纹一致放行；不一致直接拒绝（中间人保护）。
+///
+/// 不与 OpenSSH 标准 known_hosts 兼容（行式格式 + 多类型），仅用于本应用自身。
+pub struct KnownHostsHandler {
+    host: String,
+    port: u16,
+    known_hosts_path: PathBuf,
+}
 
-impl Handler for TrustAllHostKeyHandler {
+impl KnownHostsHandler {
+    pub fn new(host: String, port: u16) -> Self {
+        Self {
+            host,
+            port,
+            known_hosts_path: known_hosts_file(),
+        }
+    }
+}
+
+impl Handler for KnownHostsHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &PublicKey,
+        server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let key_id = format!("{}:{}", self.host, self.port);
+        // 计算 SHA256 指纹（同 OpenSSH 默认）
+        let fingerprint = match server_public_key.fingerprint(HashAlg::Sha256) {
+            // russh::keys::ssh_key::Fingerprint 实现 Display，输出形如 "SHA256:..."
+            fp => fp.to_string(),
+        };
+
+        let mut known = load_known_hosts(&self.known_hosts_path).unwrap_or_default();
+        match known.get(&key_id) {
+            Some(saved) if saved == &fingerprint => {
+                log::debug!("known_hosts 命中: {} → {}", key_id, fingerprint);
+                Ok(true)
+            }
+            Some(saved) => {
+                log::error!(
+                    "SSH 主机指纹不匹配 (中间人风险): {} 已知={} 收到={}",
+                    key_id,
+                    saved,
+                    fingerprint
+                );
+                // 指纹改变：拒绝；不再静默放行
+                Ok(false)
+            }
+            None => {
+                log::warn!(
+                    "首次连接 SSH 主机 {}，自动信任并记录指纹: {}",
+                    key_id,
+                    fingerprint
+                );
+                known.insert(key_id, fingerprint);
+                if let Err(e) = save_known_hosts(&self.known_hosts_path, &known) {
+                    log::error!("写入 known_hosts 失败: {}", e);
+                }
+                Ok(true)
+            }
+        }
     }
+}
+
+/// 计算 known_hosts 文件位置：
+/// - 优先 `<app_data_dir>/known_hosts.json`（与 settings.json 同级，跨平台）
+/// - 退到 `<temp>/vessel-known-hosts.json` 以防应用未初始化目录时崩溃
+fn known_hosts_file() -> PathBuf {
+    if let Some(dir) = directories_data_dir() {
+        return dir.join("known_hosts.json");
+    }
+    std::env::temp_dir().join("vessel-known-hosts.json")
+}
+
+#[cfg(windows)]
+fn directories_data_dir() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(|p| PathBuf::from(p).join("vessel"))
+}
+
+#[cfg(target_os = "macos")]
+fn directories_data_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(|p| PathBuf::from(p).join("Library/Application Support/vessel"))
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn directories_data_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".local/share")))
+        .map(|p| p.join("vessel"))
+}
+
+fn load_known_hosts(
+    path: &PathBuf,
+) -> Result<std::collections::HashMap<String, String>, std::io::Error> {
+    if !path.exists() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let raw = std::fs::read_to_string(path)?;
+    if raw.trim().is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    serde_json::from_str(&raw)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
+
+fn save_known_hosts(
+    path: &PathBuf,
+    map: &std::collections::HashMap<String, String>,
+) -> Result<(), std::io::Error> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(map)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(path, json)
 }
 
 /// 代理句柄：包含端口与取消信号
@@ -250,13 +363,14 @@ impl SshBridge {
     }
 
     /// 建立一个新的 russh 会话
-    async fn create_session(&self) -> Result<Handle<TrustAllHostKeyHandler>, String> {
+    async fn create_session(&self) -> Result<Handle<KnownHostsHandler>, String> {
         let ssh_config = Arc::new(Config::default());
         let addr = (self.config.host.as_str(), self.config.port);
 
+        let handler = KnownHostsHandler::new(self.config.host.clone(), self.config.port);
         let mut session = tokio::time::timeout(
             Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
-            client::connect(ssh_config, addr, TrustAllHostKeyHandler),
+            client::connect(ssh_config, addr, handler),
         )
         .await
         .map_err(|_| {
@@ -265,7 +379,7 @@ impl SshBridge {
                 self.config.host, self.config.port
             )
         })?
-        .map_err(|e| format!("SSH 连接失败: {}", e))?;
+        .map_err(|e| format!("SSH 连接失败 (可能是主机指纹变化触发拒绝): {}", e))?;
 
         let auth_result = match &self.config.password {
             Some(pw) => session
@@ -399,7 +513,7 @@ impl SshBridge {
     /// 在已建立的 SSH 会话上执行一条命令并返回 stdout
     async fn run_remote_cmd(
         &self,
-        session: &Handle<TrustAllHostKeyHandler>,
+        session: &Handle<KnownHostsHandler>,
         cmd: &str,
     ) -> Result<String, String> {
         let mut channel: SshChannel = session

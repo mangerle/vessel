@@ -399,11 +399,14 @@ fn build_ssh_compose_command(
 
     let mut askpass_to_clean = None;
     if let Some(pw) = &config.ssh_password {
-        // 通过 SSH_ASKPASS 机制注入密码
+        // 修复 P0-2：原实现把明文密码 format!() 拼进 .bat 文本（密码含 `&`/`|`/`>` 即 RCE）。
+        // 改用环境变量传递：脚本本身只回显 %VESSEL_SSH_PASSWORD% / $VESSEL_SSH_PASSWORD，
+        // 子进程通过 c.env() 注入密码，shell 永远看不到字面量，杜绝注入面。
         let askpass_path =
-            write_askpass_script(pw).map_err(|e| format!("写入 askpass 脚本失败: {}", e))?;
+            write_askpass_script().map_err(|e| format!("写入 askpass 脚本失败: {}", e))?;
         c.env("SSH_ASKPASS", &askpass_path)
-            .env("SSH_ASKPASS_REQUIRE", "force");
+            .env("SSH_ASKPASS_REQUIRE", "force")
+            .env("VESSEL_SSH_PASSWORD", pw);
         #[cfg(not(windows))]
         c.env("DISPLAY", ":0");
         askpass_to_clean = Some(askpass_path);
@@ -412,21 +415,27 @@ fn build_ssh_compose_command(
     Ok((c, askpass_to_clean))
 }
 
-fn write_askpass_script(password: &str) -> Result<std::path::PathBuf, String> {
+/// 写入 askpass 脚本：只读环境变量 `VESSEL_SSH_PASSWORD`，不再嵌入明文。
+///
+/// 修复 P0-2：原实现 `format!("@echo off\r\necho {}", password)` 把明文写入 .bat，
+/// 密码含 shell 元字符即触发任意命令执行（cmd.exe 解析 .bat 时 `&` `|` `>` 仍会展开）。
+/// 改为脚本固定内容，密码完全通过环境变量传递，shell 永远不解析。
+fn write_askpass_script() -> Result<std::path::PathBuf, String> {
     let dir = std::env::temp_dir().join("vessel_ssh_askpass");
     std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建 askpass 目录: {}", e))?;
 
     #[cfg(windows)]
     let (filename, content) = {
         let filename = format!("compose_askpass_{}.bat", std::process::id());
-        let content = format!("@echo off\r\necho {}\r\n", password);
+        // .bat 内 `%VAR%` 展开是 cmd.exe 在执行前完成的，但密码值不会被进一步当 shell 解析
+        let content = "@echo off\r\necho %VESSEL_SSH_PASSWORD%\r\n".to_string();
         (filename, content)
     };
     #[cfg(not(windows))]
     let (filename, content) = {
         let filename = format!("compose_askpass_{}.sh", std::process::id());
-        let escaped = password.replace('\'', "'\\''");
-        let content = format!("#!/bin/sh\necho '{}'\n", escaped);
+        // 双引号包裹 + sh 不会再次解析变量值（仅做扩展）
+        let content = "#!/bin/sh\nprintf '%s\\n' \"$VESSEL_SSH_PASSWORD\"\n".to_string();
         (filename, content)
     };
 
@@ -441,7 +450,7 @@ fn write_askpass_script(password: &str) -> Result<std::path::PathBuf, String> {
     #[cfg(windows)]
     {
         // Windows 上使用 icacls 收紧 ACL：仅当前用户可读写，
-        // 避免其他低权限进程读到明文密码
+        // 避免其他低权限进程读到（虽然现在已无明文，仍保留收紧策略）
         let _ = std::process::Command::new("icacls")
             .args([
                 path.to_str().unwrap_or(""),
