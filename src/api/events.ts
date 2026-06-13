@@ -3,7 +3,11 @@
  *
  * 任何对事件名的修改必须前后端同步；新增事件也应在此处集中定义。
  * 后端对应常量见 `src-tauri/src/docker/utils.rs::events`。
+ *
+ * 同时定义所有事件 payload 的 TS 类型，listen 泛型化后即可获得完整类型推导。
  */
+
+import type { PullProgress } from './types'
 
 export const EVT = {
   // 容器统计/日志流（按容器 id 区分频道）
@@ -30,6 +34,57 @@ export const EVT = {
   composeCmdFinished: 'compose-cmd-finished',
   composeCmdError: 'compose-cmd-error',
 
+  // 单实例 / 全局
+  singleInstanceDetected: 'single-instance-detected',
+
   // 连接配置变更通知（后端 update_connection_config 末尾 emit）
   connectionUpdated: 'connection-updated',
 } as const
+
+// ============= 事件 payload 类型 =============
+
+export interface ImagePullProgressPayload {
+  image: string
+  info: PullProgress
+}
+
+export interface ImagePullErrorPayload {
+  image: string
+  error: string
+}
+
+export type ImagePullFinishedPayload = string
+
+export interface ImageExportProgressPayload {
+  image: string
+  bytes_written: number
+}
+
+export interface ImageExportErrorPayload {
+  image: string
+  error: string
+}
+
+export type ImageExportFinishedPayload = string
+
+export interface ImageImportProgressPayload {
+  path: string
+  status?: string
+  stream?: string
+  error?: string
+  progress?: string
+}
+
+export interface ImageImportErrorPayload {
+  path: string
+  error: string
+}
+
+export type ImageImportFinishedPayload = string
+
+export type ComposeCmdOutputPayload = string
+export type ComposeCmdFinishedPayload = void
+export interface ComposeCmdErrorPayload {
+  error: string
+}
+
