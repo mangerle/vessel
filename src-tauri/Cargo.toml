@@ -1,6 +1,6 @@
 [package]
 name = "vessel"
-version = "0.1.11"
+version = "0.1.12"
 description = "A modern desktop client for Docker management."
 authors = ["mangerle"]
 edition = "2024"

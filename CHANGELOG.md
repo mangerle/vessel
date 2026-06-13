@@ -1,5 +1,48 @@
 # Changelog
 
+### [0.1.12](https://github.com/mangerle/vessel/compare/v0.1.9...v0.1.12) (2026-06-13)
+
+
+### ⚡ 性能优化 (Performance)
+
+* **frontend:** 修复 前端代码性能问题（ECharts/日志/脏检查） ([d60fb68](https://github.com/mangerle/vessel/commit/d60fb68a2281619fe9deb2452abf6ee2bb14d9ea))
+* **frontend:** 修复大量性能问题 ([7c186c0](https://github.com/mangerle/vessel/commit/7c186c0503c9905dd338ec5fe924699720b0ce93))
+* **rust:** 修复大量性能问题 ([cf5408e](https://github.com/mangerle/vessel/commit/cf5408e868a5fe90f95f63c095c457250a6e3db2))
+* **rust:** 修复rust性能问题（事件流节流/IO 异步化/连接幂等） ([55c7f3b](https://github.com/mangerle/vessel/commit/55c7f3bc64220d29b5522074731d50751c3ce9d7))
+* **rust:** 优化连接管理锁竞争并增强类型安全 ([69bcb00](https://github.com/mangerle/vessel/commit/69bcb0020581da57cd36bc30b505dea1e0074766))
+* **settings:** saveSettings 仅写变更 key，避免每次全量落盘 ([59eef4c](https://github.com/mangerle/vessel/commit/59eef4ce2ed326138edfe729aafa44428431a629))
+
+
+### 🚀 新增功能 (Features)
+
+* **api:** 命令名/事件名/类型常量统一前后端协议层 ([1a841bd](https://github.com/mangerle/vessel/commit/1a841bd16f777e2f66b78220f387648f3e617b8c))
+* **api:** 优化容器伪终端创建接口用户身份处理 ([9108001](https://github.com/mangerle/vessel/commit/9108001f8b756854abe670e396699099cab2b434))
+* **compose:** 优化ContainerFileBrowser文件加载逻辑 ([23c4440](https://github.com/mangerle/vessel/commit/23c444097e1ccf65f0d896f2bba3604c98a7ba36))
+* **connection:** 前后端连接配置 emit 同步通道 ([9f71767](https://github.com/mangerle/vessel/commit/9f7176700a15f14d72c098a93d42f658df91d37f))
+* **connection:** 统一支持 SSH 远程 Docker 与多连接引擎 ([a03f7fc](https://github.com/mangerle/vessel/commit/a03f7fc00f7ce919d90d55d8f26babe81d7a5354))
+* **log:** 完善日志记录 ([cd39917](https://github.com/mangerle/vessel/commit/cd3991715a98a21e634684283612aac918d3adfa))
+* **ssh:** 增加远端 Docker 环境一键诊断 ([b259351](https://github.com/mangerle/vessel/commit/b2593514de8b201115a2f35570cf0bec01092a70))
+* **ssh:** 支持 sudo 提升权限以兼容非 root 用户 ([43ba373](https://github.com/mangerle/vessel/commit/43ba373a83ae861c373ce1751e18282fbb6746bb))
+
+
+### 🐛 Bug 修复 (Bug Fixes)
+
+* 事件名常量化/zip-slip/askpass 残留/日志 key/死代码 ([59a716b](https://github.com/mangerle/vessel/commit/59a716bb97bd9ea6f8c23dc0413536598f3c74e8))
+* 修复 CSS 语法错误、内存泄漏并增强 CSP 安全策略 ([600dd85](https://github.com/mangerle/vessel/commit/600dd85599c15829d837c8135ff6d5f6974559f7))
+* **compose:** 优化容器日志流的节流处理 ([8182500](https://github.com/mangerle/vessel/commit/818250032e31da0269716c9a7ed68e631bd281b5))
+* **connection:** 启动/切换串行化，根除连接 race 与列表残留 ([1f2ce40](https://github.com/mangerle/vessel/commit/1f2ce400eb1f0dc10742c7720ebe07ecf6bbf918))
+* **connection:** 原子化 ensure_proxy 避免并发端口泄漏 ([9c922fd](https://github.com/mangerle/vessel/commit/9c922fdcb4b0e2c881b88eabd4207796ffb51674))
+* **docker:** 优化 docker compose 命令参数传递方式 ([aaa6a05](https://github.com/mangerle/vessel/commit/aaa6a05c8d50ab50a306d9c93854d5b6f60e0186))
+* **docker:** 优化错误处理与代码简洁性 ([3d6b772](https://github.com/mangerle/vessel/commit/3d6b772308db7713272554d5aeea7aa37c2b305c))
+* ECharts 预拆/写锁不跨 await/emit 按 name/compose cmd_id ([fba7ee0](https://github.com/mangerle/vessel/commit/fba7ee0fac9d187ff51b1c1e33838af33b734d27))
+* known_hosts/askpass 改环境变量/keyring 集成 ([854eba1](https://github.com/mangerle/vessel/commit/854eba10989ae82cd2f48cc2680cfb982eb47c62))
+* **rust:** 修复安全/规范问题 ([c02166e](https://github.com/mangerle/vessel/commit/c02166e719d6d8d60c90e1cf496b6b6f2913fa8a))
+* **rust:** 修复死锁风险、命令注入漏洞及终端锁阻塞问题 ([e007da1](https://github.com/mangerle/vessel/commit/e007da107c88a0780c4b53b87419044b43084495))
+* **rust:** 移除后端代码中潜在的 unwrap() panic 风险 ([6a1a5e3](https://github.com/mangerle/vessel/commit/6a1a5e3ef5f9d09dc0fd9bfd322a8e77dc936ea2))
+* **settings:** 修复 lastSavedSnapshot 引用复用导致增量同步失效 ([0f501e3](https://github.com/mangerle/vessel/commit/0f501e3d8c55c1bd1ea0100f89b3feeff07ccf5b))
+* Volumes.vue 下推到 api 层 + 容器 fs 路径白名单 ([25444d3](https://github.com/mangerle/vessel/commit/25444d33da5ce83c57cfa6fd25d13c403a889d5b))
+* **wsl:** 移除 client_socket 多余的 mut 标记 ([88beca8](https://github.com/mangerle/vessel/commit/88beca8db6617bbc78776deda9efd884c9f8a61b))
+
 ### [0.1.11](https://github.com/mangerle/vessel/compare/v0.1.9...v0.1.11) (2026-06-13)
 
 
