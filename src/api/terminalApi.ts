@@ -18,9 +18,18 @@ export interface TerminalSize {
 export const terminalApi = {
   /**
    * 创建容器内的伪终端连接，返回 exec id
+   *
+   * 入参 `user` 是 UI 层的身份选项：
+   * - `'root'`：以 root 身份进入容器（容器内必须存在 root 账户）
+   * - `'default'`：不向 Docker 指定 user，沿用镜像/容器自身定义的默认用户
+   *   （字符串 `'default'` 只是 UI 标签，并不是真实的 Linux 账号，
+   *    若原样下发给后端会导致 Docker 在 /etc/passwd 中找不到该用户而报 400）
    */
   create: (id: string, user: 'root' | 'default' = 'default') =>
-    invoke<TerminalExecId>(CMD.createContainerTerminal, { id, user }),
+    invoke<TerminalExecId>(CMD.createContainerTerminal, {
+      id,
+      user: user === 'root' ? 'root' : undefined,
+    }),
 
   /**
    * 向已建立的终端写入字节（前端键盘输入）
