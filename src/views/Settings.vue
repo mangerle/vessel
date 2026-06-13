@@ -151,22 +151,8 @@ const syncDraftFromStore = () => {
   }
 }
 
-// 规整连接列表，仅供保存时使用（持久化层要剔除 undefined 字段）
-const cleanConnections = (conns: DockerConnection[]): DockerConnection[] => {
-  return conns.map(c => {
-    const clean: DockerConnection = { id: c.id, name: c.name, type: c.type }
-    if (c.wslDistro !== undefined && c.wslDistro !== null) clean.wslDistro = c.wslDistro
-    if (c.sshHost !== undefined && c.sshHost !== null) clean.sshHost = c.sshHost
-    if (c.sshPort !== undefined && c.sshPort !== null) clean.sshPort = c.sshPort
-    if (c.sshUser !== undefined && c.sshUser !== null) clean.sshUser = c.sshUser
-    if (c.sshPassword !== undefined && c.sshPassword !== null) clean.sshPassword = c.sshPassword
-    if (c.useSudo !== undefined && c.useSudo !== null) clean.useSudo = c.useSudo
-    return clean
-  })
-}
-
 // 探测配置是否被篡改过 (Dirty 检测)
-// 旧实现：3 次 JSON.stringify + cleanConnections O(n*7) 字段重建。
+// 旧实现：3 次 JSON.stringify + 字段重建。
 // 新实现：标量 === 短路返回，数组用 length + primitive 字段对比，O(n) 但常数极小。
 const isDirty = computed(() => {
   const d = draft.value
