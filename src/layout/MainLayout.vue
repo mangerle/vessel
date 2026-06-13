@@ -147,6 +147,13 @@ const router = useRouter()
 const route = useRoute()
 const message = useMessage()
 const settingsStore = useSettingsStore()
+// 预加载所需 store 全部上提，避免 preloadData 每次重新调用 useXxxStore()
+// 多次创建 Pinia 引用（开销虽小但语义混乱）
+const composeStore = useComposeStore()
+const containerStore = useContainerStore()
+const imageStore = useImageStore()
+const networkStore = useNetworkStore()
+const volumeStore = useVolumeStore()
 
 const activeKey = ref<string>((route.name as string) || 'compose')
 const showSwitcher = ref(false)
@@ -246,12 +253,6 @@ let preloaded = false
 // 在首次连通 Docker 后并发拉取基础数据存入 Pinia 缓存，实现首屏列表秒开
 const preloadData = async () => {
   try {
-    const composeStore = useComposeStore()
-    const containerStore = useContainerStore()
-    const imageStore = useImageStore()
-    const networkStore = useNetworkStore()
-    const volumeStore = useVolumeStore()
-
     await Promise.allSettled([
       composeStore.fetchProjects(),
       containerStore.fetchContainers(),

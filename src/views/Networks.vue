@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, h } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useNetworkStore } from '../store/network'
 import {
   NDropdown,
@@ -17,6 +17,7 @@ import {
   CloseCircleOutline,
   FileTrayFullOutline
 } from '@vicons/ionicons5'
+import { useContextMenu, MenuOption, renderIcon } from '../hooks/useContextMenu'
 
 const networkStore = useNetworkStore()
 const message = useMessage()
@@ -79,32 +80,30 @@ const getDriverIcon = (driver: string) => {
 }
 
 // --- 右键菜单 ---
-const showMenu = ref(false)
-const x = ref(0)
-const y = ref(0)
-const menuTarget = ref<{ id: string; name: string } | null>(null)
+const {
+  showDropdown: showMenu,
+  x,
+  y,
+  currentTarget: menuTarget,
+  handleContextMenu: openContextMenu,
+  onClickOutside: closeMenu
+} = useContextMenu()
 
-const menuOptions = [
-  { label: '拓扑详情', key: 'detail', icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }) },
-  { label: '删除网络', key: 'delete', icon: () => h(NIcon, null, { default: () => h(TrashOutline) }) }
+const menuOptions: MenuOption[] = [
+  { label: '拓扑详情', key: 'detail', icon: renderIcon(GitNetworkOutline) },
+  { label: '删除网络', key: 'delete', icon: renderIcon(TrashOutline) }
 ]
 
 const handleContextMenu = (e: MouseEvent, item: any) => {
-  e.preventDefault()
-  showMenu.value = false
-  nextTick(() => {
-    x.value = e.clientX
-    y.value = e.clientY
-    menuTarget.value = item
-    showMenu.value = true
-  })
+  openContextMenu(e, menuOptions, item)
 }
 
 const handleMenuSelect = (key: string) => {
-  showMenu.value = false
-  if (!menuTarget.value) return
-  if (key === 'delete') handleDelete(menuTarget.value.id)
-  else if (key === 'detail') onSelect(menuTarget.value.id)
+  closeMenu()
+  const target = menuTarget.value as { id: string; name: string } | null
+  if (!target) return
+  if (key === 'delete') handleDelete(target.id)
+  else if (key === 'detail') onSelect(target.id)
 }
 
 const sortedNetworks = computed(() => {
@@ -259,7 +258,7 @@ onMounted(() => {
 
   <!-- 右键下拉 -->
   <n-dropdown
-    :on-clickoutside="() => showMenu = false"
+    :on-clickoutside="closeMenu"
     :options="menuOptions"
     :show="showMenu"
     :x="x"

@@ -6,7 +6,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { info, error, warn } from '@tauri-apps/plugin-log'
-import { toConnectionConfig } from '../api/connection'
+import { toConnectionConfig, DEFAULT_SSH_PORT } from '../api/connection'
 import { connectionApi } from '../api/connectionApi'
 import { fsApi, wslApi } from '../api/systemApi'
 import type { DockerConnection, Registry } from '../store/settings'
@@ -98,8 +98,8 @@ const handleAddRegistry = () => {
     return
   }
   
-  // 生成随机 ID
-  const id = 'reg_' + Math.random().toString(36).substring(2, 11)
+  // 生成稳定的随机 ID（crypto 自带强熵）
+  const id = 'reg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 9)
   draft.value.registries.push({
     id,
     name: newRegistry.value.name.trim(),
@@ -267,7 +267,7 @@ const newConnection = ref({
   type: 'desktop' as 'wsl' | 'ssh' | 'desktop',
   wslDistro: '',
   sshHost: '192.168.1.105',
-  sshPort: 22,
+  sshPort: DEFAULT_SSH_PORT,
   sshUser: 'root',
   sshPassword: '',
   useSudo: false
@@ -279,7 +279,7 @@ const openAddConnModal = () => {
     type: 'desktop',
     wslDistro: wslOptions.value[0]?.value || 'Ubuntu',
     sshHost: '192.168.1.105',
-    sshPort: 22,
+    sshPort: DEFAULT_SSH_PORT,
     sshUser: 'root',
     sshPassword: '',
     useSudo: false
@@ -338,7 +338,7 @@ const handleAddConnection = () => {
     }
   }
 
-  const id = 'conn_' + Math.random().toString(36).substring(2, 11)
+  const id = 'conn_' + crypto.randomUUID().replace(/-/g, '').slice(0, 9)
   draft.value.connections.push({
     id,
     name: newConnection.value.name.trim(),

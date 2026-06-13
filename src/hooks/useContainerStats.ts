@@ -118,8 +118,8 @@ export function useContainerStats() {
       let rx = 0
       let tx = 0
       if (payload.networks) {
-        for (const key in payload.networks) {
-          const net = payload.networks[key]
+        // 改用 Object.values：避免 for-in 遍历继承属性、且热路径下 V8 形态更稳定
+        for (const net of Object.values(payload.networks)) {
           rx += net.rx_bytes ?? 0
           tx += net.tx_bytes ?? 0
         }

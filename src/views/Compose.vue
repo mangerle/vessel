@@ -39,15 +39,10 @@ import {
 } from '@vicons/ionicons5'
 
 import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
+import '../utils/chartRegistry'
 import ComposeProjectList from '../components/compose/ComposeProjectList.vue'
 import ContainerDetail from '../components/compose/ContainerDetail.vue'
 import { useContextMenu, MenuOption, renderIcon } from '../hooks/useContextMenu'
-
-use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const composeStore = useComposeStore()
 const containerStore = useContainerStore()

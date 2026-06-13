@@ -33,15 +33,10 @@ import {
   SaveOutline
 } from '@vicons/ionicons5'
 import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
+import '../utils/chartRegistry'
 import SimpleContainerList from '../components/container/SimpleContainerList.vue'
 import ContainerDetail from '../components/compose/ContainerDetail.vue'
 import { useContextMenu, MenuOption, renderIcon } from '../hooks/useContextMenu'
-
-use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const containerStore = useContainerStore()
 const message = useMessage()
@@ -284,7 +279,7 @@ const handleStart = async (id: string) => {
   try {
     await containerStore.startContainer(id)
     message.success('已启动容器')
-    if (selectedId.value === id) await fetchDetails(id)
+    if (selectedId.value === id) await refreshDetails(id)
   } catch (e: any) {
     message.error('启动失败: ' + e)
   }
@@ -294,7 +289,7 @@ const handleStop = async (id: string) => {
   try {
     await containerStore.stopContainer(id)
     message.success('已停止容器')
-    if (selectedId.value === id) await fetchDetails(id)
+    if (selectedId.value === id) await refreshDetails(id)
   } catch (e: any) {
     message.error('停止失败: ' + e)
   }
@@ -304,7 +299,7 @@ const handleRestart = async (id: string) => {
   try {
     await containerStore.restartContainer(id)
     message.success('已重启容器')
-    if (selectedId.value === id) await fetchDetails(id)
+    if (selectedId.value === id) await refreshDetails(id)
   } catch (e: any) {
     message.error('重启失败: ' + e)
   }
@@ -314,7 +309,7 @@ const handlePause = async (id: string) => {
   try {
     await containerStore.pauseContainer(id)
     message.success('容器已挂起暂停')
-    await fetchDetails(id)
+    await refreshDetails(id)
   } catch (e: any) {
     message.error('暂停失败: ' + e)
   }
@@ -324,7 +319,7 @@ const handleUnpause = async (id: string) => {
   try {
     await containerStore.unpauseContainer(id)
     message.success('容器已恢复运行')
-    await fetchDetails(id)
+    await refreshDetails(id)
   } catch (e: any) {
     message.error('恢复失败: ' + e)
   }
@@ -422,7 +417,7 @@ const handleRenameSubmit = async () => {
     // 重新获取容器列表并更新详情
     await containerStore.fetchContainers()
     if (selectedId.value === renameContainerId.value) {
-      await fetchDetails(renameContainerId.value)
+      await refreshDetails(renameContainerId.value)
     }
   } catch (e: any) {
     message.error('重命名失败: ' + e)
@@ -447,6 +442,17 @@ const handleCommitSubmit = async () => {
     showCommitModal.value = false
   } catch (e: any) {
     message.error('提交失败: ' + e)
+  }
+}
+
+// 单容器操作后仅同步元数据（status / state），保持 logs/stats 流不动；
+// 否则每次 start/stop 都会重新 listen 同一事件名，造成订阅泄漏。
+const refreshDetails = async (id: string) => {
+  if (containerDetails.value?.id !== id) return
+  try {
+    containerDetails.value = await containerApi.inspect(id)
+  } catch (e: any) {
+    message.error('刷新详情失败: ' + e)
   }
 }
 

@@ -8,25 +8,7 @@ import {
   NSpace, NBreadcrumb, NBreadcrumbItem
 } from 'naive-ui'
 import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart } from 'echarts/charts'
-import {
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  TitleComponent
-} from 'echarts/components'
-
-// 注册 ECharts 组件
-use([
-  CanvasRenderer,
-  LineChart,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  TitleComponent
-])
+import '../utils/chartRegistry'
 
 const route = useRoute()
 const router = useRouter()
