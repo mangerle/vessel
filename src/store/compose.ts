@@ -76,7 +76,10 @@ export const useComposeStore = defineStore('compose', () => {
     }
   }
 
-  /** 运行 Compose 命令 */
+  /** 运行 Compose 命令
+   *
+   *  修复 P0-15：监听器仅处理与本次 cmd_id 匹配的事件，并发命令互不污染。
+   */
   const runComposeCommand = async (projectDir: string, args: string[]) => {
     executing.value = true
     commandOutput.value = []
@@ -90,8 +93,14 @@ export const useComposeStore = defineStore('compose', () => {
     }
 
     try {
+      // 先注册 listener 再发起调用：避免事件先于订阅到达
+      // 但 cmd_id 此刻尚未拿到，监听内做 cmd_id 过滤
+      let myCmdId: string | null = null
+
       const unlistenOutput = await listen<ComposeCmdOutputPayload>(EVT.composeCmdOutput, (event) => {
-        commandOutput.value.push(event.payload)
+        const payload = event.payload
+        if (myCmdId !== null && payload.cmd_id !== myCmdId) return
+        commandOutput.value.push(payload.line)
         if (commandOutput.value.length > COMPOSE_OUTPUT_KEEP) {
           // 一次性裁掉超额头部，避免 N 次 O(n) shift()
           commandOutput.value.splice(0, commandOutput.value.length - COMPOSE_OUTPUT_KEEP)
@@ -99,7 +108,8 @@ export const useComposeStore = defineStore('compose', () => {
       })
       unlistenList.push(unlistenOutput)
 
-      const unlistenFinished = await listen(EVT.composeCmdFinished, () => {
+      const unlistenFinished = await listen<{ cmd_id: string }>(EVT.composeCmdFinished, (event) => {
+        if (myCmdId !== null && event.payload.cmd_id !== myCmdId) return
         cleanup()
         const refresh = () => {
           fetchProjects()
@@ -111,15 +121,14 @@ export const useComposeStore = defineStore('compose', () => {
       })
       unlistenList.push(unlistenFinished)
 
-      const unlistenError = await listen<ComposeCmdErrorPayload | string>(EVT.composeCmdError, (event) => {
-        // 后端有时直接 emit 字符串、有时 emit { error } 对象，做一次兼容收口
-        const payload = event.payload as ComposeCmdErrorPayload | string
-        error.value = typeof payload === 'string' ? payload : payload.error
+      const unlistenError = await listen<ComposeCmdErrorPayload>(EVT.composeCmdError, (event) => {
+        if (myCmdId !== null && event.payload.cmd_id !== myCmdId) return
+        error.value = event.payload.error
         cleanup()
       })
       unlistenList.push(unlistenError)
 
-      await composeApi.runCommand(projectDir, args)
+      myCmdId = await composeApi.runCommand(projectDir, args)
     } catch (err) {
       logError(`执行 Compose 命令失败: ${err}`).catch(() => {})
       error.value = String(err)

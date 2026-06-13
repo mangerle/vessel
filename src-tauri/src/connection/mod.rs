@@ -120,12 +120,24 @@ pub static CONNECTION_CONFIG: LazyLock<RwLock<ConnectionConfig>> = LazyLock::new
 /// 全局 Docker 客户端实例
 static DOCKER_CLIENT: LazyLock<RwLock<Option<Docker>>> = LazyLock::new(|| RwLock::new(None));
 
+/// 修复 P0-13：连接握手互斥锁。
+/// 旧实现写锁跨 SSH connect await（含 15s 超时），期间所有并发 IPC 都卡在 read().await。
+/// 新实现把 DOCKER_CLIENT 写锁拆成两段：
+///   1. 短临界区检查缓存（如有直接返回 clone）；
+///   2. 在 CONNECT_LOCK（独立 Mutex）内执行漫长的 SSH 握手；期间其他读路径不受影响；
+///   3. 握手成功后用短临界区写回缓存。
+static CONNECT_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
+
 /// 清除 Docker 客户端缓存并关闭各模式代理，强制重新连接
 pub async fn clear_client_cache() {
     let mut client_lock = DOCKER_CLIENT.write().await;
     *client_lock = None;
     wsl::reset_proxy_port().await;
     ssh::reset_proxy().await;
+    // 修复 P0-15：切连接时一并 abort 所有进行中的 compose 命令任务，
+    // 防止旧连接下子进程继续向新连接的事件流污染输出
+    crate::docker::compose::cancel_all_compose_tasks().await;
 }
 
 /// 获取当前活动连接配置的快照
@@ -182,8 +194,14 @@ pub async fn update_connection_config(app: AppHandle, config: ConnectionConfig) 
 }
 
 /// 获取 Docker 客户端（按当前活动连接配置分派）
+///
+/// 修复 P0-13：写锁不跨 SSH connect await。
+/// 1. 短临界区读 DOCKER_CLIENT，命中直接返回（read lock，立即释放）；
+/// 2. 拿 CONNECT_LOCK 排他握手（独立 Mutex），握手期间其他 read 不阻塞；
+/// 3. 握手内再次 read 一次缓存（防同 await 期间其他持锁者已写入）；
+/// 4. 握手成功后用短写锁写回。
 pub async fn get_docker_client() -> AppResult<Docker> {
-    // 1. 检查缓存
+    // 1. 命中即返回
     {
         let client_lock = DOCKER_CLIENT.read().await;
         if let Some(client) = &*client_lock {
@@ -191,15 +209,18 @@ pub async fn get_docker_client() -> AppResult<Docker> {
         }
     }
 
-    // 2. 缓存不存在，获取写锁
-    let mut client_lock = DOCKER_CLIENT.write().await;
+    // 2. 序列化 connect：同时只允许一个并发握手；其他读路径不阻塞
+    let _guard = CONNECT_LOCK.lock().await;
 
-    // Double-check pattern
-    if let Some(client) = &*client_lock {
-        return Ok(client.clone());
+    // 3. 等到握手锁后再读一次缓存（前一个并发者可能已经填上）
+    {
+        let client_lock = DOCKER_CLIENT.read().await;
+        if let Some(client) = &*client_lock {
+            return Ok(client.clone());
+        }
     }
 
-    // 3. 取出当前配置
+    // 4. 真正建立连接（漫长 await，但此时只持 CONNECT_LOCK，不持 DOCKER_CLIENT 锁）
     let config = CONNECTION_CONFIG.read().await.clone();
     log::info!("正在尝试建立新的 Docker 连接: {:?}", config.mode);
 
@@ -231,6 +252,8 @@ pub async fn get_docker_client() -> AppResult<Docker> {
     match result {
         Ok(docker) => {
             log::info!("Docker 连接成功: {:?}", config.mode);
+            // 5. 短写锁回填缓存
+            let mut client_lock = DOCKER_CLIENT.write().await;
             *client_lock = Some(docker.clone());
             Ok(docker)
         }

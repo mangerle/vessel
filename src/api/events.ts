@@ -82,9 +82,10 @@ export interface ImageImportErrorPayload {
 
 export type ImageImportFinishedPayload = string
 
-export type ComposeCmdOutputPayload = string
-export type ComposeCmdFinishedPayload = void
+export type ComposeCmdOutputPayload = { cmd_id: string; line: string }
+export type ComposeCmdFinishedPayload = { cmd_id: string }
 export interface ComposeCmdErrorPayload {
+  cmd_id: string
   error: string
 }
 

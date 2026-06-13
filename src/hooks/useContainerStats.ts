@@ -1,4 +1,4 @@
-import { shallowRef, computed } from 'vue'
+import { shallowRef, computed, markRaw } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { containerApi } from '../api/container'
 import { EVT } from '../api/events'
@@ -8,32 +8,38 @@ import type { ContainerStatsPayload } from '../api/types'
  * 容器性能统计数据 composable
  * 封装 CPU/内存/网络/IO 的 ECharts 数据流订阅与图表配置
  *
- * 性能要点：4 个数据数组合并为单个 shallowRef 整体替换，单次事件仅触发 1 次
- * 响应式更新（而非 4 次独立 ref mutation + 4 次 computed 重建）。
+ * 性能要点：
+ * 1. 4 个数据数组合并为单个 shallowRef 整体替换，单次事件仅触发 1 次响应式更新
+ * 2. 修复 P0-11：把 xAxis.data / series.data 预拆为单独数组，每次事件只 map 一次（而非 8 次）；
+ *    commonChartOpts 用 markRaw 包裹避免响应式代理；computed 仅做对象组装
  */
 export function useContainerStats() {
-  // --- 统计数据响应式数组：合并为单 shallowRef，整体替换 1 次响应 ---
-  interface StatsSnapshot {
-    cpu: { time: string; value: number }[]
-    mem: { time: string; value: number }[]
-    net: { time: string; rx: number; tx: number }[]
-    io: { time: string; read: number; write: number }[]
+  // 修复 P0-11：把每个图表的 4 列数据预拆，事件回调一次性算好；
+  // computed 不再在 hot path 反复 .map 同一个数组。
+  interface PreparedSnapshot {
+    cpuTimes: string[]
+    cpuValues: number[]
+    memTimes: string[]
+    memValues: number[]
+    netTimes: string[]
+    netRx: number[]
+    netTx: number[]
+    ioTimes: string[]
+    ioRead: number[]
+    ioWrite: number[]
   }
-  let statsUnlisten: UnlistenFn | null = null
-  const stats = shallowRef<StatsSnapshot>({
-    cpu: [],
-    mem: [],
-    net: [],
-    io: []
+  const empty = (): PreparedSnapshot => ({
+    cpuTimes: [], cpuValues: [],
+    memTimes: [], memValues: [],
+    netTimes: [], netRx: [], netTx: [],
+    ioTimes: [], ioRead: [], ioWrite: []
   })
-  // 计算属性侧单独暴露 4 个数组的派生，避免外部直接 mutation
-  const cpuData = computed(() => stats.value.cpu)
-  const memData = computed(() => stats.value.mem)
-  const netData = computed(() => stats.value.net)
-  const ioData = computed(() => stats.value.io)
+  let statsUnlisten: UnlistenFn | null = null
+  const stats = shallowRef<PreparedSnapshot>(empty())
 
   // --- ECharts 公共配置 ---
-  const commonChartOpts = {
+  // markRaw：避免 Vue 把这个对象代理化，computed 中 spread 时不会触发依赖收集
+  const commonChartOpts = markRaw({
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
@@ -47,44 +53,60 @@ export function useContainerStats() {
       axisLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
       axisLabel: { color: '#64748b', fontSize: 9 }
     }
-  }
+  })
 
   // --- 图表 computed 配置 ---
+  // 修复 P0-11：直接复用 stats.value 中已切片好的数组，无 .map 调用
   const cpuOption = computed(() => ({
     ...commonChartOpts,
-    xAxis: { ...commonChartOpts.xAxis, data: stats.value.cpu.map(d => d.time) },
+    xAxis: { ...commonChartOpts.xAxis, data: stats.value.cpuTimes },
     yAxis: { type: 'value', name: 'CPU %', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.02)' } } },
-    series: [{ data: stats.value.cpu.map(d => d.value), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#10b981' } }]
+    series: [{ data: stats.value.cpuValues, type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#10b981' } }]
   }))
 
   const memOption = computed(() => ({
     ...commonChartOpts,
-    xAxis: { ...commonChartOpts.xAxis, data: stats.value.mem.map(d => d.time) },
+    xAxis: { ...commonChartOpts.xAxis, data: stats.value.memTimes },
     yAxis: { type: 'value', name: 'MB', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.02)' } } },
-    series: [{ data: stats.value.mem.map(d => d.value), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#38bdf8' } }]
+    series: [{ data: stats.value.memValues, type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#38bdf8' } }]
   }))
 
   const netOption = computed(() => ({
     ...commonChartOpts,
     legend: { data: ['Rx', 'Tx'], textStyle: { color: '#64748b', fontSize: 9 } },
-    xAxis: { ...commonChartOpts.xAxis, data: stats.value.net.map(d => d.time) },
+    xAxis: { ...commonChartOpts.xAxis, data: stats.value.netTimes },
     yAxis: { type: 'value', name: 'KB/s', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.02)' } } },
     series: [
-      { name: 'Rx', data: stats.value.net.map(d => d.rx), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#f59e0b' } },
-      { name: 'Tx', data: stats.value.net.map(d => d.tx), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#ef4444' } }
+      { name: 'Rx', data: stats.value.netRx, type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#f59e0b' } },
+      { name: 'Tx', data: stats.value.netTx, type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#ef4444' } }
     ]
   }))
 
   const ioOption = computed(() => ({
     ...commonChartOpts,
     legend: { data: ['Read', 'Write'], textStyle: { color: '#64748b', fontSize: 9 } },
-    xAxis: { ...commonChartOpts.xAxis, data: stats.value.io.map(d => d.time) },
+    xAxis: { ...commonChartOpts.xAxis, data: stats.value.ioTimes },
     yAxis: { type: 'value', name: 'KB/s', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.02)' } } },
     series: [
-      { name: 'Read', data: stats.value.io.map(d => d.read), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#a855f7' } },
-      { name: 'Write', data: stats.value.io.map(d => d.write), type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#ec4899' } }
+      { name: 'Read', data: stats.value.ioRead, type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#a855f7' } },
+      { name: 'Write', data: stats.value.ioWrite, type: 'line', smooth: true, showSymbol: false, itemStyle: { color: '#ec4899' } }
     ]
   }))
+
+  /** 在数组尾部 append 一个值，并保留最近 N 个；新数组返回（shallowRef 整体替换） */
+  const appendKeep = (arr: number[], v: number, keep: number): number[] => {
+    if (arr.length < keep) return [...arr, v]
+    const next = arr.slice(arr.length - keep + 1)
+    next.push(v)
+    return next
+  }
+  const appendKeepStr = (arr: string[], v: string, keep: number): string[] => {
+    if (arr.length < keep) return [...arr, v]
+    const next = arr.slice(arr.length - keep + 1)
+    next.push(v)
+    return next
+  }
+  const KEEP = 20
 
   // --- 启动统计数据流 ---
   const startStatsStream = async (id: string) => {
@@ -93,7 +115,7 @@ export function useContainerStats() {
       statsUnlisten = null
     }
     // 切换 selectedId 时清空旧数据
-    stats.value = { cpu: [], mem: [], net: [], io: [] }
+    stats.value = empty()
 
     statsUnlisten = await listen<ContainerStatsPayload>(EVT.containerStats(id), (event) => {
       const payload = event.payload
@@ -118,7 +140,6 @@ export function useContainerStats() {
       let rx = 0
       let tx = 0
       if (payload.networks) {
-        // 改用 Object.values：避免 for-in 遍历继承属性、且热路径下 V8 形态更稳定
         for (const net of Object.values(payload.networks)) {
           rx += net.rx_bytes ?? 0
           tx += net.tx_bytes ?? 0
@@ -134,13 +155,25 @@ export function useContainerStats() {
         else if (op === 'write') write += item.value ?? 0
       }
 
-      // 整体替换 stats：1 次响应（4 个数组 spread + slice(-20)）
+      const cpu2 = parseFloat(cpuPercent.toFixed(2))
+      const mem2 = parseFloat(memUsage.toFixed(2))
+      const rx2 = parseFloat((rx / 1024).toFixed(2))
+      const tx2 = parseFloat((tx / 1024).toFixed(2))
+      const read2 = parseFloat((read / 1024).toFixed(2))
+      const write2 = parseFloat((write / 1024).toFixed(2))
+
       const prev = stats.value
       stats.value = {
-        cpu: [...prev.cpu, { time, value: parseFloat(cpuPercent.toFixed(2)) }].slice(-20),
-        mem: [...prev.mem, { time, value: parseFloat(memUsage.toFixed(2)) }].slice(-20),
-        net: [...prev.net, { time, rx: parseFloat((rx / 1024).toFixed(2)), tx: parseFloat((tx / 1024).toFixed(2)) }].slice(-20),
-        io: [...prev.io, { time, read: parseFloat((read / 1024).toFixed(2)), write: parseFloat((write / 1024).toFixed(2)) }].slice(-20)
+        cpuTimes: appendKeepStr(prev.cpuTimes, time, KEEP),
+        cpuValues: appendKeep(prev.cpuValues, cpu2, KEEP),
+        memTimes: appendKeepStr(prev.memTimes, time, KEEP),
+        memValues: appendKeep(prev.memValues, mem2, KEEP),
+        netTimes: appendKeepStr(prev.netTimes, time, KEEP),
+        netRx: appendKeep(prev.netRx, rx2, KEEP),
+        netTx: appendKeep(prev.netTx, tx2, KEEP),
+        ioTimes: appendKeepStr(prev.ioTimes, time, KEEP),
+        ioRead: appendKeep(prev.ioRead, read2, KEEP),
+        ioWrite: appendKeep(prev.ioWrite, write2, KEEP)
       }
     })
 
@@ -172,14 +205,10 @@ export function useContainerStats() {
 
   // --- 重置统计数据 ---
   const handleResetStats = () => {
-    stats.value = { cpu: [], mem: [], net: [], io: [] }
+    stats.value = empty()
   }
 
   return {
-    cpuData,
-    memData,
-    netData,
-    ioData,
     cpuOption,
     memOption,
     netOption,

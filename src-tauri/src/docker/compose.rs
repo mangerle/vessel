@@ -6,9 +6,34 @@ use crate::handle_docker_op;
 use bollard::container::ListContainersOptions;
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::LazyLock;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::sync::Mutex;
+
+/// 修复 P0-15：compose 命令任务表，按 cmd_id 跟踪后台 JoinHandle。
+/// 切换连接 / 关闭项目时统一 abort，避免子进程孤儿与事件污染。
+type ComposeTaskMap = HashMap<String, Vec<tokio::task::JoinHandle<()>>>;
+static COMPOSE_TASKS: LazyLock<Mutex<ComposeTaskMap>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// compose 命令完成/失败的 payload，与前端 events.ts 中的 EVT.composeCmd* 一一对应
+#[derive(serde::Serialize, Clone)]
+pub struct ComposeCmdLinePayload {
+    pub cmd_id: String,
+    pub line: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct ComposeCmdErrorPayload {
+    pub cmd_id: String,
+    pub error: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct ComposeCmdFinishedPayload {
+    pub cmd_id: String,
+}
 
 /// 获取 Compose 项目列表
 #[tauri::command]
@@ -225,16 +250,23 @@ fn build_ssh_config(config: &ConnectionConfig) -> AppResult<ssh::SshConfig> {
 }
 
 /// 执行 Compose 命令并实时流式传输输出
+///
+/// 修复 P0-15：每次执行分配独立的 cmd_id（uuid v4），事件 payload 都附带 cmd_id；
+/// 多个 compose 命令并发时前端可按 cmd_id 区分订阅，互不污染。
+/// 三个 spawn 任务的 JoinHandle 存入 COMPOSE_TASKS，切连接时由 clear_client_cache
+/// 间接通过 cancel_all_compose_tasks() 一次性 abort，避免子进程孤儿。
 #[tauri::command]
 pub async fn run_compose_command(
     app: AppHandle,
     project_dir: String,
     args: Vec<String>,
-) -> AppResult<()> {
+) -> AppResult<String> {
     let config = current_config().await;
     let args_str = args.join(" ");
+    let cmd_id = uuid::Uuid::new_v4().to_string();
     log::info!(
-        "正在执行 Compose 命令: docker compose {} (目录: {}, 模式: {:?})",
+        "执行 Compose 命令 (cmd_id={}): docker compose {} (目录: {}, 模式: {:?})",
+        cmd_id,
         args_str,
         project_dir,
         config.mode
@@ -265,25 +297,40 @@ pub async fn run_compose_command(
         .ok_or("无法获取 compose 进程的 stderr")?;
 
     let app_clone = app.clone();
-    tauri::async_runtime::spawn(async move {
+    let cmd_id_stdout = cmd_id.clone();
+    let stdout_task = tokio::task::spawn(async move {
         let reader = tokio::io::BufReader::new(stdout);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app_clone.emit(events::COMPOSE_CMD_OUTPUT, line);
+            let _ = app_clone.emit(
+                events::COMPOSE_CMD_OUTPUT,
+                ComposeCmdLinePayload {
+                    cmd_id: cmd_id_stdout.clone(),
+                    line,
+                },
+            );
         }
     });
 
     let app_clone_err = app.clone();
-    tauri::async_runtime::spawn(async move {
+    let cmd_id_stderr = cmd_id.clone();
+    let stderr_task = tokio::task::spawn(async move {
         let reader = tokio::io::BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app_clone_err.emit(events::COMPOSE_CMD_OUTPUT, line);
+            let _ = app_clone_err.emit(
+                events::COMPOSE_CMD_OUTPUT,
+                ComposeCmdLinePayload {
+                    cmd_id: cmd_id_stderr.clone(),
+                    line,
+                },
+            );
         }
     });
 
     let app_clone_finish = app.clone();
-    tauri::async_runtime::spawn(async move {
+    let cmd_id_finish = cmd_id.clone();
+    let finish_task = tokio::task::spawn(async move {
         let result = child.wait().await;
         // 修复 P0-4：进程退出后立即删除 askpass 脚本，无论命令成败
         if let Some(p) = askpass_path {
@@ -296,24 +343,62 @@ pub async fn run_compose_command(
         match result {
             Ok(status) => {
                 if status.success() {
-                    let _ = app_clone_finish.emit(events::COMPOSE_CMD_FINISHED, ());
+                    let _ = app_clone_finish.emit(
+                        events::COMPOSE_CMD_FINISHED,
+                        ComposeCmdFinishedPayload {
+                            cmd_id: cmd_id_finish.clone(),
+                        },
+                    );
                 } else {
                     let _ = app_clone_finish.emit(
                         events::COMPOSE_CMD_ERROR,
-                        format!("Process exited with status: {}", status),
+                        ComposeCmdErrorPayload {
+                            cmd_id: cmd_id_finish.clone(),
+                            error: format!("Process exited with status: {}", status),
+                        },
                     );
                 }
             }
             Err(e) => {
                 let _ = app_clone_finish.emit(
                     events::COMPOSE_CMD_ERROR,
-                    format!("Failed to wait for process: {}", e),
+                    ComposeCmdErrorPayload {
+                        cmd_id: cmd_id_finish.clone(),
+                        error: format!("Failed to wait for process: {}", e),
+                    },
                 );
             }
         }
+        // 任务完成后从注册表移除自身
+        let mut tasks = COMPOSE_TASKS.lock().await;
+        tasks.remove(&cmd_id_finish);
     });
 
-    Ok(())
+    // 注册三个 task 的 JoinHandle，便于切连接时一次性 abort
+    {
+        let mut tasks = COMPOSE_TASKS.lock().await;
+        tasks.insert(cmd_id.clone(), vec![stdout_task, stderr_task, finish_task]);
+    }
+
+    Ok(cmd_id)
+}
+
+/// 取消 / 清理所有进行中的 compose 命令任务
+///
+/// 修复 P0-15：clear_client_cache 切连接时调用，确保旧连接下的子进程不再向新连接 emit；
+/// 三个 task 都被 abort，子进程的 stdin/stdout/stderr 句柄随之 drop，进程自然退出。
+pub async fn cancel_all_compose_tasks() {
+    let mut tasks = COMPOSE_TASKS.lock().await;
+    let count = tasks.len();
+    for (cmd_id, handles) in tasks.drain() {
+        log::debug!("中止 compose 任务: {}", cmd_id);
+        for h in handles {
+            h.abort();
+        }
+    }
+    if count > 0 {
+        log::info!("已中止 {} 个进行中的 compose 任务", count);
+    }
 }
 
 /// 按当前活动连接模式构造 compose 子进程命令

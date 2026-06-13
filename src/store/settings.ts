@@ -443,11 +443,23 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /**
    * 应用后端推送的 ConnectionConfig（来自 connection-updated 事件）：
-   * 在 connections[] 中按 (mode + 关键字段) 匹配 id，校正 activeConnectionId。
-   * 用于多窗口/托盘切换场景下前后端 active 状态同步。
+   * 在 connections[] 中**按 name 精确匹配** id，校正 activeConnectionId。
+   *
+   * 修复 P0-14 / P0-16：原实现按 (mode + 关键字段) 模糊匹配，
+   * 多个同类型 connection（两个 desktop、或两个同主机但密码不同的 SSH）
+   * 都会命中第一个，导致用户主动选 A 时 UI 反向刷成 B。
+   *
+   * fallback：name 缺失或不匹配时退到旧的字段匹配，保证 legacy 兼容。
    * 不修改 connections[] 内容（用户的未保存编辑由 Settings.vue 路径负责）。
    */
   const applyBackendConfig = (cfg: ConnectionConfigPayload): void => {
+    if (cfg.name) {
+      const byName = connections.value.find(c => c.name === cfg.name)
+      if (byName) {
+        activeConnectionId.value = byName.id
+        return
+      }
+    }
     const matched = connections.value.find(c => matchesConnectionConfig(c, cfg))
     if (matched) {
       activeConnectionId.value = matched.id

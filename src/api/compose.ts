@@ -25,8 +25,9 @@ export const composeApi = {
     invoke<void>('write_compose_file', { path, content }),
 
   /**
-   * 运行 Compose 命令
+   * 运行 Compose 命令；返回后端分配的 cmd_id（uuid v4），
+   * 前端按 cmd_id 过滤 EVT.composeCmd* 事件，并发命令互不污染（修复 P0-15）。
    */
   runCommand: (projectDir: string, args: string[]) =>
-    invoke<void>('run_compose_command', { projectDir, args })
+    invoke<string>('run_compose_command', { projectDir, args })
 }
