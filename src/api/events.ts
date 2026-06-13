@@ -29,4 +29,7 @@ export const EVT = {
   composeCmdOutput: 'compose-cmd-output',
   composeCmdFinished: 'compose-cmd-finished',
   composeCmdError: 'compose-cmd-error',
+
+  // 连接配置变更通知（后端 update_connection_config 末尾 emit）
+  connectionUpdated: 'connection-updated',
 } as const

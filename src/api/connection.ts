@@ -48,3 +48,26 @@ export const emptyWslConfig = (): ConnectionConfigPayload => ({
   ssh_password: null,
   use_sudo: false
 })
+
+/**
+ * 把后端 ConnectionConfig 投影为 DockerConnection-shape 的可识别特征，
+ * 用于在前端 connections[] 中按 (mode + 关键字段) 匹配。
+ */
+export const matchesConnectionConfig = (
+  conn: DockerConnection,
+  cfg: ConnectionConfigPayload
+): boolean => {
+  if (conn.type !== cfg.mode) return false
+  if (cfg.mode === 'wsl') {
+    return (conn.wslDistro ?? null) === cfg.wsl_distro
+  }
+  if (cfg.mode === 'ssh') {
+    return (
+      (conn.sshHost ?? null) === cfg.ssh_host &&
+      (conn.sshPort ?? DEFAULT_SSH_PORT) === (cfg.ssh_port ?? DEFAULT_SSH_PORT) &&
+      (conn.sshUser ?? null) === cfg.ssh_user
+    )
+  }
+  // desktop
+  return cfg.mode === 'desktop'
+}

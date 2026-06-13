@@ -2,6 +2,7 @@ use crate::error::AppResult;
 use bollard::Docker;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 pub mod ssh;
@@ -105,30 +106,37 @@ pub async fn current_config() -> ConnectionConfig {
 ///
 /// 幂等：仅当新配置与当前配置不一致时才清空客户端缓存与各模式代理。
 /// 这样可以避免 App.vue 启动时 / 重复调用 ping_docker 等场景下误关连接。
+/// 配置实际变更时通过 emit("connection-updated", &config) 通知所有前端实例
+/// 刷新 activeConnection，避免多窗口/托盘切换时前后端失同步。
 #[tauri::command]
-pub async fn update_connection_config(config: ConnectionConfig) -> AppResult<()> {
+pub async fn update_connection_config(app: AppHandle, config: ConnectionConfig) -> AppResult<()> {
+    let new_config = config;
     {
         let guard = CONNECTION_CONFIG.read().await;
-        if *guard == config {
+        if *guard == new_config {
             log::debug!("连接配置未变化，跳过客户端缓存清理");
             return Ok(());
         }
     }
     log::info!(
         "正在更新连接配置: mode={:?}, name={}, distro={:?}, ssh={:?}@{:?}:{:?}",
-        config.mode,
-        config.name,
-        config.wsl_distro,
-        config.ssh_user,
-        config.ssh_host,
-        config.ssh_port
+        new_config.mode,
+        new_config.name,
+        new_config.wsl_distro,
+        new_config.ssh_user,
+        new_config.ssh_host,
+        new_config.ssh_port
     );
     {
         let mut guard = CONNECTION_CONFIG.write().await;
-        *guard = config;
+        *guard = new_config.clone();
     }
     // 配置改变后，清空客户端缓存与各模式代理
     clear_client_cache().await;
+    // 通知前端刷新 activeConnection（多窗口/托盘切换场景同步通道）
+    if let Err(e) = app.emit("connection-updated", &new_config) {
+        log::error!("发送 connection-updated 事件失败: {}", e);
+    }
     Ok(())
 }
 

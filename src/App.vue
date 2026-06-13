@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from './store/settings'
+import { EVT } from './api/events'
+import type { ConnectionConfigPayload } from './api/connection'
 import SingleInstanceListener from './components/common/SingleInstanceListener.vue'
 import StartupUpdater from './components/common/StartupUpdater.vue'
 import {
@@ -126,6 +129,12 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
 
 onMounted(async () => {
   await settingsStore.loadSettings()
+
+  // 监听后端 connection-updated 事件，校正 activeConnectionId
+  // 解决多窗口/托盘切换场景下前后端 active 状态失同步
+  listen<ConnectionConfigPayload>(EVT.connectionUpdated, (event) => {
+    settingsStore.applyBackendConfig(event.payload)
+  })
 
   // 初始化后端连接上下文：传入完整的活动连接配置 + 触发连通性探测
   try {
