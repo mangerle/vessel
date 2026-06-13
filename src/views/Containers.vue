@@ -2,8 +2,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useContainerStats } from '../hooks/useContainerStats'
 import { useContainerStore } from '../store/container'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { containerApi } from '../api/container'
+import { EVT } from '../api/events'
+import type { ContainerDetails } from '../api/types'
 import {
   NButton,
   NDropdown,
@@ -45,9 +47,9 @@ const containerStore = useContainerStore()
 const message = useMessage()
 
 // --- 状态控制 ---
-const detailRef = ref<any>(null)
+const detailRef = ref<{ activeTab?: string; selectedUser?: 'root' | 'default' } | null>(null)
 const selectedId = ref<string | null>(null)
-const containerDetails = ref<any>(null)
+const containerDetails = ref<ContainerDetails | null>(null)
 const loadingDetails = ref(false)
 
 // 悬浮复制 Toast 状态
@@ -86,7 +88,7 @@ const commitAuthor = ref('')
 const independentContainers = computed(() => {
   return containerStore.containers.filter(c => {
     if (c.compose_project) return false
-    const labels = (c as any).labels
+    const labels = c.labels as Record<string, string> | undefined
     return !labels || !('com.docker.compose.project' in labels)
   })
 })
@@ -113,8 +115,8 @@ const cleanupCurrentStreams = async () => {
   if (containerDetails.value?.id) {
     const oldId = containerDetails.value.id
     await Promise.allSettled([
-      invoke('close_container_logs', { id: oldId }),
-      invoke('close_container_stats', { id: oldId })
+      containerApi.closeLogs(oldId),
+      containerApi.closeStats(oldId)
     ])
   }
 }
@@ -208,7 +210,7 @@ const handleMenuSelect = async (key: string) => {
       copyText(targetId)
       break
     case 'copy_image_id':
-      copyText(containerDetails.value?.image_id || containerDetails.value?.Image || 'image_id_placeholder')
+      copyText(containerDetails.value?.image_id || containerDetails.value?.image || 'image_id_placeholder')
       break
     case 'show_top':
       await handleShowTop(targetId, target?.name || 'standalone')
@@ -375,7 +377,7 @@ const handleShowTop = async (id: string, name: string) => {
   topTitles.value = []
   topProcesses.value = []
   try {
-    const res = await invoke<{ titles: string[]; processes: string[][] }>('top_container', { id })
+    const res = await containerApi.top(id)
     topTitles.value = res.titles
     topProcesses.value = res.processes
   } catch (e: any) {
@@ -392,10 +394,7 @@ const handleRunExec = async () => {
   execResult.value = null
   execExitCode.value = null
   try {
-    const res = await invoke<{ exit_code: number | null; output: string }>('exec_container', {
-      id: execTargetContainerId.value,
-      cmd: execCmdText.value.trim()
-    })
+    const res = await containerApi.exec(execTargetContainerId.value, execCmdText.value.trim())
     execResult.value = res.output || '[无输出]'
     execExitCode.value = res.exit_code
     if (res.exit_code === 0) {
@@ -417,10 +416,7 @@ const handleRenameSubmit = async () => {
     return
   }
   try {
-    await invoke('rename_container', { 
-      id: renameContainerId.value, 
-      newName: renameNewName.value.trim() 
-    })
+    await containerApi.rename(renameContainerId.value, renameNewName.value.trim())
     message.success('容器已成功重命名')
     showRenameModal.value = false
     // 重新获取容器列表并更新详情
@@ -440,13 +436,13 @@ const handleCommitSubmit = async () => {
   }
   try {
     message.info('正在提交容器，请稍候...')
-    const newImageId = await invoke<string>('commit_container', {
-      id: commitContainerId.value,
-      repo: commitRepo.value.trim(),
-      tag: commitTag.value.trim() || 'latest',
-      comment: commitComment.value.trim(),
-      author: commitAuthor.value.trim()
-    })
+    const newImageId = await containerApi.commit(
+      commitContainerId.value,
+      commitRepo.value.trim(),
+      commitTag.value.trim() || 'latest',
+      commitComment.value.trim(),
+      commitAuthor.value.trim()
+    )
     message.success(`容器提交成功！新镜像 ID: ${newImageId.substring(0, 12)}`)
     showCommitModal.value = false
   } catch (e: any) {
@@ -457,7 +453,7 @@ const handleCommitSubmit = async () => {
 const fetchDetails = async (id: string) => {
   loadingDetails.value = true
   try {
-    containerDetails.value = await invoke('inspect_container', { id })
+    containerDetails.value = await containerApi.inspect(id)
     await startLogsStream(id)
     await startStatsStream(id)
   } catch (e: any) {
@@ -473,7 +469,7 @@ const handleCleanLogs = () => {
 
 // --- Logs Stream ---
 const logsList = ref<string[]>([])
-let logsUnlisten: any = null
+let logsUnlisten: UnlistenFn | null = null
 
 // requestAnimationFrame 持续 flush：浏览器帧率自适应（60Hz ≈ 16ms），
 // 后台 tab 自动暂停。容量上限 500 行：v-for 节点数从 2000 → 500，
@@ -499,12 +495,12 @@ const startLogsStream = async (id: string) => {
   logBuffer = []
   logFlushTimer = requestAnimationFrame(flushLogBuffer)
 
-  logsUnlisten = await listen(`container-logs-${id}`, (event: any) => {
+  logsUnlisten = await listen<string>(EVT.containerLogs(id), (event) => {
     logBuffer.push(event.payload)
   })
 
   try {
-    await invoke('stream_container_logs', { id })
+    await containerApi.streamLogs(id)
   } catch (e) {
     console.error('开始日志流失败', e)
   }

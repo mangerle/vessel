@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { invoke } from '@tauri-apps/api/core'
 import { useImageStore } from '../store/image'
+import { imageOpsApi } from '../api/systemApi'
 import {
   NButton,
   NDropdown,
@@ -237,11 +237,7 @@ const handleTagSubmit = async () => {
   const tag = tagValue.value.trim() || 'latest'
   
   try {
-    await invoke('tag_image', {
-      imageName: tagTargetImageId.value,
-      repo,
-      tag
-    })
+    await imageOpsApi.tagImage(tagTargetImageId.value, repo, tag)
     message.success(`成功为镜像追加标签 ${repo}:${tag}`)
     showTagModal.value = false
     await imageStore.fetchImages()
@@ -393,7 +389,7 @@ const handleRunImage = async () => {
       cmd = runCmd.value.trim().split(/\s+/).filter(Boolean)
     }
 
-    await invoke('run_image', {
+    await imageOpsApi.runImage({
       image: runningImage.value,
       name: runContainerName.value.trim() || null,
       ports,

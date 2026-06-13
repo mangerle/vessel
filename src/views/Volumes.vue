@@ -36,7 +36,7 @@ const activeTab = ref('users') // 默认：users 🗺️ 关联容器
 
 // 文件浏览器状态
 const currentPath = ref('')
-const fileList = ref<any[]>([])
+const fileList = ref<Array<{ name: string; isDir: boolean; path: string }>>([])
 const fileLoading = ref(false)
 const selectedFile = ref<string | null>(null)
 const fileContent = ref('')
@@ -216,7 +216,7 @@ const handleSaveFile = async () => {
 const showMenu = ref(false)
 const x = ref(0)
 const y = ref(0)
-const menuTarget = ref<any>(null)
+const menuTarget = ref<{ name: string } | null>(null)
 
 const menuOptions = [
   { label: '文件浏览', key: 'files', icon: () => h(NIcon, null, { default: () => h(FolderOutline) }) },

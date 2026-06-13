@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { 
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { containerApi } from '../api/container'
+import { EVT } from '../api/events'
+import type { ContainerStatsPayload } from '../api/types'
+import {
   NPageHeader, NCard, NGrid, NGi,
   NSpace, NBreadcrumb, NBreadcrumbItem
 } from 'naive-ui'
@@ -32,8 +34,8 @@ const route = useRoute()
 const router = useRouter()
 const containerId = route.params.id as string
 
-const cpuData = ref<any[]>([])
-const memData = ref<any[]>([])
+const cpuData = ref<string[]>([])
+const memData = ref<string[]>([])
 const timestamps = ref<string[]>([])
 
 const cpuOption = ref({
@@ -67,13 +69,18 @@ const memOption = ref({
   }]
 })
 
-let unlisten: (() => void) | null = null
+let unlisten: UnlistenFn | null = null
 
-const calculateCpuPercent = (stats: any) => {
-  const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage
-  const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage
-  const onlineCpus = stats.cpu_stats.online_cpus || stats.cpu_stats.cpu_usage.percpu_usage?.length || 1
-  
+const calculateCpuPercent = (stats: ContainerStatsPayload): number => {
+  const cpuNow = stats.cpu_stats?.cpu_usage?.total_usage ?? 0
+  const cpuPre = stats.precpu_stats?.cpu_usage?.total_usage ?? 0
+  const sysNow = stats.cpu_stats?.system_cpu_usage ?? 0
+  const sysPre = stats.precpu_stats?.system_cpu_usage ?? 0
+  const cpuDelta = cpuNow - cpuPre
+  const systemDelta = sysNow - sysPre
+  const onlineCpus =
+    stats.cpu_stats?.online_cpus ?? stats.cpu_stats?.cpu_usage?.percpu_usage?.length ?? 1
+
   if (systemDelta > 0 && cpuDelta > 0) {
     return (cpuDelta / systemDelta) * onlineCpus * 100
   }
@@ -82,17 +89,17 @@ const calculateCpuPercent = (stats: any) => {
 
 onMounted(async () => {
   // 启动后端监控流
-  await invoke('stream_container_stats', { id: containerId })
+  await containerApi.streamStats(containerId)
 
   // 监听监控数据
-  unlisten = await listen(`container-stats-${containerId}`, (event: any) => {
+  unlisten = await listen<ContainerStatsPayload>(EVT.containerStats(containerId), (event) => {
     const stats = event.payload
     const now = new Date().toLocaleTimeString()
-    
+
     // 计算 CPU
     const cpuPercent = calculateCpuPercent(stats)
     // 计算内存 (Bytes -> MB)
-    const memUsage = stats.memory_stats.usage / 1024 / 1024
+    const memUsage = (stats.memory_stats?.usage ?? 0) / 1024 / 1024
 
     timestamps.value.push(now)
     cpuData.value.push(cpuPercent.toFixed(2))
@@ -106,12 +113,12 @@ onMounted(async () => {
     }
 
     // 手动触发响应式更新，并确保数据数组被替换以触发 ECharts 内部监听
-    cpuOption.value = { 
+    cpuOption.value = {
       ...cpuOption.value,
       xAxis: { ...cpuOption.value.xAxis, data: [...timestamps.value] },
       series: [{ ...cpuOption.value.series[0], data: [...cpuData.value] }]
     }
-    memOption.value = { 
+    memOption.value = {
       ...memOption.value,
       xAxis: { ...memOption.value.xAxis, data: [...timestamps.value] },
       series: [{ ...memOption.value.series[0], data: [...memData.value] }]
@@ -121,7 +128,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (unlisten) unlisten()
-  invoke('close_container_stats', { id: containerId }).catch(() => {})
+  containerApi.closeStats(containerId).catch(() => {})
 })
 </script>
 

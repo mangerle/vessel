@@ -4,7 +4,10 @@ import { useContainerStats } from '../hooks/useContainerStats'
 import { useComposeStore } from '../store/compose'
 import { useContainerStore } from '../store/container'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { containerApi } from '../api/container'
+import { EVT } from '../api/events'
+import type { ContainerDetails } from '../api/types'
 import {
   NButton,
   NButtonGroup,
@@ -52,10 +55,10 @@ const containerStore = useContainerStore()
 const message = useMessage()
 
 // --- 状态控制 ---
-const detailRef = ref<any>(null)
+const detailRef = ref<{ activeTab?: string; selectedUser?: 'root' | 'default' } | null>(null)
 const selectedId = ref<string | null>(null)
 const selectedType = ref<'project' | 'container' | null>(null)
-const containerDetails = ref<any>(null)
+const containerDetails = ref<ContainerDetails | null>(null)
 const loadingDetails = ref(false)
 
 const selectedProject = computed(() => {
@@ -108,8 +111,8 @@ const cleanupCurrentStreams = async () => {
   if (containerDetails.value?.id) {
     const oldId = containerDetails.value.id
     await Promise.allSettled([
-      invoke('close_container_logs', { id: oldId }),
-      invoke('close_container_stats', { id: oldId })
+      containerApi.closeLogs(oldId),
+      containerApi.closeStats(oldId)
     ])
   }
 }
@@ -227,7 +230,7 @@ const handleMenuSelect = async (key: string) => {
         copyText(targetId)
         break
       case 'copy_image_id':
-        copyText(containerDetails.value?.image_id || containerDetails.value?.Image || 'image_id_placeholder')
+        copyText(containerDetails.value?.image_id || containerDetails.value?.image || 'image_id_placeholder')
         break
       case 'inspect_meta':
         // 切到元数据 Inspect 页
@@ -516,7 +519,7 @@ const handleConfirmImport = async () => {
 const fetchDetails = async (id: string) => {
   loadingDetails.value = true
   try {
-    containerDetails.value = await invoke('inspect_container', { id })
+    containerDetails.value = await containerApi.inspect(id)
     await startLogsStream(id)
     await startStatsStream(id)
   } catch (e: any) {
@@ -532,7 +535,7 @@ const handleCleanLogs = () => {
 
 // --- 日志流绑定 ---
 const logsList = ref<string[]>([])
-let logsUnlisten: any = null
+let logsUnlisten: UnlistenFn | null = null
 
 // rAF 持续 flush：浏览器帧率自适应（60Hz ≈ 16ms），后台 tab 自动暂停。
 // 容量上限 500 行：v-for 节点数从 2000 → 500，单次 patch 30-60ms → 5-10ms。
@@ -552,12 +555,12 @@ const startLogsStream = async (id: string) => {
   logBuffer = []
   logFlushTimer = requestAnimationFrame(flushLogBuffer)
 
-  logsUnlisten = await listen(`container-logs-${id}`, (event: any) => {
+  logsUnlisten = await listen<string>(EVT.containerLogs(id), (event) => {
     logBuffer.push(event.payload)
   })
 
   try {
-    await invoke('stream_container_logs', { id })
+    await containerApi.streamLogs(id)
   } catch (e) {
     console.error('开始日志流失败', e)
   }

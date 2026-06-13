@@ -2,12 +2,23 @@ import { defineStore } from 'pinia'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { useTaskStore } from './task'
 import { imageApi } from '../api/image'
+import {
+  EVT,
+  type ImagePullProgressPayload,
+  type ImagePullErrorPayload,
+  type ImagePullFinishedPayload,
+  type ImageExportProgressPayload,
+  type ImageExportErrorPayload,
+  type ImageExportFinishedPayload,
+  type ImageImportProgressPayload,
+  type ImageImportErrorPayload,
+  type ImageImportFinishedPayload
+} from '../api/events'
 import { formatBytes } from '../utils/format'
-import type { 
-  ImageInfo, 
-  ImageSearchResult, 
-  ImageHistoryInfo, 
-  PullProgress 
+import type {
+  ImageInfo,
+  ImageSearchResult,
+  ImageHistoryInfo
 } from '../api/types'
 
 export const useImageStore = defineStore('image', {
@@ -121,15 +132,15 @@ export const useImageStore = defineStore('image', {
           }
         }, 100)
 
-        taskStore.updateTask(taskId, { 
-          status, 
+        taskStore.updateTask(taskId, {
+          status,
           progress: status === 'success' ? 100 : undefined,
-          error 
+          error
         })
       }
 
       try {
-        const unlistenProgress = await listen<{ image: string, info: PullProgress }>('image-pull-progress', (event) => {
+        const unlistenProgress = await listen<ImagePullProgressPayload>(EVT.imagePullProgress, (event) => {
           const { image, info: payload } = event.payload
           if (image !== targetImageName) return
 
@@ -153,14 +164,14 @@ export const useImageStore = defineStore('image', {
         })
         unlistenList.push(unlistenProgress)
 
-        const unlistenError = await listen<{ image: string, error: string }>('image-pull-error', (event) => {
+        const unlistenError = await listen<ImagePullErrorPayload>(EVT.imagePullError, (event) => {
           const { image, error } = event.payload
           if (image !== targetImageName) return
           cleanup('error', error)
         })
         unlistenList.push(unlistenError)
 
-        const unlistenFinished = await listen<string>('image-pull-finished', (event) => {
+        const unlistenFinished = await listen<ImagePullFinishedPayload>(EVT.imagePullFinished, (event) => {
           const image = event.payload
           if (image !== targetImageName) return
           cleanup('success')
@@ -169,11 +180,11 @@ export const useImageStore = defineStore('image', {
         unlistenList.push(unlistenFinished)
 
         // 调用后端，传递 imageName 已经可能包含的登录凭证
-        await imageApi.pull({ 
-          imageName,
+        await imageApi.pull({
+          image_name: imageName,
           username: auth?.username || null,
           password: auth?.password || null,
-          serverAddress: auth?.serverAddress || null
+          server_address: auth?.serverAddress || null
         })
       } catch (err) {
         this.error = String(err)
@@ -235,7 +246,7 @@ export const useImageStore = defineStore('image', {
       }
 
       try {
-        const unlistenProgress = await listen<{ image: string; bytes_written: number }>('image-export-progress', (event) => {
+        const unlistenProgress = await listen<ImageExportProgressPayload>(EVT.imageExportProgress, (event) => {
           const { image, bytes_written } = event.payload
           if (image !== exportIdentifier) return
 
@@ -249,14 +260,14 @@ export const useImageStore = defineStore('image', {
         })
         unlistenList.push(unlistenProgress)
 
-        const unlistenError = await listen<{ image: string; error: string }>('image-export-error', (event) => {
+        const unlistenError = await listen<ImageExportErrorPayload>(EVT.imageExportError, (event) => {
           const { image, error } = event.payload
           if (image !== exportIdentifier) return
           cleanup('error', error)
         })
         unlistenList.push(unlistenError)
 
-        const unlistenFinished = await listen<string>('image-export-finished', (event) => {
+        const unlistenFinished = await listen<ImageExportFinishedPayload>(EVT.imageExportFinished, (event) => {
           const image = event.payload
           if (image !== exportIdentifier) return
           cleanup('success')
@@ -328,11 +339,11 @@ export const useImageStore = defineStore('image', {
       }
 
       try {
-        const unlistenProgress = await listen<{ path: string; info: any }>('image-import-progress', (event) => {
-          const { path: eventPath, info } = event.payload
+        const unlistenProgress = await listen<ImageImportProgressPayload>(EVT.imageImportProgress, (event) => {
+          const { path: eventPath, status, stream, error } = event.payload
           if (eventPath !== path) return
 
-          const logMsg = info.stream || info.status || ''
+          const logMsg = stream || status || error || ''
           const task = taskStore.tasks.find(t => t.id === taskId)
           if (!task) return
           // 增量追加 + 原地截断：避免每 tick 重建整个数组
@@ -343,14 +354,14 @@ export const useImageStore = defineStore('image', {
         })
         unlistenList.push(unlistenProgress)
 
-        const unlistenError = await listen<{ path: string; error: string }>('image-import-error', (event) => {
+        const unlistenError = await listen<ImageImportErrorPayload>(EVT.imageImportError, (event) => {
           const { path: eventPath, error } = event.payload
           if (eventPath !== path) return
           cleanup('error', error)
         })
         unlistenList.push(unlistenError)
 
-        const unlistenFinished = await listen<string>('image-import-finished', (event) => {
+        const unlistenFinished = await listen<ImageImportFinishedPayload>(EVT.imageImportFinished, (event) => {
           const eventPath = event.payload
           if (eventPath !== path) return
           cleanup('success')

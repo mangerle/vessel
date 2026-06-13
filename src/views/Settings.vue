@@ -2,12 +2,15 @@
 import { ref, shallowRef, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../store/settings'
-import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
-import { check } from '@tauri-apps/plugin-updater'
+import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { info, error, warn } from '@tauri-apps/plugin-log'
 import { toConnectionConfig } from '../api/connection'
+import { connectionApi } from '../api/connectionApi'
+import { fsApi, wslApi } from '../api/systemApi'
+import type { DockerConnection, Registry } from '../store/settings'
+import type { SshDiagnostic } from '../api/types'
 import {
   NSelect,
   NSwitch,
@@ -124,14 +127,14 @@ const handleDeleteRegistry = (id: string) => {
 
 // 草稿配置 (Draft Settings) 实现即改即生效
 const draft = ref({
-  theme: 'deep-black',
+  theme: 'deep-black' as 'deep-black' | 'zed-gray' | 'light-apple',
   autoStart: false,
   closeToTray: true,
   refreshInterval: 3,
-  visibleMenus: ['compose', 'containers', 'images', 'networks', 'volumes'],
-  connections: [] as any[],
+  visibleMenus: ['compose', 'containers', 'images', 'networks', 'volumes'] as string[],
+  connections: [] as DockerConnection[],
   activeConnectionId: '',
-  registries: [] as any[]
+  registries: [] as Registry[]
 })
 
 // 初始化草稿
@@ -149,9 +152,9 @@ const syncDraftFromStore = () => {
 }
 
 // 规整连接列表，仅供保存时使用（持久化层要剔除 undefined 字段）
-const cleanConnections = (conns: any[]) => {
+const cleanConnections = (conns: DockerConnection[]): DockerConnection[] => {
   return conns.map(c => {
-    const clean: any = { id: c.id, name: c.name, type: c.type }
+    const clean: DockerConnection = { id: c.id, name: c.name, type: c.type }
     if (c.wslDistro !== undefined && c.wslDistro !== null) clean.wslDistro = c.wslDistro
     if (c.sshHost !== undefined && c.sshHost !== null) clean.sshHost = c.sshHost
     if (c.sshPort !== undefined && c.sshPort !== null) clean.sshPort = c.sshPort
@@ -211,10 +214,10 @@ const handleSave = async () => {
     try {
       // 序列化整个活动连接为 ConnectionConfig 形状再下发给后端
       const config = toConnectionConfig(activeConn)
-      await invoke('update_connection_config', { config })
+      await connectionApi.updateConfig(config)
       // 主动 ping 一次，立即验证配置生效
       try {
-        await invoke('ping_docker')
+        await connectionApi.ping()
       } catch (e) {
         warn(`已保存配置，但当前活动连接 ping 失败: ${e}`)
         message.warning('配置已保存，但当前活动引擎尚未连通')
@@ -228,7 +231,7 @@ const handleSave = async () => {
 
   try {
     // 2. 保存到 store 状态中并自动持久化
-    settingsStore.theme = draft.value.theme as any
+    settingsStore.theme = draft.value.theme
     settingsStore.closeToTray = draft.value.closeToTray
     settingsStore.refreshInterval = draft.value.refreshInterval
     settingsStore.visibleMenus = [...draft.value.visibleMenus]
@@ -260,7 +263,7 @@ const handleCancel = () => {
 const handleRefreshWsl = async (silent = false) => {
   try {
     if (!silent) message.warning('正在扫描宿主机可用 Linux 发行版...')
-    const list = await invoke<string[]>('list_wsl_distros')
+    const list = await wslApi.listDistros()
     if (list && list.length > 0) {
       wslOptions.value = list.map(distro => ({
         label: distro,
@@ -316,7 +319,7 @@ const openAddConnModal = () => {
 // 远端诊断状态
 const showDiagModal = ref(false)
 const diagRunning = ref(false)
-const diagResult = ref<any>(null)
+const diagResult = ref<SshDiagnostic | null>(null)
 const diagError = ref('')
 
 const handleTestConnection = async () => {
@@ -337,8 +340,8 @@ const handleTestConnection = async () => {
       ...newConnection.value,
       id: 'diagnose_temp',
       name: newConnection.value.name || '诊断测试'
-    } as any)
-    diagResult.value = await invoke('diagnose_ssh_connection', { config })
+    } as DockerConnection)
+    diagResult.value = await connectionApi.diagnoseSsh(config)
     showDiagModal.value = true
   } catch (e: any) {
     diagError.value = String(e)
@@ -403,7 +406,7 @@ const handleSelectConnection = (id: string) => {
 // 打开本地配置文件目录
 const handleOpenConfigDir = async () => {
   try {
-    await invoke('open_config_dir')
+    await fsApi.openConfigDir()
     message.success('已打开本地配置文件所在目录')
   } catch (e: any) {
     message.error('打开目录失败: ' + e)
@@ -413,7 +416,7 @@ const handleOpenConfigDir = async () => {
 // 打开运行日志目录
 const handleOpenLogDir = async () => {
   try {
-    await invoke('open_log_dir')
+    await fsApi.openLogDir()
     message.success('已打开日志文件所在目录')
   } catch (e: any) {
     message.error('打开日志目录失败: ' + e)
@@ -445,7 +448,7 @@ const updateStep = ref<'idle' | 'found' | 'downloading' | 'ready'>('idle')
 const updateError = ref('')
 
 // 当前获取到的更新对象
-const activeUpdate = shallowRef<any>(null)
+const activeUpdate = shallowRef<Update | null>(null)
 const updateInfo = ref({
   version: '',
   date: '',

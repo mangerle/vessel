@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from './store/settings'
+import { connectionApi } from './api/connectionApi'
 import { EVT } from './api/events'
 import type { ConnectionConfigPayload } from './api/connection'
 import SingleInstanceListener from './components/common/SingleInstanceListener.vue'
@@ -141,7 +141,7 @@ onMounted(async () => {
   // 避免启动瞬间 2 次 ping_docker 重复执行。
   try {
     const config = settingsStore.getActiveConnectionConfig()
-    await invoke('update_connection_config', { config })
+    await connectionApi.updateConfig(config)
   } catch (e) {
     console.error('初始化后端配置失败:', e)
   }

@@ -267,8 +267,9 @@ import { useSettingsStore } from '../../store/settings'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { listen } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { terminalApi } from '../../api/terminalApi'
+import { EVT } from '../../api/events'
 import ContainerFileBrowser from './ContainerFileBrowser.vue'
 import { useContextMenu, renderIcon, MenuOption } from '../../hooks/useContextMenu'
 
@@ -450,7 +451,7 @@ const handleMenuSelect = async (key: string) => {
       if (text && terminalExecId) {
         const encoder = new TextEncoder()
         const bytes = Array.from(encoder.encode(text))
-        await invoke('write_to_terminal', { execId: terminalExecId, data: bytes })
+        await terminalApi.write(terminalExecId, bytes)
       }
     } catch (err) {
       message.error(`粘贴失败: ${err}`)
@@ -561,7 +562,7 @@ const terminalRef = ref<HTMLElement | null>(null)
 let term: Terminal | null = null
 let fitAddon: FitAddon | null = null
 let terminalExecId = ''
-let termUnlisten: any = null
+let termUnlisten: UnlistenFn | null = null
 
 const initTerminal = async () => {
   destroyTerminal()
@@ -591,7 +592,7 @@ const initTerminal = async () => {
     const encoder = new TextEncoder()
     const bytes = Array.from(encoder.encode(data))
     try {
-      await invoke('write_to_terminal', { execId: terminalExecId, data: bytes })
+      await terminalApi.write(terminalExecId, bytes)
     } catch (e) {
       console.error('写入终端失败', e)
     }
@@ -601,23 +602,19 @@ const initTerminal = async () => {
   term.onResize(async (size) => {
     if (!terminalExecId) return
     try {
-      await invoke('resize_container_terminal', {
-        execId: terminalExecId,
-        height: size.rows,
-        width: size.cols
-      })
+      await terminalApi.resize(terminalExecId, { cols: size.cols, rows: size.rows })
     } catch (e) {
       console.error('调整终端大小失败', e)
     }
   })
 
   try {
-    terminalExecId = await invoke('create_container_terminal', {
-      id: props.container.id,
-      user: selectedUser.value === 'default' ? undefined : selectedUser.value
-    })
+    terminalExecId = await terminalApi.create(
+      props.container.id,
+      selectedUser.value === 'default' ? 'default' : 'root'
+    )
 
-    termUnlisten = await listen(`container-terminal-stdout-${terminalExecId}`, (event: any) => {
+    termUnlisten = await listen<number[]>(EVT.containerTerminalStdout(terminalExecId), (event) => {
       const arr = new Uint8Array(event.payload)
       const str = new TextDecoder().decode(arr)
       term?.write(str)
@@ -633,7 +630,7 @@ const initTerminal = async () => {
 
 const destroyTerminal = () => {
   if (terminalExecId) {
-    invoke('close_container_terminal', { execId: terminalExecId }).catch(err => {
+    terminalApi.close(terminalExecId).catch(err => {
       console.error('关闭终端连接失败:', err)
     })
   }

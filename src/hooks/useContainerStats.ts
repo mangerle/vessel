@@ -1,6 +1,8 @@
 import { shallowRef, computed } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
+import { containerApi } from '../api/container'
+import { EVT } from '../api/events'
+import type { ContainerStatsPayload } from '../api/types'
 
 /**
  * 容器性能统计数据 composable
@@ -93,42 +95,43 @@ export function useContainerStats() {
     // 切换 selectedId 时清空旧数据
     stats.value = { cpu: [], mem: [], net: [], io: [] }
 
-    statsUnlisten = await listen(`container-stats-${id}`, (event: { payload: unknown }) => {
-      const payload = event.payload as Record<string, any>
+    statsUnlisten = await listen<ContainerStatsPayload>(EVT.containerStats(id), (event) => {
+      const payload = event.payload
       const time = new Date().toLocaleTimeString()
 
       // CPU 使用率计算
       let cpuPercent = 0.0
-      if (payload.cpu_stats && payload.precpu_stats) {
-        const cpuDelta = payload.cpu_stats.cpu_usage.total_usage - payload.precpu_stats.cpu_usage.total_usage
-        const systemDelta = payload.cpu_stats.system_cpu_usage - payload.precpu_stats.system_cpu_usage
-        if (systemDelta > 0 && cpuDelta > 0) {
-          cpuPercent = (cpuDelta / systemDelta) * (payload.cpu_stats.online_cpus || 1) * 100.0
-        }
+      const cpuNow = payload.cpu_stats?.cpu_usage?.total_usage ?? 0
+      const cpuPre = payload.precpu_stats?.cpu_usage?.total_usage ?? 0
+      const sysNow = payload.cpu_stats?.system_cpu_usage ?? 0
+      const sysPre = payload.precpu_stats?.system_cpu_usage ?? 0
+      const cpuDelta = cpuNow - cpuPre
+      const systemDelta = sysNow - sysPre
+      if (systemDelta > 0 && cpuDelta > 0) {
+        cpuPercent = (cpuDelta / systemDelta) * (payload.cpu_stats?.online_cpus ?? 1) * 100.0
       }
 
       // 内存使用量
-      let memUsage = 0
-      if (payload.memory_stats) {
-        memUsage = (payload.memory_stats.usage || 0) / (1024 * 1024)
-      }
+      const memUsage = (payload.memory_stats?.usage ?? 0) / (1024 * 1024)
 
       // 网络流量
-      let rx = 0; let tx = 0;
+      let rx = 0
+      let tx = 0
       if (payload.networks) {
         for (const key in payload.networks) {
-          rx += payload.networks[key].rx_bytes || 0
-          tx += payload.networks[key].tx_bytes || 0
+          const net = payload.networks[key]
+          rx += net.rx_bytes ?? 0
+          tx += net.tx_bytes ?? 0
         }
       }
 
       // 块设备 IO
-      let read = 0; let write = 0;
-      if (payload.blkio_stats && payload.blkio_stats.io_service_bytes_recursive) {
-        for (const item of payload.blkio_stats.io_service_bytes_recursive) {
-          if (item.op && item.op.toLowerCase() === 'read') read += item.value || 0
-          if (item.op && item.op.toLowerCase() === 'write') write += item.value || 0
-        }
+      let read = 0
+      let write = 0
+      for (const item of payload.blkio_stats?.io_service_bytes_recursive ?? []) {
+        const op = item.op?.toLowerCase()
+        if (op === 'read') read += item.value ?? 0
+        else if (op === 'write') write += item.value ?? 0
       }
 
       // 整体替换 stats：1 次响应（4 个数组 spread + slice(-20)）
@@ -142,7 +145,7 @@ export function useContainerStats() {
     })
 
     try {
-      await invoke('stream_container_stats', { id })
+      await containerApi.streamStats(id)
     } catch (e) {
       console.error('开始统计流失败', e)
     }

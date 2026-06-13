@@ -105,7 +105,11 @@ export const useSettingsStore = defineStore('settings', () => {
       const store = await getStore()
       const hasSavedTheme = await store.get<string>('theme')
       if (hasSavedTheme !== null) {
-        theme.value = hasSavedTheme as any
+        // 主题字段为受约束联合类型；store 中可能存有旧字面量，
+        // 用类型谓词做窄化后再赋值，避免 `as any`。
+        if (hasSavedTheme === 'deep-black' || hasSavedTheme === 'zed-gray' || hasSavedTheme === 'light-apple') {
+          theme.value = hasSavedTheme
+        }
         closeToTray.value = (await store.get<boolean>('closeToTray')) ?? true
         refreshInterval.value = (await store.get<number>('refreshInterval')) ?? 3
         visibleMenus.value = (await store.get<string[]>('visibleMenus')) ?? ['compose', 'containers', 'images', 'networks', 'volumes']

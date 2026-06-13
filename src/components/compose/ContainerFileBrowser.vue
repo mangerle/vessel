@@ -184,19 +184,20 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
-import { 
-  useMessage, useDialog, NButton, NSpace, NInput, NTable, 
-  NModal, NRadioGroup, NRadio, NDropdown, NSpin, NIcon 
+import {
+  useMessage, useDialog, NButton, NSpace, NInput, NTable,
+  NModal, NRadioGroup, NRadio, NDropdown, NSpin, NIcon
 } from 'naive-ui'
-import { 
-  CloudOfflineOutline, ArrowUpOutline, AddOutline, 
-  CloudUploadOutline, RefreshOutline, FolderOutline, 
+import {
+  CloudOfflineOutline, ArrowUpOutline, AddOutline,
+  CloudUploadOutline, RefreshOutline, FolderOutline,
   FolderOpenOutline, DocumentOutline, CloudDownloadOutline,
   CreateOutline, TrashOutline, CopyOutline, DocumentTextOutline
 } from '@vicons/ionicons5'
-import { invoke } from '@tauri-apps/api/core'
+import { containerFsApi } from '../../api/containerFsApi'
 import { useContextMenu, MenuOption } from '../../hooks/useContextMenu'
 import { formatBytes } from '../../utils/format'
+import type { ContainerFileInfo } from '../../api/types'
 
 const props = defineProps<{
   containerId: string
@@ -214,7 +215,7 @@ const {
 // 核心路径与列表状态
 const currentPath = ref('/')
 const pathInput = ref('/')
-const files = ref<any[]>([])
+const files = ref<ContainerFileInfo[]>([])
 const loading = ref(false)
 const lastLoadedContainerId = ref('') // 记录最后成功加载文件树的容器 ID
 
@@ -309,7 +310,8 @@ const handleBgContext = (e: MouseEvent) => {
 // 统一处理菜单选择动作
 const handleMenuSelect = (key: string) => {
   showDropdown.value = false
-  const data = currentTarget.value as any
+  const data = currentTarget.value as ContainerFileInfo | undefined
+  if (!data) return
   
   switch (key) {
     case 'edit':
@@ -364,10 +366,7 @@ const fetchFiles = async () => {
   if (!props.containerId || !props.containerStatus) return
   loading.value = true
   try {
-    const list = await invoke<any[]>('list_container_files', {
-      id: props.containerId,
-      path: currentPath.value
-    })
+    const list = await containerFsApi.listFiles(props.containerId, currentPath.value)
     files.value = list
     pathInput.value = currentPath.value
     lastLoadedContainerId.value = props.containerId
@@ -420,11 +419,7 @@ const handleCreate = async () => {
   const targetPath = joinPath(currentPath.value, createName.value.trim())
   
   try {
-    await invoke('create_container_file', {
-      id: props.containerId,
-      path: targetPath,
-      isDir: createIsDir.value
-    })
+    await containerFsApi.create(props.containerId, targetPath, createIsDir.value)
     message.success('新建成功')
     showCreateModal.value = false
     fetchFiles()
@@ -443,11 +438,7 @@ const handleUploadSelect = async (key: string) => {
     })
     if (selected) {
       loading.value = true
-      await invoke('upload_file_to_container', {
-        id: props.containerId,
-        localPath: selected,
-        containerDir: currentPath.value
-      })
+      await containerFsApi.upload(props.containerId, selected, currentPath.value)
       message.success('上传成功')
       fetchFiles()
     }
@@ -468,11 +459,7 @@ const handleDownload = async (file: any) => {
     if (selected) {
       loading.value = true
       const containerPath = joinPath(currentPath.value, file.name)
-      await invoke('download_file_from_container', {
-        id: props.containerId,
-        containerPath,
-        localPath: selected
-      })
+      await containerFsApi.download(props.containerId, containerPath, selected)
       message.success('下载成功')
     }
   } catch (e: any) {
@@ -499,11 +486,7 @@ const handleRename = async () => {
   const destPath = joinPath(currentPath.value, renameName.value.trim())
   
   try {
-    await invoke('rename_container_file', {
-      id: props.containerId,
-      src: srcPath,
-      dest: destPath
-    })
+    await containerFsApi.rename(props.containerId, srcPath, destPath)
     message.success('重命名成功')
     showRenameModal.value = false
     fetchFiles()
@@ -513,7 +496,7 @@ const handleRename = async () => {
 }
 
 // 触发删除容器内文件/文件夹
-const handleDelete = async (file: any) => {
+const handleDelete = async (file: ContainerFileInfo) => {
   const targetPath = joinPath(currentPath.value, file.name)
   
   dialog.warning({
@@ -523,10 +506,7 @@ const handleDelete = async (file: any) => {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await invoke('delete_container_file', {
-          id: props.containerId,
-          path: targetPath
-        })
+        await containerFsApi.delete(props.containerId, targetPath)
         message.success('删除成功')
         fetchFiles()
       } catch (e: any) {
@@ -537,16 +517,13 @@ const handleDelete = async (file: any) => {
 }
 
 // 打开编辑器并拉取文本文件内容
-const openEditor = async (file: any) => {
+const openEditor = async (file: ContainerFileInfo) => {
   const targetPath = joinPath(currentPath.value, file.name)
   editingFilePath.value = targetPath
   loading.value = true
   
   try {
-    const text = await invoke<string>('read_container_text_file', {
-      id: props.containerId,
-      path: targetPath
-    })
+    const text = await containerFsApi.readText(props.containerId, targetPath)
     editingContent.value = text
     showEditorModal.value = true
   } catch (e: any) {
@@ -560,11 +537,7 @@ const openEditor = async (file: any) => {
 const saveEditor = async () => {
   editorSaving.value = true
   try {
-    await invoke('write_container_text_file', {
-      id: props.containerId,
-      path: editingFilePath.value,
-      content: editingContent.value
-    })
+    await containerFsApi.writeText(props.containerId, editingFilePath.value, editingContent.value)
     message.success('文件保存成功')
     showEditorModal.value = false
     fetchFiles()

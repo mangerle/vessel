@@ -9,7 +9,7 @@ export const useContainerStore = defineStore('container', {
     error: null as string | null
   }),
   actions: {
-    async executeAction(actionName: string, actionFn: () => Promise<any>, refresh: boolean = true) {
+    async executeAction<T = void>(actionName: string, actionFn: () => Promise<T>, refresh: boolean = true): Promise<T> {
       this.loading = true
       this.error = null
       try {

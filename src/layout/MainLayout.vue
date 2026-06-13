@@ -119,6 +119,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NIcon, useMessage } from 'naive-ui'
+import { connectionApi } from '../api/connectionApi'
 import {
   CubeOutline,
   LayersOutline,
@@ -139,7 +140,6 @@ import { useContainerStore } from '../store/container'
 import { useImageStore } from '../store/image'
 import { useNetworkStore } from '../store/network'
 import { useVolumeStore } from '../store/volume'
-import { invoke } from '@tauri-apps/api/core'
 
 import { usePolling } from '../utils/polling'
 
@@ -178,7 +178,7 @@ const selectConnection = async (conn: { id: string; name: string; type: string; 
   // 1. 同步给后端 Rust 环境（传入完整 ConnectionConfig）
   try {
     const config = settingsStore.getActiveConnectionConfig()
-    await invoke('update_connection_config', { config })
+    await connectionApi.updateConfig(config)
   } catch (e) {
     console.error('后端连接同步失败:', e)
     isConnected.value = false
@@ -189,7 +189,7 @@ const selectConnection = async (conn: { id: string; name: string; type: string; 
 
   // 2. 强制 ping 探测新连接
   try {
-    await invoke('ping_docker')
+    await connectionApi.ping()
     message.success(`已连接到: ${conn.name}`)
   } catch (e: any) {
     isConnected.value = false
@@ -206,8 +206,8 @@ const handleAutoConnect = async () => {
     try {
       // 同步给后端（完整配置）
       const config = settingsStore.getActiveConnectionConfig()
-      await invoke('update_connection_config', { config })
-      await invoke('ping_docker')
+      await connectionApi.updateConfig(config)
+      await connectionApi.ping()
 
       isConnected.value = true
       connecting.value = false
@@ -267,7 +267,7 @@ const preloadData = async () => {
 // 使用通用轮询 Hook 进行心跳检测，具备竞态保护和自动清理
 const { start: startHeartbeat, stop: stopHeartbeat } = usePolling(async () => {
   try {
-    await invoke('ping_docker')
+    await connectionApi.ping()
     isConnected.value = true
     if (!preloaded) {
       preloaded = true

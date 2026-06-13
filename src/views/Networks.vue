@@ -82,7 +82,7 @@ const getDriverIcon = (driver: string) => {
 const showMenu = ref(false)
 const x = ref(0)
 const y = ref(0)
-const menuTarget = ref<any>(null)
+const menuTarget = ref<{ id: string; name: string } | null>(null)
 
 const menuOptions = [
   { label: '拓扑详情', key: 'detail', icon: () => h(NIcon, null, { default: () => h(GitNetworkOutline) }) },
