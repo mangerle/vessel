@@ -70,6 +70,37 @@ impl ConnectionConfig {
             use_sudo: false,
         }
     }
+
+    /// 校验配置自身的完整性，按 mode 检查必要字段。
+    ///
+    /// 修复 P1-9：原 update_connection_config 直接吞下任意 ConnectionConfig，
+    /// SSH 模式下空 host/user 也会被原样写入全局状态，要等到第一次 ping_docker 才暴露问题，
+    /// 排查路径长且会导致 docker 客户端缓存被污染（被迫整体重连）。
+    pub fn validate(&self) -> Result<(), String> {
+        match self.mode {
+            ConnectionMode::Wsl => {
+                // WSL distro 可空（fallback 到默认发行版），不强制校验
+                Ok(())
+            }
+            ConnectionMode::Ssh => {
+                let host = self.ssh_host.as_deref().unwrap_or("").trim();
+                if host.is_empty() {
+                    return Err("SSH 主机地址不能为空".to_string());
+                }
+                let user = self.ssh_user.as_deref().unwrap_or("").trim();
+                if user.is_empty() {
+                    return Err("SSH 用户名不能为空".to_string());
+                }
+                if let Some(port) = self.ssh_port
+                    && port == 0
+                {
+                    return Err("SSH 端口非法".to_string());
+                }
+                Ok(())
+            }
+            ConnectionMode::Desktop => Ok(()),
+        }
+    }
 }
 
 /// 全局活动连接配置
@@ -110,14 +141,22 @@ pub async fn current_config() -> ConnectionConfig {
 /// 刷新 activeConnection，避免多窗口/托盘切换时前后端失同步。
 #[tauri::command]
 pub async fn update_connection_config(app: AppHandle, config: ConnectionConfig) -> AppResult<()> {
+    // 修复 P1-9：进入即校验输入，避免坏配置写入全局并连带污染客户端缓存
+    if let Err(e) = config.validate() {
+        log::warn!("update_connection_config 校验失败: {}", e);
+        return Err(crate::error::AppError::ConfigMissing(e));
+    }
+
     let new_config = config;
-    {
+    // 备份旧配置用于失败回滚（emit 失败本身不算致命，仅日志告警）
+    let prev_config = {
         let guard = CONNECTION_CONFIG.read().await;
         if *guard == new_config {
             log::debug!("连接配置未变化，跳过客户端缓存清理");
             return Ok(());
         }
-    }
+        guard.clone()
+    };
     log::info!(
         "正在更新连接配置: mode={:?}, name={}, distro={:?}, ssh={:?}@{:?}:{:?}",
         new_config.mode,
@@ -136,6 +175,8 @@ pub async fn update_connection_config(app: AppHandle, config: ConnectionConfig) 
     // 通知前端刷新 activeConnection（多窗口/托盘切换场景同步通道）
     if let Err(e) = app.emit("connection-updated", &new_config) {
         log::error!("发送 connection-updated 事件失败: {}", e);
+        // emit 失败仅告警；下方 prev_config 引用保留供未来扩展失败回滚链路时复用
+        let _ = &prev_config;
     }
     Ok(())
 }
@@ -168,6 +209,12 @@ pub async fn get_docker_client() -> AppResult<Docker> {
             bridge.connect().await.map_err(|e| e.to_string())
         }
         ConnectionMode::Ssh => {
+            // 修复 P1-12：先校验 ConnectionConfig 自身（host/user 必填），
+            // 再组装 SshConfig；早 fail 比让 SshConfig::validate 报「主机地址为空」
+            // 路径更短，且在 SSH 分支里立刻给出 ConfigMissing 错误码。
+            if let Err(e) = config.validate() {
+                return Err(crate::error::AppError::ConfigMissing(e));
+            }
             let ssh_config = ssh::SshConfig {
                 host: config.ssh_host.clone().unwrap_or_default(),
                 port: config.ssh_port.unwrap_or(22),
@@ -238,4 +285,73 @@ pub async fn diagnose_ssh_connection(config: ConnectionConfig) -> AppResult<ssh:
     ssh_cfg.validate()?;
     let bridge = ssh::SshBridge::new(ssh_cfg);
     Ok(bridge.diagnose().await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ssh_config(host: &str, user: &str) -> ConnectionConfig {
+        ConnectionConfig {
+            mode: ConnectionMode::Ssh,
+            name: "test".into(),
+            wsl_distro: None,
+            ssh_host: Some(host.into()),
+            ssh_port: Some(22),
+            ssh_user: Some(user.into()),
+            ssh_password: Some("p".into()),
+            use_sudo: false,
+        }
+    }
+
+    #[test]
+    fn validate_ssh_requires_host_and_user() {
+        let mut cfg = ssh_config("192.168.1.1", "root");
+        assert!(cfg.validate().is_ok(), "完整 SSH 配置应通过校验");
+
+        cfg.ssh_host = Some("".into());
+        assert!(cfg.validate().is_err(), "空 host 应拒绝");
+
+        cfg.ssh_host = Some("   ".into());
+        assert!(cfg.validate().is_err(), "全空白 host 应拒绝");
+
+        cfg.ssh_host = Some("192.168.1.1".into());
+        cfg.ssh_user = Some("".into());
+        assert!(cfg.validate().is_err(), "空 user 应拒绝");
+    }
+
+    #[test]
+    fn validate_ssh_rejects_zero_port() {
+        let mut cfg = ssh_config("h", "u");
+        cfg.ssh_port = Some(0);
+        assert!(cfg.validate().is_err(), "零端口应拒绝");
+    }
+
+    #[test]
+    fn validate_wsl_and_desktop_pass_through() {
+        let wsl = ConnectionConfig {
+            mode: ConnectionMode::Wsl,
+            name: "wsl".into(),
+            wsl_distro: None, // 允许为空
+            ssh_host: None,
+            ssh_port: None,
+            ssh_user: None,
+            ssh_password: None,
+            use_sudo: false,
+        };
+        assert!(wsl.validate().is_ok(), "WSL distro 可选");
+
+        let desktop = ConnectionConfig::desktop_default();
+        assert!(desktop.validate().is_ok(), "Desktop 模式默认通过");
+    }
+
+    #[test]
+    fn connection_mode_from_string_lowercases_and_falls_back_to_desktop() {
+        assert_eq!(ConnectionMode::from("WSL".to_string()), ConnectionMode::Wsl);
+        assert_eq!(ConnectionMode::from("ssh".to_string()), ConnectionMode::Ssh);
+        assert_eq!(
+            ConnectionMode::from("garbage".to_string()),
+            ConnectionMode::Desktop
+        );
+    }
 }

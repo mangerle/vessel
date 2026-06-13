@@ -441,3 +441,29 @@ fn write_askpass_script(password: &str) -> Result<std::path::PathBuf, String> {
 fn whoami_safe() -> String {
     std::env::var("USERNAME").unwrap_or_else(|_| "%USERNAME%".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::shell_escape_single_quote;
+
+    #[test]
+    fn shell_escape_passes_through_safe_strings() {
+        assert_eq!(shell_escape_single_quote("plain.yml"), "plain.yml");
+        assert_eq!(shell_escape_single_quote("/abs/path"), "/abs/path");
+        assert_eq!(shell_escape_single_quote(""), "");
+    }
+
+    #[test]
+    fn shell_escape_neutralizes_embedded_single_quotes() {
+        // ' 应被替换为 '\''，从而当外层单引号包裹时安全嵌入 sh -c
+        assert_eq!(shell_escape_single_quote("a'b"), "a'\\''b");
+        assert_eq!(shell_escape_single_quote("'"), "'\\''");
+        assert_eq!(shell_escape_single_quote("a''b"), "a'\\'''\\''b");
+    }
+
+    #[test]
+    fn shell_escape_leaves_other_metachars_intact() {
+        // 双引号、$、反引号、分号在单引号包裹下不会被 shell 解释，无需额外转义
+        assert_eq!(shell_escape_single_quote(r#"a"$b`c;d"#), r#"a"$b`c;d"#);
+    }
+}

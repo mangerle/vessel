@@ -559,3 +559,88 @@ fn dial_stdio_command(config: &SshConfig) -> String {
         "docker system dial-stdio".to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn good() -> SshConfig {
+        SshConfig {
+            host: "192.168.1.105".into(),
+            port: 22,
+            user: "root".into(),
+            password: Some("pw".into()),
+            use_sudo: false,
+        }
+    }
+
+    #[test]
+    fn validate_accepts_normal_host_user() {
+        assert!(good().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_empty_host_or_user() {
+        let mut c = good();
+        c.host = "".into();
+        assert!(c.validate().is_err(), "空 host 应拒绝");
+
+        let mut c = good();
+        c.user = "".into();
+        assert!(c.validate().is_err(), "空 user 应拒绝");
+
+        let mut c = good();
+        c.port = 0;
+        assert!(c.validate().is_err(), "零端口应拒绝");
+    }
+
+    #[test]
+    fn validate_rejects_shell_metacharacters_in_host() {
+        for bad_host in [
+            "host;rm -rf /",
+            "host`whoami`",
+            "host$x",
+            "host\"y",
+            "host'z",
+            "host with space",
+            "host\\sub",
+            "host|pipe",
+            "host&bg",
+            "host>redir",
+            "host<in",
+        ] {
+            let mut c = good();
+            c.host = bad_host.into();
+            assert!(c.validate().is_err(), "非法 host 应拒绝: {}", bad_host);
+        }
+    }
+
+    #[test]
+    fn validate_rejects_shell_metacharacters_in_user() {
+        for bad_user in ["us er", "us;er", "us`r", "us$r", "us|r"] {
+            let mut c = good();
+            c.user = bad_user.into();
+            assert!(c.validate().is_err(), "非法 user 应拒绝: {}", bad_user);
+        }
+    }
+
+    #[test]
+    fn validate_rejects_overlong_host_or_user() {
+        let mut c = good();
+        c.host = "h".repeat(SSH_HOST_MAX_LEN + 1);
+        assert!(c.validate().is_err(), "超长 host 应拒绝");
+
+        let mut c = good();
+        c.user = "u".repeat(SSH_USER_MAX_LEN + 1);
+        assert!(c.validate().is_err(), "超长 user 应拒绝");
+    }
+
+    #[test]
+    fn dial_stdio_command_respects_use_sudo_flag() {
+        let mut c = good();
+        c.use_sudo = false;
+        assert_eq!(dial_stdio_command(&c), "docker system dial-stdio");
+        c.use_sudo = true;
+        assert_eq!(dial_stdio_command(&c), "sudo -n docker system dial-stdio");
+    }
+}
