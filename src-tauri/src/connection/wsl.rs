@@ -67,29 +67,36 @@ impl WslBridge {
     }
 
     /// 确保 TCP 代理服务器正在运行
+    ///
+    /// 原子化：检查旧代理 → 清理旧代理 → 绑定端口 → spawn listener → 写回 handle
+    /// 全部在 PROXY_HANDLE 同一把写锁内完成，避免并发切换连接时
+    /// get → reset → bind → spawn 之间的窗口期产生多个 TCP 监听导致端口泄漏。
     async fn ensure_proxy(&self) -> Result<u16, String> {
-        // 已有代理则直接复用
-        {
-            let guard = PROXY_HANDLE.lock().await;
-            if let Some(h) = guard.as_ref() {
-                return Ok(h.port);
-            }
+        let mut guard = PROXY_HANDLE.lock().await;
+
+        // 1. 已有代理则直接复用
+        if let Some(h) = guard.as_ref() {
+            return Ok(h.port);
         }
 
-        // 关闭可能残留的旧代理
-        reset_proxy_port().await;
+        // 2. 关闭可能残留的旧代理（同锁内）
+        if let Some(handle) = guard.take()
+            && let Some(tx) = handle.cancel
+        {
+            let _ = tx.send(());
+        }
 
-        // 绑定到随机可用端口
+        // 3. 绑定到随机可用端口
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|e| format!("无法绑定代理端口: {}", e))?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
-        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel::<()>();
+        // 4. 在后台运行代理逻辑
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
         let distro = self.distro.clone();
-
-        // 在后台运行代理逻辑
         tokio::spawn(async move {
+            let mut cancel_rx = cancel_rx;
             loop {
                 tokio::select! {
                     _ = &mut cancel_rx => {
@@ -115,7 +122,8 @@ impl WslBridge {
             // listener 在此 drop，端口自动释放
         });
 
-        *PROXY_HANDLE.lock().await = Some(ProxyHandle {
+        // 5. 同一锁内写回新 handle（其他并发 ensure_proxy 不会重复创建）
+        *guard = Some(ProxyHandle {
             port,
             cancel: Some(cancel_tx),
         });
