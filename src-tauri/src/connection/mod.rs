@@ -31,7 +31,7 @@ impl From<String> for ConnectionMode {
 ///
 /// 同一份配置里同时携带 WSL 与 SSH 的可选字段，按 `mode` 取用对应子集。
 /// `name` 仅用于前端展示与日志，后端按 mode 决定行为。
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectionConfig {
     pub mode: ConnectionMode,
     #[serde(default)]
@@ -102,8 +102,18 @@ pub async fn current_config() -> ConnectionConfig {
 }
 
 /// 更新全局活动连接配置
+///
+/// 幂等：仅当新配置与当前配置不一致时才清空客户端缓存与各模式代理。
+/// 这样可以避免 App.vue 启动时 / 重复调用 ping_docker 等场景下误关连接。
 #[tauri::command]
 pub async fn update_connection_config(config: ConnectionConfig) -> AppResult<()> {
+    {
+        let guard = CONNECTION_CONFIG.read().await;
+        if *guard == config {
+            log::debug!("连接配置未变化，跳过客户端缓存清理");
+            return Ok(());
+        }
+    }
     log::info!(
         "正在更新连接配置: mode={:?}, name={}, distro={:?}, ssh={:?}@{:?}:{:?}",
         config.mode,

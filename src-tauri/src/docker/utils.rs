@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, oneshot};
 
@@ -19,6 +20,9 @@ pub static LOGS_STREAMS: LazyLock<Mutex<StreamMap>> = LazyLock::new(|| Mutex::ne
 pub static STREAM_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// 通用的流管理函数
+///
+/// `throttle`: 若为 `Some(duration)`，则窗口内只保留最新数据并按周期 emit（替代语义）；
+///              末尾与取消前会 flush 最后一帧；错误与致命流终止仍立即上报。
 pub async fn spawn_stream_handler<S, T, E>(
     app: AppHandle,
     id: String,
@@ -26,6 +30,7 @@ pub async fn spawn_stream_handler<S, T, E>(
     stream_map: &'static Mutex<StreamMap>,
     event_name: String,
     stream_type: &str,
+    throttle: Option<Duration>,
 ) where
     S: futures_util::Stream<Item = Result<T, E>> + Unpin + Send + 'static,
     T: Serialize + Clone + Send + 'static,
@@ -43,28 +48,76 @@ pub async fn spawn_stream_handler<S, T, E>(
 
     let id_clone = id.clone();
     let stream_type = stream_type.to_string();
+    let event_name = event_name.clone();
+
+    // 节流 ticker：首次立即 tick，需要在循环开始前消耗以避免首次 select 命中空 tick
+    let mut ticker = throttle.map(|d| {
+        let mut t = tokio::time::interval(d);
+        t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        t
+    });
 
     tauri::async_runtime::spawn(async move {
+        if let Some(t) = ticker.as_mut() {
+            t.tick().await; // 消耗 ticker 首次立即触发
+        }
+        // 缓冲最新待发数据（节流时使用）
+        let mut pending: Option<T> = None;
+
         loop {
-            tokio::select! {
-                _ = &mut rx => {
-                    log::debug!("收到停止信号，停止 {} 流: {}", stream_type, id_clone);
-                    break;
-                }
-                msg = stream.next() => {
-                    match msg {
-                        Some(Ok(data)) => {
+            if let Some(t) = ticker.as_mut() {
+                tokio::select! {
+                    _ = &mut rx => {
+                        log::debug!("收到停止信号，停止 {} 流: {}", stream_type, id_clone);
+                        break;
+                    }
+                    msg = stream.next() => {
+                        match msg {
+                            Some(Ok(data)) => {
+                                // 节流：覆盖 pending，等下次 tick 统一 emit
+                                pending = Some(data);
+                            }
+                            Some(Err(e)) => {
+                                log::error!("获取 {} 数据失败: {}", stream_type, e);
+                                break;
+                            }
+                            None => {
+                                // 流自然结束：flush 最后一帧
+                                if let Some(data) = pending.take() {
+                                    let _ = app.emit(&event_name, data);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    _ = t.tick() => {
+                        if let Some(data) = pending.take() {
                             if let Err(e) = app.emit(&event_name, data) {
                                 log::error!("发送 {} 事件失败: {}", stream_type, e);
                                 break;
                             }
                         }
-                        Some(Err(e)) => {
-                            log::error!("获取 {} 数据失败: {}", stream_type, e);
-                            break;
-                        }
-                        None => {
-                            break;
+                    }
+                }
+            } else {
+                tokio::select! {
+                    _ = &mut rx => {
+                        log::debug!("收到停止信号，停止 {} 流: {}", stream_type, id_clone);
+                        break;
+                    }
+                    msg = stream.next() => {
+                        match msg {
+                            Some(Ok(data)) => {
+                                if let Err(e) = app.emit(&event_name, data) {
+                                    log::error!("发送 {} 事件失败: {}", stream_type, e);
+                                    break;
+                                }
+                            }
+                            Some(Err(e)) => {
+                                log::error!("获取 {} 数据失败: {}", stream_type, e);
+                                break;
+                            }
+                            None => break,
                         }
                     }
                 }

@@ -13,6 +13,7 @@ use bollard::image::{
 use bollard::models::{HostConfig, PortBinding};
 use futures_util::stream::StreamExt;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::AsyncWriteExt;
@@ -120,16 +121,23 @@ pub async fn pull_image(
     let name_for_events = full_image_name.clone();
 
     tauri::async_runtime::spawn(async move {
+        // 4Hz 节流：拉取进度的 progress 事件每秒可达数十次，前端只关心最新进度
+        let mut last_emit = Instant::now() - Duration::from_millis(250);
+        const EMIT_INTERVAL: Duration = Duration::from_millis(250);
+
         while let Some(msg) = stream.next().await {
             match msg {
                 Ok(info) => {
-                    let _ = app_handle.emit(
-                        "image-pull-progress",
-                        ImageProgressPayload {
-                            image: name_for_events.clone(),
-                            info,
-                        },
-                    );
+                    if last_emit.elapsed() >= EMIT_INTERVAL {
+                        let _ = app_handle.emit(
+                            "image-pull-progress",
+                            ImageProgressPayload {
+                                image: name_for_events.clone(),
+                                info,
+                            },
+                        );
+                        last_emit = Instant::now();
+                    }
                 }
                 Err(e) => {
                     log::error!("拉取镜像 {} 出错: {}", name_for_events, e);
@@ -383,6 +391,9 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
         };
 
         let mut total_bytes = 0i64;
+        // 4Hz 节流：导出按 chunk 多次到达，1GB 镜像 ≈2000+ chunk
+        let mut last_emit = Instant::now() - Duration::from_millis(250);
+        const EMIT_INTERVAL: Duration = Duration::from_millis(250);
 
         while let Some(chunk) = stream.next().await {
             match chunk {
@@ -401,13 +412,16 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
                         return;
                     }
 
-                    let _ = app_handle.emit(
-                        "image-export-progress",
-                        ImageExportProgressPayload {
-                            image: name_clone.clone(),
-                            bytes_written: total_bytes,
-                        },
-                    );
+                    if last_emit.elapsed() >= EMIT_INTERVAL {
+                        let _ = app_handle.emit(
+                            "image-export-progress",
+                            ImageExportProgressPayload {
+                                image: name_clone.clone(),
+                                bytes_written: total_bytes,
+                            },
+                        );
+                        last_emit = Instant::now();
+                    }
                 }
                 Err(e) => {
                     let err_msg = format!("读取镜像导出流失败: {}", e);
@@ -423,6 +437,14 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
                 }
             }
         }
+        // 末尾 flush 最后一帧，确保 UI 进度条走到 100%
+        let _ = app_handle.emit(
+            "image-export-progress",
+            ImageExportProgressPayload {
+                image: name_clone.clone(),
+                bytes_written: total_bytes,
+            },
+        );
 
         if let Err(e) = file.flush().await {
             let err_msg = format!("刷新文件失败: {}", e);

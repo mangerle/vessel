@@ -196,20 +196,32 @@ pub async fn download_file_from_container(
             temp_file.flush().await?;
         }
 
-        let tar_file = std::fs::File::open(&temp_file_path)?;
-
-        let mut archive = Archive::new(tar_file);
-
         let local_path_buf = Path::new(&local_path);
         let is_dir =
             local_path_buf.is_dir() || local_path.ends_with('/') || local_path.ends_with('\\');
 
-        if is_dir {
-            archive.unpack(&local_path)?;
-        } else {
-            let parent = local_path_buf.parent().unwrap_or_else(|| Path::new("."));
-            archive.unpack(parent)?;
+        // 同步 IO (File::open + tar 解包) 移交到 blocking 线程池，
+        // 避免阻塞 tokio worker 拖慢 stats/logs 心跳流
+        let local_path_for_blocking = local_path.clone();
+        let temp_file_path_for_blocking = temp_file_path.clone();
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let tar_file = std::fs::File::open(&temp_file_path_for_blocking)
+                .map_err(|e| e.to_string())?;
+            let mut archive = Archive::new(tar_file);
+            let local_path_buf = Path::new(&local_path_for_blocking);
+            if is_dir {
+                archive.unpack(&local_path_for_blocking).map_err(|e| e.to_string())?;
+            } else {
+                let parent = local_path_buf.parent().unwrap_or_else(|| Path::new("."));
+                archive.unpack(parent).map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("解压任务失败: {}", e))??;
 
+        if !is_dir {
+            let parent = local_path_buf.parent().unwrap_or_else(|| Path::new("."));
             let container_file_name = Path::new(&container_path)
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -430,19 +442,23 @@ pub async fn read_container_text_file(id: String, path: String) -> AppResult<Str
         return Err("文件为空或不存在".to_string().into());
     }
 
-    let mut archive = Archive::new(std::io::Cursor::new(tar_bytes));
+    // tar 解压为同步 IO，移交到 blocking 线程池避免阻塞 tokio worker
+    let content = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        let mut archive = Archive::new(std::io::Cursor::new(tar_bytes));
+        if let Some(entry_result) = archive.entries().map_err(|e| e.to_string())?.next() {
+            let mut entry = entry_result.map_err(|e| e.to_string())?;
+            let mut content_bytes = Vec::new();
+            entry.read_to_end(&mut content_bytes).map_err(|e| e.to_string())?;
+            Ok(String::from_utf8_lossy(&content_bytes).into_owned())
+        } else {
+            Err("在归档中未找到任何文件".to_string())
+        }
+    })
+    .await
+    .map_err(|e| format!("解压任务失败: {}", e))??;
 
-    if let Some(entry_result) = archive.entries()?.next() {
-        let mut entry = entry_result?;
-        let mut content_bytes = Vec::new();
-        entry.read_to_end(&mut content_bytes)?;
-
-        log::info!("成功读取容器 {} 的文本文件: {}", id, path);
-
-        return Ok(String::from_utf8_lossy(&content_bytes).into_owned());
-    }
-
-    Err("在归档中未找到任何文件".to_string().into())
+    log::info!("成功读取容器 {} 的文本文件: {}", id, path);
+    Ok(content)
 }
 
 /// 写入容器内文本文件内容

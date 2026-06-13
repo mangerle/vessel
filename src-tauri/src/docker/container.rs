@@ -74,6 +74,7 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()>
         }),
     );
 
+    // 1Hz 节流：Docker stats 流本身约 1s 一次，但同一窗口内多次到达时合并为最新值
     spawn_stream_handler(
         app,
         id.clone(),
@@ -81,6 +82,7 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()>
         &*STATS_STREAMS,
         format!("container-stats-{}", id),
         "统计",
+        Some(std::time::Duration::from_millis(1000)),
     )
     .await;
 
@@ -115,6 +117,7 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> 
 
     let mapped_stream = stream.map(|res| res.map(|log| log.to_string()));
 
+    // 日志不节流：用户期望实时看到新输出
     spawn_stream_handler(
         app,
         id.clone(),
@@ -122,6 +125,7 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> 
         &*LOGS_STREAMS,
         format!("container-logs-{}", id),
         "日志",
+        None,
     )
     .await;
 
