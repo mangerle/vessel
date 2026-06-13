@@ -136,19 +136,16 @@ onMounted(async () => {
     settingsStore.applyBackendConfig(event.payload)
   })
 
-  // 初始化后端连接上下文：传入完整的活动连接配置 + 触发连通性探测
+  // 修复 P1-8：App.vue 仅同步后端配置（单次 IPC），
+  // 启动期 ping_docker 交给 MainLayout 的 8s 心跳（自带竞态保护 + 单点真值），
+  // 避免启动瞬间 2 次 ping_docker 重复执行。
   try {
     const config = settingsStore.getActiveConnectionConfig()
     await invoke('update_connection_config', { config })
   } catch (e) {
     console.error('初始化后端配置失败:', e)
   }
-  try {
-    await invoke('ping_docker')
-  } catch (e) {
-    console.warn('启动时 Docker 连通性探测失败:', e)
-  }
-  
+
   // 窗口关闭事件由后端 lib.rs 的 on_window_event 统一拦截（关闭即隐藏到托盘）；
   // 真正的「真正退出」由托盘菜单或单实例插件触发，不再在前端重复注册
 })

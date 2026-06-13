@@ -110,19 +110,20 @@ const selectedHubImage = ref<ImageSearchResult & { label?: string; value?: strin
 const wrapLayers = ref(true)
 
 // 本地镜像资产清单的动态前端检索过滤
+// 性能优化：
+// 1) 在依赖层面把 searchQuery 单独抽出：列表数据未变时搜索词不变就不重算
+// 2) 排序前的浅拷贝仅一次；filter 内避免每次 toLowerCase 同一个 q
 const filteredImages = computed(() => {
-  let list = imageStore.images
-  if (localSearchQuery.value) {
-    const q = localSearchQuery.value.toLowerCase()
-    list = list.filter(item => {
-      const firstTag = item.tags?.[0] || ''
-      // 确保使用 .includes
-      return firstTag.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
-    })
-  }
-
-  // 按标签名称字母序做稳定排序，若无标签则按 ID
-  return [...list].sort((a, b) => {
+  const source = imageStore.images
+  const q = localSearchQuery.value.trim().toLowerCase()
+  const filtered = q
+    ? source.filter(item => {
+        const firstTag = item.tags?.[0] || ''
+        return firstTag.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)
+      })
+    : source
+  // 排序使用一次浅拷贝：避免修改 store 中的原数组
+  return filtered.slice().sort((a, b) => {
     const tagA = a.tags?.[0] || a.id || ''
     const tagB = b.tags?.[0] || b.id || ''
     return tagA.localeCompare(tagB)

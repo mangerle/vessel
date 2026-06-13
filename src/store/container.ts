@@ -46,6 +46,23 @@ export const useContainerStore = defineStore('container', {
     },
     async unpauseContainer(id: string) {
       await this.executeAction('恢复容器', () => containerApi.unpause(id))
+    },
+    /**
+     * 批量操作：仅执行动作，不触发逐次 list_containers 刷新。
+     * 调用方应在批结束后自行调用 fetchContainers() 同步一次即可，
+     * 避免 N 个容器操作 × 1 次 list 的 N+1 IPC 放大。
+     */
+    async batchStart(ids: string[]) {
+      if (ids.length === 0) return
+      await Promise.all(ids.map(id => this.executeAction('启动容器', () => containerApi.start(id), false)))
+    },
+    async batchStop(ids: string[]) {
+      if (ids.length === 0) return
+      await Promise.all(ids.map(id => this.executeAction('停止容器', () => containerApi.stop(id), false)))
+    },
+    async batchRemove(ids: string[]) {
+      if (ids.length === 0) return
+      await Promise.all(ids.map(id => this.executeAction('删除容器', () => containerApi.remove(id), false)))
     }
   }
 })

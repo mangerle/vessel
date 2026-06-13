@@ -95,7 +95,8 @@ let logBuffer: string[] = []
 let logFlushTimer: number | null = null
 
 // 清理当前的流与定时器
-const cleanupCurrentStreams = () => {
+// 修复 P1-5：必须 await 后端 close，确保后端 task 收到停止信号后再继续
+const cleanupCurrentStreams = async () => {
   if (logsUnlisten) {
     logsUnlisten()
     logsUnlisten = null
@@ -106,13 +107,16 @@ const cleanupCurrentStreams = () => {
   }
   if (containerDetails.value?.id) {
     const oldId = containerDetails.value.id
-    invoke('close_container_logs', { id: oldId }).catch(() => {})
-    invoke('close_container_stats', { id: oldId }).catch(() => {})
+    await Promise.allSettled([
+      invoke('close_container_logs', { id: oldId }),
+      invoke('close_container_stats', { id: oldId })
+    ])
   }
 }
 
 const onSelect = async (id: string) => {
-  cleanupCurrentStreams()
+  // 修复 P1-5：必须 await，确保后端流被显式停止再切换
+  await cleanupCurrentStreams()
   selectedId.value = id
   if (id.startsWith('project:')) {
     selectedType.value = 'project'
@@ -586,7 +590,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  cleanupCurrentStreams()
+  // onUnmounted 不可 async：用 IIFE 触发 await，但不再阻塞卸载流程
+  cleanupCurrentStreams().catch(() => {})
   stopStatsStream()
 })
 </script>

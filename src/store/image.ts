@@ -141,11 +141,14 @@ export const useImageStore = defineStore('image', {
           }
 
           const task = taskStore.tasks.find(t => t.id === taskId)
-          if (task) {
-            taskStore.updateTask(taskId, {
-              progress: progress ?? task.progress,
-              logs: [...task.logs, logMsg].slice(-20)
-            })
+          if (!task) return
+          // 增量追加 + 原地截断：避免每 tick 重建整个数组（高 QPS 时显著降低 GC 压力）
+          task.logs.push(logMsg)
+          if (task.logs.length > 20) {
+            task.logs.splice(0, task.logs.length - 20)
+          }
+          if (progress !== undefined && progress !== task.progress) {
+            task.progress = progress
           }
         })
         unlistenList.push(unlistenProgress)
@@ -331,10 +334,11 @@ export const useImageStore = defineStore('image', {
 
           const logMsg = info.stream || info.status || ''
           const task = taskStore.tasks.find(t => t.id === taskId)
-          if (task) {
-            taskStore.updateTask(taskId, {
-              logs: [...task.logs, logMsg].slice(-20)
-            })
+          if (!task) return
+          // 增量追加 + 原地截断：避免每 tick 重建整个数组
+          task.logs.push(logMsg)
+          if (task.logs.length > 20) {
+            task.logs.splice(0, task.logs.length - 20)
           }
         })
         unlistenList.push(unlistenProgress)
