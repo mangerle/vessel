@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { Store } from '@tauri-apps/plugin-store'
-import { emptyWslConfig, toConnectionConfig } from '../api/connection'
+import { emptyWslConfig, matchesConnectionConfig, toConnectionConfig } from '../api/connection'
 import type { ConnectionConfigPayload } from '../api/connection'
 
 // 声明全局惰性 Store 实例
@@ -44,14 +44,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const theme = ref<'deep-black' | 'zed-gray' | 'light-apple'>('deep-black')
   const refreshInterval = ref(3) // 默认 3 秒
   const visibleMenus = ref<string[]>(['compose', 'containers', 'images', 'networks', 'volumes'])
-  const connectionMode = ref<'wsl' | 'ssh' | 'desktop'>('wsl')
-  const wslDistro = ref('')
-  const sshHost = ref('')
-  const sshPort = ref(22)
-  const sshUser = ref('')
-  const sshPassword = ref('')
 
-  // 多引擎连接配置
+  // 旧字段（connectionMode/wslDistro/sshHost/sshPort/sshUser/sshPassword）
+  // 改为 computed 派生自 activeConnection，向后兼容旧消费方（如 Volumes.vue）
+  // 的同时消除「双源 + 双向 watch」架构硬伤。
+
+  // 多引擎连接配置（单一数据源）
   const connections = ref<DockerConnection[]>([
     {
       id: 'conn_default_desktop',
@@ -71,17 +69,15 @@ export const useSettingsStore = defineStore('settings', () => {
     return connections.value.find(c => c.id === activeConnectionId.value) || connections.value[0]
   })
 
-  // 当 activeConnection 改变时，同步旧字段以维护向下兼容
-  watch(activeConnection, (newVal) => {
-    if (newVal) {
-      connectionMode.value = newVal.type as any
-      wslDistro.value = newVal.wslDistro || ''
-      sshHost.value = newVal.sshHost || ''
-      sshPort.value = newVal.sshPort || 22
-      sshUser.value = newVal.sshUser || ''
-      sshPassword.value = newVal.sshPassword || ''
-    }
-  }, { immediate: true, deep: true })
+  // 旧字段 computed 派生（消除双向 watch 回环，单一数据源 = activeConnection）
+  const connectionMode = computed<'wsl' | 'ssh' | 'desktop'>(() =>
+    (activeConnection.value?.type as 'wsl' | 'ssh' | 'desktop') || 'wsl'
+  )
+  const wslDistro = computed(() => activeConnection.value?.wslDistro || '')
+  const sshHost = computed(() => activeConnection.value?.sshHost || '')
+  const sshPort = computed(() => activeConnection.value?.sshPort ?? 22)
+  const sshUser = computed(() => activeConnection.value?.sshUser || '')
+  const sshPassword = computed(() => activeConnection.value?.sshPassword || '')
 
   // 镜像仓库配置列表，默认包含宿主机环境
   const registries = ref<Registry[]>([
@@ -105,7 +101,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const loadSettings = async () => {
     try {
       autoStart.value = await isEnabled()
-      
+
       const store = await getStore()
       const hasSavedTheme = await store.get<string>('theme')
       if (hasSavedTheme !== null) {
@@ -113,13 +109,15 @@ export const useSettingsStore = defineStore('settings', () => {
         closeToTray.value = (await store.get<boolean>('closeToTray')) ?? true
         refreshInterval.value = (await store.get<number>('refreshInterval')) ?? 3
         visibleMenus.value = (await store.get<string[]>('visibleMenus')) ?? ['compose', 'containers', 'images', 'networks', 'volumes']
-        connectionMode.value = (await store.get<'wsl' | 'ssh' | 'desktop'>('connectionMode')) ?? 'wsl'
-        wslDistro.value = (await store.get<string>('wslDistro')) ?? ''
-        sshHost.value = (await store.get<string>('sshHost')) ?? ''
-        sshPort.value = (await store.get<number>('sshPort')) ?? 22
-        sshUser.value = (await store.get<string>('sshUser')) ?? ''
-        sshPassword.value = (await store.get<string>('sshPassword')) ?? ''
-        
+
+        // 读取旧字段到临时局部变量，仅用于一次性迁移到 connections[]
+        const legacyMode = (await store.get<'wsl' | 'ssh' | 'desktop'>('connectionMode')) ?? 'wsl'
+        const legacyDistro = (await store.get<string>('wslDistro')) ?? ''
+        const legacyHost = (await store.get<string>('sshHost')) ?? ''
+        const legacyPort = (await store.get<number>('sshPort')) ?? 22
+        const legacyUser = (await store.get<string>('sshUser')) ?? ''
+        const legacyPassword = (await store.get<string>('sshPassword')) ?? ''
+
         // 加载多连接引擎配置
         const savedConnections = await store.get<DockerConnection[]>('connections')
         const savedActiveConnectionId = await store.get<string>('activeConnectionId')
@@ -127,14 +125,14 @@ export const useSettingsStore = defineStore('settings', () => {
           connections.value = savedConnections
           activeConnectionId.value = savedActiveConnectionId || savedConnections[0].id
         } else {
-          // 兼容旧配置转换
-          if (connectionMode.value === 'wsl') {
+          // 一次性从旧字段迁移到 connections[]
+          if (legacyMode === 'wsl') {
             connections.value = [
               {
                 id: 'conn_default_wsl',
-                name: `WSL (${wslDistro.value || 'Ubuntu'})`,
+                name: `WSL (${legacyDistro || 'Ubuntu'})`,
                 type: 'wsl',
-                wslDistro: wslDistro.value || 'Ubuntu'
+                wslDistro: legacyDistro || 'Ubuntu'
               },
               {
                 id: 'conn_default_desktop',
@@ -147,12 +145,12 @@ export const useSettingsStore = defineStore('settings', () => {
             connections.value = [
               {
                 id: 'conn_default_ssh',
-                name: `SSH (${sshUser.value || 'root'}@${sshHost.value || 'localhost'})`,
+                name: `SSH (${legacyUser || 'root'}@${legacyHost || 'localhost'})`,
                 type: 'ssh',
-                sshHost: sshHost.value,
-                sshPort: sshPort.value,
-                sshUser: sshUser.value,
-                sshPassword: sshPassword.value
+                sshHost: legacyHost,
+                sshPort: legacyPort,
+                sshUser: legacyUser,
+                sshPassword: legacyPassword
               },
               {
                 id: 'conn_default_desktop',
@@ -232,20 +230,14 @@ export const useSettingsStore = defineStore('settings', () => {
   const saveSettings = async () => {
     try {
       const store = await getStore()
-      // 待持久化的所有键值（与旧字段一并写出，确保旧版本兼容；后续可删除 legacy 字段）
+      // 待持久化的键值：不再写 legacy 字段（connectionMode/wslDistro/sshHost/sshPort/sshUser/sshPassword），
+      // 旧版本兼容由 loadSettings 一次性迁移路径承担。
       const snapshot: Record<string, unknown> = {
         autoStart: autoStart.value,
         closeToTray: closeToTray.value,
         theme: theme.value,
         refreshInterval: refreshInterval.value,
         visibleMenus: visibleMenus.value,
-        // legacy 字段保留写出，避免破坏旧版本兼容路径
-        connectionMode: connectionMode.value,
-        wslDistro: wslDistro.value,
-        sshHost: sshHost.value,
-        sshPort: sshPort.value,
-        sshUser: sshUser.value,
-        sshPassword: sshPassword.value,
         connections: connections.value,
         activeConnectionId: activeConnectionId.value,
         registries: registries.value,
@@ -294,6 +286,19 @@ export const useSettingsStore = defineStore('settings', () => {
     return toConnectionConfig(conn)
   }
 
+  /**
+   * 应用后端推送的 ConnectionConfig（来自 connection-updated 事件）：
+   * 在 connections[] 中按 (mode + 关键字段) 匹配 id，校正 activeConnectionId。
+   * 用于多窗口/托盘切换场景下前后端 active 状态同步。
+   * 不修改 connections[] 内容（用户的未保存编辑由 Settings.vue 路径负责）。
+   */
+  const applyBackendConfig = (cfg: ConnectionConfigPayload): void => {
+    const matched = connections.value.find(c => matchesConnectionConfig(c, cfg))
+    if (matched) {
+      activeConnectionId.value = matched.id
+    }
+  }
+
   return {
     autoStart,
     closeToTray,
@@ -317,7 +322,8 @@ export const useSettingsStore = defineStore('settings', () => {
     setTheme,
     saveSettings,
     resetSettings,
-    getActiveConnectionConfig
+    getActiveConnectionConfig,
+    applyBackendConfig
   }
 })
 
