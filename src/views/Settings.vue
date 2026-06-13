@@ -148,7 +148,7 @@ const syncDraftFromStore = () => {
   }
 }
 
-// 规整连接列表，过滤 undefined 属性以确保 JSON 序列化对比一致
+// 规整连接列表，仅供保存时使用（持久化层要剔除 undefined 字段）
 const cleanConnections = (conns: any[]) => {
   return conns.map(c => {
     const clean: any = { id: c.id, name: c.name, type: c.type }
@@ -163,17 +163,44 @@ const cleanConnections = (conns: any[]) => {
 }
 
 // 探测配置是否被篡改过 (Dirty 检测)
+// 旧实现：3 次 JSON.stringify + cleanConnections O(n*7) 字段重建。
+// 新实现：标量 === 短路返回，数组用 length + primitive 字段对比，O(n) 但常数极小。
 const isDirty = computed(() => {
-  return (
-    draft.value.theme !== settingsStore.theme ||
-    draft.value.autoStart !== settingsStore.autoStart ||
-    draft.value.closeToTray !== settingsStore.closeToTray ||
-    draft.value.refreshInterval !== settingsStore.refreshInterval ||
-    JSON.stringify(draft.value.visibleMenus) !== JSON.stringify(settingsStore.visibleMenus) ||
-    JSON.stringify(cleanConnections(draft.value.connections)) !== JSON.stringify(cleanConnections(settingsStore.connections)) ||
-    draft.value.activeConnectionId !== settingsStore.activeConnectionId ||
-    JSON.stringify(draft.value.registries) !== JSON.stringify(settingsStore.registries)
-  )
+  const d = draft.value
+  const s = settingsStore
+  if (d.theme !== s.theme) return true
+  if (d.autoStart !== s.autoStart) return true
+  if (d.closeToTray !== s.closeToTray) return true
+  if (d.refreshInterval !== s.refreshInterval) return true
+  if (d.activeConnectionId !== s.activeConnectionId) return true
+
+  // visibleMenus: string[] 浅比较
+  const vmD = d.visibleMenus, vmS = s.visibleMenus
+  if (vmD.length !== vmS.length) return true
+  for (let i = 0; i < vmD.length; i++) if (vmD[i] !== vmS[i]) return true
+
+  // registries: 字段全为 primitive，逐字段比较
+  const rgD = d.registries, rgS = s.registries
+  if (rgD.length !== rgS.length) return true
+  for (let i = 0; i < rgD.length; i++) {
+    const x = rgD[i], y = rgS[i]
+    if (x.id !== y.id || x.name !== y.name || x.url !== y.url ||
+        x.username !== y.username || x.password !== y.password ||
+        x.isDefault !== y.isDefault) return true
+  }
+
+  // connections: 字段全为 primitive，逐字段比较
+  const cnD = d.connections, cnS = s.connections
+  if (cnD.length !== cnS.length) return true
+  for (let i = 0; i < cnD.length; i++) {
+    const x = cnD[i], y = cnS[i]
+    if (x.id !== y.id || x.name !== y.name || x.type !== y.type ||
+        x.wslDistro !== y.wslDistro || x.sshHost !== y.sshHost ||
+        x.sshPort !== y.sshPort || x.sshUser !== y.sshUser ||
+        x.sshPassword !== y.sshPassword || x.useSudo !== y.useSudo) return true
+  }
+
+  return false
 })
 
 const handleSave = async () => {
