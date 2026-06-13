@@ -35,7 +35,7 @@ import {
 import VChart from 'vue-echarts'
 import '../utils/chartRegistry'
 import SimpleContainerList from '../components/container/SimpleContainerList.vue'
-import ContainerDetail from '../components/compose/ContainerDetail.vue'
+import ContainerDetail, { type LogLine } from '../components/compose/ContainerDetail.vue'
 import { useContextMenu, MenuOption, renderIcon } from '../hooks/useContextMenu'
 
 const containerStore = useContainerStore()
@@ -89,12 +89,14 @@ const independentContainers = computed(() => {
 })
 
 // 节流缓冲区与刷新定时器（rAF ID 序列化为 number）
-let logBuffer: string[] = []
+let logBuffer: LogLine[] = []
 let logFlushTimer: number | null = null
 // logBuffer 高 QPS 兜底：单帧累积超过 200 行时立即整体截断，
 // 避免 1KB/行 × 数百行/秒场景下 buffer 占用无界增长。
 const LOG_BUFFER_HARD_CAP = 200
 const LOG_KEEP = 500
+// 修复 P0-10：日志行 seq 单调递增，跨 trim 不复用，作为 v-for 稳定 key
+let logSeq = 0
 
 // 清理当前的流与定时器
 // 修复 P1-5：必须 await 后端 close，确保后端 task 收到停止信号后再继续
@@ -474,21 +476,16 @@ const handleCleanLogs = () => {
 }
 
 // --- Logs Stream ---
-const logsList = ref<string[]>([])
+const logsList = ref<LogLine[]>([])
 let logsUnlisten: UnlistenFn | null = null
 
-// requestAnimationFrame 持续 flush：浏览器帧率自适应（60Hz ≈ 16ms），
-// 后台 tab 自动暂停。容量上限 500 行：v-for 节点数从 2000 → 500，
-// 单次 patch 30-60ms → 5-10ms，CPU 占用显著下降。
-// 修复 P1-7：logBuffer 在高 QPS 场景下补一个 hard cap，
-// 避免上游 emit 风暴把数组占用撑到数万行才等到下一帧 trim。
+// 修复 P0-12：hard cap 检查搬到监听器 push 之后；
+// flushLogBuffer 内 `logBuffer = []` 之后再判断永远为 false（死代码），
+// 高 QPS 风暴时 buffer 无上限，仍可能撑到数万行才等到下一帧 trim。
 const flushLogBuffer = () => {
   if (logBuffer.length > 0) {
     logsList.value.push(...logBuffer)
     logBuffer = []
-    if (logBuffer.length > LOG_BUFFER_HARD_CAP) {
-      logBuffer.length = LOG_BUFFER_HARD_CAP
-    }
     if (logsList.value.length > LOG_KEEP) {
       logsList.value.splice(0, logsList.value.length - LOG_KEEP)
     }
@@ -502,7 +499,12 @@ const startLogsStream = async (id: string) => {
   logFlushTimer = requestAnimationFrame(flushLogBuffer)
 
   logsUnlisten = await listen<string>(EVT.containerLogs(id), (event) => {
-    logBuffer.push(event.payload)
+    // 修复 P0-10：用单调递增 seq 作 v-for key
+    logBuffer.push({ seq: logSeq++, text: event.payload })
+    // 修复 P0-12：监听器内做 hard cap，避免下一帧到来前堆积过多
+    if (logBuffer.length > LOG_BUFFER_HARD_CAP) {
+      logBuffer.splice(0, logBuffer.length - LOG_BUFFER_HARD_CAP)
+    }
   })
 
   try {

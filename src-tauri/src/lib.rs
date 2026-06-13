@@ -69,7 +69,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
             // 发送自定义事件给前端
-            let _ = app.emit("single-instance-detected", ());
+            let _ = app.emit(docker::events::SINGLE_INSTANCE_DETECTED, ());
         }))
         .setup(|app| {
             // 设置托盘

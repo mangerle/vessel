@@ -101,15 +101,17 @@
         <!-- 1. 运行日志 (三栏像素级布局) -->
         <div v-show="activeTab === 'logs'" class="logs-pane">
           <!-- 左栏: 等宽文本流大宽区 -->
-          <div 
-            class="logs-text-area" 
-            :class="{ 'word-wrap': wordWrap }" 
-            ref="logTextRef" 
+          <div
+            class="logs-text-area"
+            :class="{ 'word-wrap': wordWrap }"
+            ref="logTextRef"
             @scroll="onLogScroll"
             @contextmenu.prevent.stop="handleLogsContext"
           >
-            <div v-for="(log, idx) in logsList" :key="idx" class="log-line">
-              {{ log }}
+            <!-- 修复 P0-10：使用单调递增 seq 作为 key；splice 头部裁剪不重置 seq，
+                 Vue 可继续做最小 patch，否则 :key="idx" 在 push+splice 时全列表错位。 -->
+            <div v-for="line in logsList" :key="line.seq" class="log-line">
+              {{ line.text }}
             </div>
             <div v-if="logsList.length === 0" class="empty-logs-text">
               等待容器日志输出...
@@ -273,10 +275,17 @@ import { EVT } from '../../api/events'
 import ContainerFileBrowser from './ContainerFileBrowser.vue'
 import { useContextMenu, renderIcon, MenuOption } from '../../hooks/useContextMenu'
 
+/** 修复 P0-10：日志行结构化为 {seq, text}，seq 单调递增，
+ *  作为 v-for 的稳定 key，使头部裁剪后 Vue 仍可做最小 DOM patch。 */
+export interface LogLine {
+  seq: number
+  text: string
+}
+
 const props = defineProps<{
   container: any | null
   loading: boolean
-  logsList: string[]
+  logsList: LogLine[]
 }>()
 
 const message = useMessage()
@@ -409,7 +418,7 @@ const handleMenuSelect = async (key: string) => {
   if (key === 'clear_logs') {
     emit('clean-logs')
   } else if (key === 'copy_all_logs') {
-    const text = props.logsList.join('\n')
+    const text = props.logsList.map(l => l.text).join('\n')
     try {
       await navigator.clipboard.writeText(text)
       message.success('已复制全部日志到剪贴板')

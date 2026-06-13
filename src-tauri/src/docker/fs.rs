@@ -6,6 +6,54 @@ fn escape_shell_arg(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))
 }
 
+/// 修复 P0-6（zip-slip 防护）：解压前校验 tar entry 的相对路径是否会逃出根目录。
+/// container_path 含 `../` 或绝对路径时，恶意 tar 可在用户主机任意位置写文件。
+///
+/// `root` 是预期的解压根目录（已 canonicalize），任何 entry 解析后必须仍在 root 内。
+fn ensure_safe_tar_entry(
+    entry_path: &std::path::Path,
+    root: &std::path::Path,
+) -> Result<(), String> {
+    use std::path::Component;
+    if entry_path.is_absolute() {
+        return Err(format!(
+            "tar 包含绝对路径，拒绝解压（zip-slip 防护）: {}",
+            entry_path.display()
+        ));
+    }
+    // 逐段累积，禁止任何 `..` 跳出 root；普通组件保留
+    let mut accumulated = root.to_path_buf();
+    for comp in entry_path.components() {
+        match comp {
+            Component::ParentDir => {
+                return Err(format!(
+                    "tar 含 .. 路径分量，拒绝解压（zip-slip 防护）: {}",
+                    entry_path.display()
+                ));
+            }
+            Component::Normal(seg) => {
+                accumulated.push(seg);
+            }
+            // CurDir / RootDir / Prefix 视情况忽略或拒绝
+            Component::CurDir => {}
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(format!(
+                    "tar 含非相对路径分量，拒绝解压: {}",
+                    entry_path.display()
+                ));
+            }
+        }
+    }
+    // 最终路径必须仍在 root 之下（防符号链接走捷径在 unpack 阶段交给 tar crate 自身处理）
+    if !accumulated.starts_with(root) {
+        return Err(format!(
+            "tar entry 解析后逃出根目录，拒绝解压: {}",
+            entry_path.display()
+        ));
+    }
+    Ok(())
+}
+
 /// 在容器中同步运行命令并获取 stdout、stderr 与 exit_code 的辅助函数。
 ///
 /// 修复 S1-12：原实现仅返回 (stdout, stderr) 由调用方拼 stderr 字符串判断成功，
@@ -212,19 +260,46 @@ pub async fn download_file_from_container(
 
         // 同步 IO (File::open + tar 解包) 移交到 blocking 线程池，
         // 避免阻塞 tokio worker 拖慢 stats/logs 心跳流
+        // 修复 P0-6：解包前逐个校验 entry path，拒绝包含 `..` / 绝对路径的恶意 tar，
+        // 防止 zip-slip 攻击向用户主机任意位置写文件
         let local_path_for_blocking = local_path.clone();
         let temp_file_path_for_blocking = temp_file_path.clone();
         tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let local_path_buf = Path::new(&local_path_for_blocking);
+            // 计算解压根目录
+            let unpack_root: std::path::PathBuf = if is_dir {
+                local_path_buf.to_path_buf()
+            } else {
+                local_path_buf
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .to_path_buf()
+            };
+            // 解压前先确保根目录存在并 canonicalize
+            std::fs::create_dir_all(&unpack_root)
+                .map_err(|e| format!("准备解压目录失败: {}", e))?;
+            let canonical_root = std::fs::canonicalize(&unpack_root)
+                .map_err(|e| format!("规整解压根目录失败: {}", e))?;
+
+            // 第一遍：仅校验所有 entry 的相对路径，无 IO 副作用
+            {
+                let tar_file = std::fs::File::open(&temp_file_path_for_blocking)
+                    .map_err(|e| e.to_string())?;
+                let mut archive = tar::Archive::new(tar_file);
+                for entry in archive.entries().map_err(|e| e.to_string())? {
+                    let entry = entry.map_err(|e| e.to_string())?;
+                    let path = entry.path().map_err(|e| e.to_string())?;
+                    ensure_safe_tar_entry(&path, &canonical_root)?;
+                }
+            }
+
+            // 第二遍：实际解压（archive.entries() 是消费式迭代器，必须重开 File）
             let tar_file = std::fs::File::open(&temp_file_path_for_blocking)
                 .map_err(|e| e.to_string())?;
             let mut archive = Archive::new(tar_file);
-            let local_path_buf = Path::new(&local_path_for_blocking);
-            if is_dir {
-                archive.unpack(&local_path_for_blocking).map_err(|e| e.to_string())?;
-            } else {
-                let parent = local_path_buf.parent().unwrap_or_else(|| Path::new("."));
-                archive.unpack(parent).map_err(|e| e.to_string())?;
-            }
+            archive
+                .unpack(&canonical_root)
+                .map_err(|e| e.to_string())?;
             Ok(())
         })
         .await

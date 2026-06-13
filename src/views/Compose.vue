@@ -41,7 +41,7 @@ import {
 import VChart from 'vue-echarts'
 import '../utils/chartRegistry'
 import ComposeProjectList from '../components/compose/ComposeProjectList.vue'
-import ContainerDetail from '../components/compose/ContainerDetail.vue'
+import ContainerDetail, { type LogLine } from '../components/compose/ContainerDetail.vue'
 import { useContextMenu, MenuOption, renderIcon } from '../hooks/useContextMenu'
 
 const composeStore = useComposeStore()
@@ -88,8 +88,10 @@ const showImportModal = ref(false)
 const importPath = ref('D:/code/project/docker-compose.yml')
 
 // 节流缓冲区与刷新定时器（rAF ID 序列化为 number）
-let logBuffer: string[] = []
+let logBuffer: LogLine[] = []
 let logFlushTimer: number | null = null
+// 修复 P0-10：日志行 seq 单调递增，跨 trim 不复用，作为 v-for 稳定 key
+let logSeq = 0
 
 // 清理当前的流与定时器
 // 修复 P1-5：必须 await 后端 close，确保后端 task 收到停止信号后再继续
@@ -525,7 +527,7 @@ const handleCleanLogs = () => {
 }
 
 // --- 日志流绑定 ---
-const logsList = ref<string[]>([])
+const logsList = ref<LogLine[]>([])
 let logsUnlisten: UnlistenFn | null = null
 
 // rAF 持续 flush：浏览器帧率自适应（60Hz ≈ 16ms），后台 tab 自动暂停。
@@ -547,7 +549,8 @@ const startLogsStream = async (id: string) => {
   logFlushTimer = requestAnimationFrame(flushLogBuffer)
 
   logsUnlisten = await listen<string>(EVT.containerLogs(id), (event) => {
-    logBuffer.push(event.payload)
+    // 修复 P0-10：用单调递增 seq 作 v-for key，避免头部 splice 导致全列表错位重渲
+    logBuffer.push({ seq: logSeq++, text: event.payload })
   })
 
   try {

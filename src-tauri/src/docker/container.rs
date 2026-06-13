@@ -1,4 +1,4 @@
-use super::{ContainerDetails, ContainerInfo, LOGS_STREAMS, STATS_STREAMS, spawn_stream_handler};
+use super::{ContainerDetails, ContainerInfo, LOGS_STREAMS, STATS_STREAMS, events, spawn_stream_handler};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use crate::handle_docker_op;
@@ -80,7 +80,7 @@ pub async fn stream_container_stats(app: AppHandle, id: String) -> AppResult<()>
         id.clone(),
         stream,
         &STATS_STREAMS,
-        format!("container-stats-{}", id),
+        events::container_stats(&id),
         "统计",
         Some(std::time::Duration::from_millis(1000)),
     )
@@ -123,7 +123,7 @@ pub async fn stream_container_logs(app: AppHandle, id: String) -> AppResult<()> 
         id.clone(),
         mapped_stream,
         &LOGS_STREAMS,
-        format!("container-logs-{}", id),
+        events::container_logs(&id),
         "日志",
         None,
     )

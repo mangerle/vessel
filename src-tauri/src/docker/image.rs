@@ -1,7 +1,7 @@
 use super::{
     ImageDetails, ImageErrorPayload, ImageExportProgressPayload, ImageHistoryInfo,
     ImageImportErrorPayload, ImageImportProgressPayload, ImageInfo, ImageProgressPayload,
-    ImageSearchResult, PruneImagesResult,
+    ImageSearchResult, PruneImagesResult, events,
 };
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
@@ -130,7 +130,7 @@ pub async fn pull_image(
                 Ok(info) => {
                     if last_emit.elapsed() >= EMIT_INTERVAL {
                         let _ = app_handle.emit(
-                            "image-pull-progress",
+                            events::IMAGE_PULL_PROGRESS,
                             ImageProgressPayload {
                                 image: name_for_events.clone(),
                                 info,
@@ -142,7 +142,7 @@ pub async fn pull_image(
                 Err(e) => {
                     log::error!("拉取镜像 {} 出错: {}", name_for_events, e);
                     let _ = app_handle.emit(
-                        "image-pull-error",
+                        events::IMAGE_PULL_ERROR,
                         ImageErrorPayload {
                             image: name_for_events.clone(),
                             error: e.to_string(),
@@ -153,7 +153,7 @@ pub async fn pull_image(
             }
         }
         log::info!("镜像拉取任务结束: {}", name_for_events);
-        let _ = app_handle.emit("image-pull-finished", name_for_events);
+        let _ = app_handle.emit(events::IMAGE_PULL_FINISHED, name_for_events);
     });
 
     Ok(())
@@ -380,7 +380,7 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
                 let err_msg = format!("创建目标文件失败: {}", e);
                 log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
                 let _ = app_handle.emit(
-                    "image-export-error",
+                    events::IMAGE_EXPORT_ERROR,
                     ImageErrorPayload {
                         image: name_clone,
                         error: err_msg,
@@ -400,7 +400,7 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
         // 提取 emit 闭包，避免重复代码
         let emit_progress = |bytes: i64| {
             let _ = app_handle.emit(
-                "image-export-progress",
+                events::IMAGE_EXPORT_PROGRESS,
                 ImageExportProgressPayload {
                     image: name_clone.clone(),
                     bytes_written: bytes,
@@ -410,7 +410,7 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
         let emit_error = |err_msg: String| {
             log::error!("导出镜像 {} 失败: {}", name_clone, err_msg);
             let _ = app_handle.emit(
-                "image-export-error",
+                events::IMAGE_EXPORT_ERROR,
                 ImageErrorPayload {
                     image: name_clone.clone(),
                     error: err_msg,
@@ -447,7 +447,7 @@ pub async fn export_image(app: AppHandle, image_id_or_name: String, path: String
         }
 
         log::info!("镜像 {} 导出成功: {}", name_clone, path_clone);
-        let _ = app_handle.emit("image-export-finished", name_clone);
+        let _ = app_handle.emit(events::IMAGE_EXPORT_FINISHED, name_clone);
     });
 
     Ok(())
@@ -492,12 +492,12 @@ pub async fn import_image(app: AppHandle, path: String) -> AppResult<()> {
                         error: info.error,
                         progress: info.progress,
                     };
-                    let _ = app_handle.emit("image-import-progress", payload);
+                    let _ = app_handle.emit(events::IMAGE_IMPORT_PROGRESS, payload);
                 }
                 Err(e) => {
                     log::error!("导入镜像 {} 出错: {}", path_clone, e);
                     let _ = app_handle.emit(
-                        "image-import-error",
+                        events::IMAGE_IMPORT_ERROR,
                         ImageImportErrorPayload {
                             path: path_clone.clone(),
                             error: e.to_string(),
@@ -508,7 +508,7 @@ pub async fn import_image(app: AppHandle, path: String) -> AppResult<()> {
             }
         }
         log::info!("镜像导入成功: {}", path_clone);
-        let _ = app_handle.emit("image-import-finished", path_clone);
+        let _ = app_handle.emit(events::IMAGE_IMPORT_FINISHED, path_clone);
     });
 
     Ok(())

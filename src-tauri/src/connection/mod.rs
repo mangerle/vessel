@@ -173,7 +173,7 @@ pub async fn update_connection_config(app: AppHandle, config: ConnectionConfig) 
     // 配置改变后，清空客户端缓存与各模式代理
     clear_client_cache().await;
     // 通知前端刷新 activeConnection（多窗口/托盘切换场景同步通道）
-    if let Err(e) = app.emit("connection-updated", &new_config) {
+    if let Err(e) = app.emit(crate::docker::events::CONNECTION_UPDATED, &new_config) {
         log::error!("发送 connection-updated 事件失败: {}", e);
         // emit 失败仅告警；下方 prev_config 引用保留供未来扩展失败回滚链路时复用
         let _ = &prev_config;

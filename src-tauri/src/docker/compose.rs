@@ -1,5 +1,6 @@
 use super::ComposeProject;
 use crate::connection::{ConnectionConfig, ConnectionMode, current_config, get_docker_client, ssh};
+use crate::docker::events;
 use crate::error::AppResult;
 use crate::handle_docker_op;
 use bollard::container::ListContainersOptions;
@@ -239,7 +240,10 @@ pub async fn run_compose_command(
         config.mode
     );
 
-    let mut cmd = build_compose_command(&config, &project_dir, &args)?;
+    // build_compose_command 返回 (Command, askpass_path)：
+    // askpass_path 仅 SSH+密码模式下生成，进程结束后由 finish task 立即删除，
+    // 避免 P0-4 的明文密码 .bat 落地温目录残留。
+    let (mut cmd, askpass_path) = build_compose_command(&config, &project_dir, &args)?;
 
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -265,7 +269,7 @@ pub async fn run_compose_command(
         let reader = tokio::io::BufReader::new(stdout);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app_clone.emit("compose-cmd-output", line);
+            let _ = app_clone.emit(events::COMPOSE_CMD_OUTPUT, line);
         }
     });
 
@@ -274,26 +278,35 @@ pub async fn run_compose_command(
         let reader = tokio::io::BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app_clone_err.emit("compose-cmd-output", line);
+            let _ = app_clone_err.emit(events::COMPOSE_CMD_OUTPUT, line);
         }
     });
 
     let app_clone_finish = app.clone();
     tauri::async_runtime::spawn(async move {
-        match child.wait().await {
+        let result = child.wait().await;
+        // 修复 P0-4：进程退出后立即删除 askpass 脚本，无论命令成败
+        if let Some(p) = askpass_path {
+            if let Err(e) = std::fs::remove_file(&p) {
+                log::warn!("清理 askpass 脚本失败 ({}): {}", p.display(), e);
+            } else {
+                log::debug!("已清理 askpass 脚本: {}", p.display());
+            }
+        }
+        match result {
             Ok(status) => {
                 if status.success() {
-                    let _ = app_clone_finish.emit("compose-cmd-finished", ());
+                    let _ = app_clone_finish.emit(events::COMPOSE_CMD_FINISHED, ());
                 } else {
                     let _ = app_clone_finish.emit(
-                        "compose-cmd-error",
+                        events::COMPOSE_CMD_ERROR,
                         format!("Process exited with status: {}", status),
                     );
                 }
             }
             Err(e) => {
                 let _ = app_clone_finish.emit(
-                    "compose-cmd-error",
+                    events::COMPOSE_CMD_ERROR,
                     format!("Failed to wait for process: {}", e),
                 );
             }
@@ -304,11 +317,14 @@ pub async fn run_compose_command(
 }
 
 /// 按当前活动连接模式构造 compose 子进程命令
+///
+/// 返回 (Command, Option<askpass_path>)：仅 SSH+密码 模式才返回脚本路径，
+/// 调用方（finish task）在进程退出后负责删除以避免明文密码残留（P0-4）。
 fn build_compose_command(
     config: &ConnectionConfig,
     project_dir: &str,
     args: &[String],
-) -> AppResult<tokio::process::Command> {
+) -> AppResult<(tokio::process::Command, Option<std::path::PathBuf>)> {
     match config.mode {
         ConnectionMode::Wsl => {
             let mut c = tokio::process::Command::new("wsl");
@@ -319,13 +335,13 @@ fn build_compose_command(
             }
             c.args(["--cd", project_dir, "--", "docker", "compose"]);
             c.args(args);
-            Ok(c)
+            Ok((c, None))
         }
         ConnectionMode::Ssh => build_ssh_compose_command(config, project_dir, args),
         ConnectionMode::Desktop => {
             let mut c = tokio::process::Command::new("docker");
             c.arg("compose").args(args).current_dir(project_dir);
-            Ok(c)
+            Ok((c, None))
         }
     }
 }
@@ -335,7 +351,7 @@ fn build_ssh_compose_command(
     config: &ConnectionConfig,
     project_dir: &str,
     args: &[String],
-) -> AppResult<tokio::process::Command> {
+) -> AppResult<(tokio::process::Command, Option<std::path::PathBuf>)> {
     build_ssh_config(config)?; // 校验配置
 
     let mut c = tokio::process::Command::new("ssh");
@@ -381,6 +397,7 @@ fn build_ssh_compose_command(
 
     c.arg(remote_cmd);
 
+    let mut askpass_to_clean = None;
     if let Some(pw) = &config.ssh_password {
         // 通过 SSH_ASKPASS 机制注入密码
         let askpass_path =
@@ -389,9 +406,10 @@ fn build_ssh_compose_command(
             .env("SSH_ASKPASS_REQUIRE", "force");
         #[cfg(not(windows))]
         c.env("DISPLAY", ":0");
+        askpass_to_clean = Some(askpass_path);
     }
 
-    Ok(c)
+    Ok((c, askpass_to_clean))
 }
 
 fn write_askpass_script(password: &str) -> Result<std::path::PathBuf, String> {

@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter};
 use futures_util::stream::StreamExt;
 use tokio::io::AsyncWriteExt;
 
+use super::events;
+
 /// 终端会话结构体
 pub struct TerminalSession {
     pub stdin_tx: mpsc::Sender<Vec<u8>>,
@@ -77,7 +79,7 @@ pub async fn create_container_terminal(
                         match msg {
                             Ok(log_output) => {
                                 let data = log_output.into_bytes();
-                                let event_name = format!("container-terminal-stdout-{}", exec_id);
+                                let event_name = events::container_terminal_stdout(&exec_id);
                                 if app.emit(&event_name, data.to_vec()).is_err() {
                                     break;
                                 }
@@ -106,7 +108,7 @@ pub async fn create_container_terminal(
 
             let mut sessions = TERMINAL_SESSIONS.lock().await;
             sessions.remove(&exec_id);
-            let _ = app_clone.emit(&format!("container-terminal-exit-{}", exec_id), ());
+            let _ = app_clone.emit(&events::container_terminal_exit(&exec_id), ());
         });
 
         Ok(exec_id_clone)

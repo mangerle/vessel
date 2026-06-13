@@ -11,6 +11,62 @@ use tokio::sync::{Mutex, oneshot};
 #[cfg(windows)]
 pub const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// 修复 P0-18：前后端事件名集中定义。
+///
+/// 任何 `app.emit("...")` 都必须引用本模块内的常量或格式化函数；
+/// 不允许在业务模块直接拼字面量，否则会与前端 `src/api/events.ts::EVT` 静默漂移。
+pub mod events {
+    /// Compose 命令实时输出事件
+    pub const COMPOSE_CMD_OUTPUT: &str = "compose-cmd-output";
+    /// Compose 命令成功完成事件
+    pub const COMPOSE_CMD_FINISHED: &str = "compose-cmd-finished";
+    /// Compose 命令异常退出事件
+    pub const COMPOSE_CMD_ERROR: &str = "compose-cmd-error";
+
+    /// 镜像拉取进度
+    pub const IMAGE_PULL_PROGRESS: &str = "image-pull-progress";
+    /// 镜像拉取错误
+    pub const IMAGE_PULL_ERROR: &str = "image-pull-error";
+    /// 镜像拉取完成
+    pub const IMAGE_PULL_FINISHED: &str = "image-pull-finished";
+
+    /// 镜像导出进度
+    pub const IMAGE_EXPORT_PROGRESS: &str = "image-export-progress";
+    /// 镜像导出错误
+    pub const IMAGE_EXPORT_ERROR: &str = "image-export-error";
+    /// 镜像导出完成
+    pub const IMAGE_EXPORT_FINISHED: &str = "image-export-finished";
+
+    /// 镜像导入进度
+    pub const IMAGE_IMPORT_PROGRESS: &str = "image-import-progress";
+    /// 镜像导入错误
+    pub const IMAGE_IMPORT_ERROR: &str = "image-import-error";
+    /// 镜像导入完成
+    pub const IMAGE_IMPORT_FINISHED: &str = "image-import-finished";
+
+    /// 单实例检测事件
+    pub const SINGLE_INSTANCE_DETECTED: &str = "single-instance-detected";
+    /// 连接配置变更通知
+    pub const CONNECTION_UPDATED: &str = "connection-updated";
+
+    /// 容器统计流事件名（按容器 id 区分频道）
+    pub fn container_stats(id: &str) -> String {
+        format!("container-stats-{}", id)
+    }
+    /// 容器日志流事件名（按容器 id 区分频道）
+    pub fn container_logs(id: &str) -> String {
+        format!("container-logs-{}", id)
+    }
+    /// 终端 stdout 事件名（按 exec id 区分频道）
+    pub fn container_terminal_stdout(exec_id: &str) -> String {
+        format!("container-terminal-stdout-{}", exec_id)
+    }
+    /// 终端退出事件名（按 exec id 区分频道）
+    pub fn container_terminal_exit(exec_id: &str) -> String {
+        format!("container-terminal-exit-{}", exec_id)
+    }
+}
+
 pub type StreamMap = HashMap<String, (oneshot::Sender<()>, u64)>;
 
 pub static STATS_STREAMS: LazyLock<Mutex<StreamMap>> = LazyLock::new(|| Mutex::new(HashMap::new()));
