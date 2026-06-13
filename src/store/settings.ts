@@ -202,6 +202,8 @@ export const useSettingsStore = defineStore('settings', () => {
   
   // 异步将当前的内存设置保存到本地物理 json 文件中
   // 写入采用「只写变更 key」策略：首次保存全部字段，之后仅持久化与上次不同的字段
+  // 修复 P1-1：lastSavedSnapshot 必须保存「深拷贝」而非引用，
+  // 否则下一次保存时 deepEqual 在 a === b 顶层短路，增量同步完全失效。
   const lastSavedSnapshot = ref<Record<string, unknown> | null>(null)
   const deepEqual = (a: unknown, b: unknown): boolean => {
     if (a === b) return true
@@ -225,6 +227,21 @@ export const useSettingsStore = defineStore('settings', () => {
       }
     }
     return true
+  }
+
+  // 浅克隆 + 数组/对象引用断开：仅在 saveSettings 内使用，避免污染 store 原引用
+  const cloneSnapshot = (src: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(src)) {
+      if (Array.isArray(v)) {
+        out[k] = v.map(item => (item && typeof item === 'object' ? { ...item } : item))
+      } else if (v && typeof v === 'object') {
+        out[k] = { ...(v as Record<string, unknown>) }
+      } else {
+        out[k] = v
+      }
+    }
+    return out
   }
 
   const saveSettings = async () => {
@@ -255,7 +272,9 @@ export const useSettingsStore = defineStore('settings', () => {
           await store.set(k, v)
         }
       }
-      lastSavedSnapshot.value = snapshot
+      // 修复 P1-1：必须存深拷贝，store 中 connections/registries 是被同一引用持有的响应式数组，
+      // 直接存 snapshot 会让 lastSavedSnapshot 与下一次快照顶层 ===，deepEqual 失效。
+      lastSavedSnapshot.value = cloneSnapshot(snapshot)
       await store.save()
     } catch (e) {
       console.error('保存配置到 settings.json 失败:', e)
