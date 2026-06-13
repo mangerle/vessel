@@ -4,7 +4,6 @@ import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { Store } from '@tauri-apps/plugin-store'
 import { error as logError, warn as logWarn } from '@tauri-apps/plugin-log'
 import { emptyWslConfig, matchesConnectionConfig, toConnectionConfig, DEFAULT_SSH_PORT } from '../api/connection'
-import { connectionApi } from '../api/connectionApi'
 import { secretsApi, sshPasswordKey, registryPasswordKey } from '../api/secrets'
 import { safeParseField, settingsFieldSchemas } from './settingsSchema'
 import type { ConnectionConfigPayload } from '../api/connection'
@@ -48,6 +47,13 @@ export const useSettingsStore = defineStore('settings', () => {
   const theme = ref<'deep-black' | 'zed-gray' | 'light-apple'>('deep-black')
   const refreshInterval = ref(3) // 默认 3 秒
   const visibleMenus = ref<string[]>(['compose', 'containers', 'images', 'networks', 'volumes'])
+
+  // 连接生命周期状态（启动 / 切换）
+  // connectionReady=false 时由 App.vue 全屏 Loading 遮罩主界面，根除启动期 fetch race。
+  // connectionSwitching=true 时由 MainLayout 弹出居中 modal，期间禁止旧连接的请求落入新连接。
+  const connectionReady = ref(false)
+  const connectionSwitching = ref(false)
+  const switchingTargetName = ref('')
 
   // 旧字段（connectionMode/wslDistro/sshHost/sshPort/sshUser/sshPassword）
   // 改为 computed 派生自 activeConnection，向后兼容旧消费方（如 Volumes.vue）
@@ -467,16 +473,11 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * Settings.vue 「保存」按钮的统一入口：
+   * Settings.vue 「保存」按钮的统一入口（仅做内存与持久化，不触发后端连接切换）。
    *
-   * 1. 把草稿同步到后端（update_connection_config + ping 探活），
-   * 2. 写入 store 状态，
-   * 3. 落盘 saveSettings + setAutoStart。
-   *
-   * 抽离自 Settings.vue 原 handleSave，避免 view 层混合 RPC + autostart 插件 + 持久化三层 IO。
-   * 返回值 { connectionApplied, pingOk }：
-   * - connectionApplied=true 表示已成功 update_connection_config（即使 ping 失败也算应用）；
-   * - pingOk 反映远端 docker 是否就绪，由 view 层决定提示色调（warning / success）。
+   * 后端 update_connection_config + ping + 各 store 数据刷新统一交由
+   * utils/connectionSwitcher.switchTo 外部协调，避免 store 反向 import 其他 store。
+   * 调用方在 applyDraft 前后自行决定是否要触发连接切换。
    */
   const applyDraft = async (draft: {
     theme: 'deep-black' | 'zed-gray' | 'light-apple'
@@ -487,26 +488,8 @@ export const useSettingsStore = defineStore('settings', () => {
     connections: DockerConnection[]
     activeConnectionId: string
     registries: Registry[]
-  }): Promise<{ connectionApplied: boolean; pingOk: boolean | null }> => {
-    let connectionApplied = false
-    let pingOk: boolean | null = null
-
-    // 1. 后端连接配置同步（仅当 active 连接存在时下发）
-    const activeConn = draft.connections.find(c => c.id === draft.activeConnectionId)
-    if (activeConn) {
-      const config = toConnectionConfig(activeConn)
-      await connectionApi.updateConfig(config)
-      connectionApplied = true
-      try {
-        await connectionApi.ping()
-        pingOk = true
-      } catch (e) {
-        logWarn(`已保存配置，但当前活动连接 ping 失败: ${e}`).catch(() => {})
-        pingOk = false
-      }
-    }
-
-    // 2. 写入 store 状态
+  }): Promise<void> => {
+    // 1. 写入 store 状态
     theme.value = draft.theme
     closeToTray.value = draft.closeToTray
     refreshInterval.value = draft.refreshInterval
@@ -515,11 +498,9 @@ export const useSettingsStore = defineStore('settings', () => {
     activeConnectionId.value = draft.activeConnectionId
     registries.value = draft.registries.map(r => ({ ...r }))
 
-    // 3. autostart 与持久化
+    // 2. autostart 与持久化
     await setAutoStart(draft.autoStart)
     await saveSettings()
-
-    return { connectionApplied, pingOk }
   }
 
   return {
@@ -539,6 +520,9 @@ export const useSettingsStore = defineStore('settings', () => {
     activeConnection,
     registries,
     currentRegistryId,
+    connectionReady,
+    connectionSwitching,
+    switchingTargetName,
     loadSettings,
     setAutoStart,
     setCloseToTray,

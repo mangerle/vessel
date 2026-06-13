@@ -2,7 +2,7 @@
 import { onMounted, computed } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from './store/settings'
-import { connectionApi } from './api/connectionApi'
+import { bootstrapConnection } from './utils/connectionSwitcher'
 import { EVT } from './api/events'
 import type { ConnectionConfigPayload } from './api/connection'
 import SingleInstanceListener from './components/common/SingleInstanceListener.vue'
@@ -13,6 +13,7 @@ import {
   NDialogProvider,
   NNotificationProvider,
   NGlobalStyle,
+  NSpin,
   zhCN,
   dateZhCN,
   GlobalThemeOverrides,
@@ -128,22 +129,19 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
 })
 
 onMounted(async () => {
-  await settingsStore.loadSettings()
-
   // 监听后端 connection-updated 事件，校正 activeConnectionId
   // 解决多窗口/托盘切换场景下前后端 active 状态失同步
   listen<ConnectionConfigPayload>(EVT.connectionUpdated, (event) => {
     settingsStore.applyBackendConfig(event.payload)
   })
 
-  // 修复 P1-8：App.vue 仅同步后端配置（单次 IPC），
-  // 启动期 ping_docker 交给 MainLayout 的 8s 心跳（自带竞态保护 + 单点真值），
-  // 避免启动瞬间 2 次 ping_docker 重复执行。
+  // 启动期串行化：loadSettings → updateConfig(active) → ping → preloadAll
+  // 全程 connectionReady=false 由模板里全屏 Loading 遮罩，杜绝
+  // 「fetch 已发飞 + updateConfig 关 client」造成的 SendRequest/Connect race。
   try {
-    const config = settingsStore.getActiveConnectionConfig()
-    await connectionApi.updateConfig(config)
+    await bootstrapConnection()
   } catch (e) {
-    console.error('初始化后端配置失败:', e)
+    console.error('启动期连接初始化失败:', e)
   }
 
   // 窗口关闭事件由后端 lib.rs 的 on_window_event 统一拦截（关闭即隐藏到托盘）；
@@ -157,7 +155,15 @@ onMounted(async () => {
       <n-dialog-provider>
         <n-notification-provider>
           <n-global-style />
-          <router-view />
+          <!-- 启动期 connectionReady=false 时全屏 Loading，杜绝早于连接就绪的 fetch 落空 -->
+          <div v-if="!settingsStore.connectionReady" class="bootstrap-mask">
+            <div class="bootstrap-card">
+              <n-spin :size="36" />
+              <div class="bootstrap-title">正在初始化连接</div>
+              <div class="bootstrap-sub">正在启用激活的 Docker 引擎...</div>
+            </div>
+          </div>
+          <router-view v-else />
           <SingleInstanceListener />
           <StartupUpdater />
         </n-notification-provider>
@@ -183,6 +189,41 @@ body {
 .n-layout-sider {
   background-color: var(--bg-sidebar) !important;
   border-right: 1px solid var(--border-color) !important;
+}
+
+/* 启动期全屏 Loading 遮罩 */
+.bootstrap-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-main, #181818);
+}
+
+.bootstrap-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 32px 48px;
+  border: 1px solid var(--border-color, rgba(255,255,255,0.06));
+  border-radius: 12px;
+  background-color: var(--bg-sidebar, #121212);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.bootstrap-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-title, #ffffff);
+  letter-spacing: 0.5px;
+}
+
+.bootstrap-sub {
+  font-size: 11px;
+  color: var(--text-body, #cccccc);
 }
 </style>
 

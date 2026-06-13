@@ -112,13 +112,30 @@
         </div>
       </div>
     </transition>
+
+    <!-- 切换连接进度 modal：connectionSwitching=true 时强制锁定 UI -->
+    <n-modal
+      :show="settingsStore.connectionSwitching"
+      :mask-closable="false"
+      :closable="false"
+      preset="card"
+      style="width: 360px"
+      :show-header="false"
+    >
+      <div class="switching-modal-body">
+        <n-icon :component="SyncOutline" size="36" class="rotating-icon" style="color: var(--brand-primary)" />
+        <div class="switching-title">正在切换到</div>
+        <div class="switching-target">{{ settingsStore.switchingTargetName || '...' }}</div>
+        <div class="switching-sub">正在重建 Docker 连接通道，请稍候...</div>
+      </div>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NIcon, useMessage } from 'naive-ui'
+import { NIcon, NModal, useMessage } from 'naive-ui'
 import { connectionApi } from '../api/connectionApi'
 import {
   CubeOutline,
@@ -135,11 +152,7 @@ import {
   FlashOutline
 } from '@vicons/ionicons5'
 import { useSettingsStore } from '../store/settings'
-import { useComposeStore } from '../store/compose'
-import { useContainerStore } from '../store/container'
-import { useImageStore } from '../store/image'
-import { useNetworkStore } from '../store/network'
-import { useVolumeStore } from '../store/volume'
+import { switchConnection, refreshAllStores } from '../utils/connectionSwitcher'
 
 import { usePolling } from '../utils/polling'
 
@@ -147,13 +160,6 @@ const router = useRouter()
 const route = useRoute()
 const message = useMessage()
 const settingsStore = useSettingsStore()
-// 预加载所需 store 全部上提，避免 preloadData 每次重新调用 useXxxStore()
-// 多次创建 Pinia 引用（开销虽小但语义混乱）
-const composeStore = useComposeStore()
-const containerStore = useContainerStore()
-const imageStore = useImageStore()
-const networkStore = useNetworkStore()
-const volumeStore = useVolumeStore()
 
 const activeKey = ref<string>((route.name as string) || 'compose')
 const showSwitcher = ref(false)
@@ -174,58 +180,38 @@ const currentConnectionMode = computed(() => {
 })
 
 const selectConnection = async (conn: { id: string; name: string; type: string; wslDistro?: string }) => {
-  settingsStore.activeConnectionId = conn.id
-  await settingsStore.saveSettings()
   showSwitcher.value = false
-  message.info(`正在切换连接至: ${conn.name}...`)
+  if (settingsStore.activeConnectionId === conn.id) return
 
-  connecting.value = true
+  // 统一走 switchConnection：清列表 → 弹 modal → updateConfig → ping → preloadAll
+  // 弹窗与列表清理已由 connectionSwitcher 内部驱动 store 完成
   isConnected.value = true
-
-  // 1. 同步给后端 Rust 环境（传入完整 ConnectionConfig）
   try {
-    const config = settingsStore.getActiveConnectionConfig()
-    await connectionApi.updateConfig(config)
-  } catch (e) {
-    console.error('后端连接同步失败:', e)
-    isConnected.value = false
-    connecting.value = false
-    message.error('同步后端配置失败: ' + e)
-    return
-  }
-
-  // 2. 强制 ping 探测新连接
-  try {
-    await connectionApi.ping()
+    await switchConnection(conn.id)
+    // 切换成功后再落盘 active：避免 ping 失败时把无效 active 写入磁盘
+    await settingsStore.saveSettings()
     message.success(`已连接到: ${conn.name}`)
   } catch (e: any) {
     isConnected.value = false
     message.error(`连接 ${conn.name} 失败: ${e}`)
-  } finally {
-    connecting.value = false
   }
 }
 
 const handleAutoConnect = async () => {
   connecting.value = true
-  // 模拟拉起过程（根据轻量化环境自愈技术）
-  setTimeout(async () => {
-    try {
-      // 同步给后端（完整配置）
-      const config = settingsStore.getActiveConnectionConfig()
-      await connectionApi.updateConfig(config)
-      await connectionApi.ping()
-
-      isConnected.value = true
-      connecting.value = false
-      message.success('数据管道已成功拉起，数据已点亮！')
-      // 触发刷新
-      router.go(0)
-    } catch (e) {
-      connecting.value = false
-      message.error('拉起失败: ' + e)
-    }
-  }, 1500)
+  try {
+    const config = settingsStore.getActiveConnectionConfig()
+    await connectionApi.updateConfig(config)
+    await connectionApi.ping()
+    isConnected.value = true
+    // 重连成功后再补一次预拉，让首屏列表立即填充
+    await refreshAllStores()
+    message.success('数据管道已成功拉起，数据已点亮！')
+  } catch (e) {
+    message.error('拉起失败: ' + e)
+  } finally {
+    connecting.value = false
+  }
 }
 
 const tabs = [
@@ -248,35 +234,22 @@ watch(() => route.name, (newName) => {
 })
 
 
-let preloaded = false
-
-// 在首次连通 Docker 后并发拉取基础数据存入 Pinia 缓存，实现首屏列表秒开
-const preloadData = async () => {
-  try {
-    await Promise.allSettled([
-      composeStore.fetchProjects(),
-      containerStore.fetchContainers(),
-      imageStore.fetchImages(),
-      networkStore.fetchNetworks(),
-      volumeStore.fetchVolumes()
-    ])
-  } catch (e) {
-    console.error('预载数据失败:', e)
-  }
-}
-
-// 使用通用轮询 Hook 进行心跳检测，具备竞态保护和自动清理
+// 数据预拉已由启动期 bootstrapConnection / 切换期 switchConnection 全权负责，
+// 心跳只关心连通性，不再重复触发首屏预拉，避免重复 IPC 风暴。
+let wasDisconnected = false
 const { start: startHeartbeat, stop: stopHeartbeat } = usePolling(async () => {
   try {
     await connectionApi.ping()
-    isConnected.value = true
-    if (!preloaded) {
-      preloaded = true
-      preloadData()
+    if (wasDisconnected) {
+      // 断线 → 重连过渡：补一次预拉，让 UI 列表跟上
+      wasDisconnected = false
+      refreshAllStores().catch(() => {})
     }
+    isConnected.value = true
   } catch (err) {
     console.error('Docker 连接探测失败:', err)
     isConnected.value = false
+    wasDisconnected = true
   }
 }, 8000)
 
@@ -621,5 +594,30 @@ onUnmounted(() => {
 .fade-in-enter-from,
 .fade-in-leave-to {
   opacity: 0;
+}
+
+/* 切换连接 modal：居中卡片 + 旋转图标 */
+.switching-modal-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 12px 8px;
+}
+.switching-title {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+.switching-target {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-title);
+}
+.switching-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
 }
 </style>

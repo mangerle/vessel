@@ -8,6 +8,7 @@ import { relaunch } from '@tauri-apps/plugin-process'
 import { info, error, warn } from '@tauri-apps/plugin-log'
 import { toConnectionConfig, DEFAULT_SSH_PORT } from '../api/connection'
 import { connectionApi } from '../api/connectionApi'
+import { switchConnection } from '../utils/connectionSwitcher'
 import { fsApi, wslApi } from '../api/systemApi'
 import type { DockerConnection, Registry } from '../store/settings'
 import type { SshDiagnostic } from '../api/types'
@@ -195,9 +196,31 @@ const isDirty = computed(() => {
 const handleSave = async () => {
   info('用户尝试保存全局配置...')
   try {
-    // 三步保存（后端 RPC / autostart / 落盘）统一委托给 store.applyDraft，
-    // 这里只负责取出结果做 UI 提示，避免 view 层耦合多层 IO 错误处理。
-    const { connectionApplied, pingOk } = await settingsStore.applyDraft({
+    // 先识别活动连接是否需要重新切换：
+    // - active 连接 id 发生变化（用户切到另一个连接）
+    // - 当前 active 连接的关键字段发生编辑（host/port/user/password/distro/sudo）
+    const prevActive = settingsStore.connections.find(
+      c => c.id === settingsStore.activeConnectionId
+    )
+    const nextActive = draft.value.connections.find(
+      c => c.id === draft.value.activeConnectionId
+    )
+    const activeChanged =
+      draft.value.activeConnectionId !== settingsStore.activeConnectionId
+    const activeFieldsChanged = !!(prevActive && nextActive && (
+      prevActive.id !== nextActive.id
+        || prevActive.type !== nextActive.type
+        || prevActive.wslDistro !== nextActive.wslDistro
+        || prevActive.sshHost !== nextActive.sshHost
+        || prevActive.sshPort !== nextActive.sshPort
+        || prevActive.sshUser !== nextActive.sshUser
+        || prevActive.sshPassword !== nextActive.sshPassword
+        || prevActive.useSudo !== nextActive.useSudo
+    ))
+    const needSwitch = !!nextActive && (activeChanged || activeFieldsChanged)
+
+    // 1. 写入内存 + 落盘（不再触发后端连接切换）
+    await settingsStore.applyDraft({
       theme: draft.value.theme,
       autoStart: draft.value.autoStart,
       closeToTray: draft.value.closeToTray,
@@ -208,9 +231,15 @@ const handleSave = async () => {
       registries: draft.value.registries
     })
 
-    if (connectionApplied && pingOk === false) {
-      warn('已保存配置，但当前活动连接 ping 失败')
-      message.warning('配置已保存，但当前活动引擎尚未连通')
+    // 2. 如果激活连接或其关键字段变化，则走 connectionSwitcher 完整流程
+    //    （清各 store 列表 → 弹切换 modal → updateConfig → ping → preloadAll）
+    if (needSwitch && nextActive) {
+      try {
+        await switchConnection(nextActive.id)
+      } catch (e) {
+        warn(`已保存配置，但切换到「${nextActive.name}」失败: ${e}`)
+        message.warning('配置已保存，但当前活动引擎尚未连通')
+      }
     }
 
     // 重新同步草稿，使 isDirty 变为 false，按钮自动退去高亮
