@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { volumeApi } from '../api/volume'
+import { runStoreAction } from './helpers'
 import type { VolumeInfo, VolumeUser } from '../api/types'
 
 /**
@@ -17,56 +18,43 @@ export const useVolumeStore = defineStore('volume', {
     error: null as string | null
   }),
   actions: {
-    async executeAction(actionName: string, actionFn: () => Promise<any>, refresh: boolean = true) {
-      this.loading = true
-      this.error = null
-      try {
-        const result = await actionFn()
-        if (refresh) {
-          this.volumes = await volumeApi.list()
-        }
-        return result
-      } catch (err) {
-        console.error(`${actionName}失败:`, err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+    /** 刷新数据卷列表（runStoreAction 的 refresh 回调） */
+    async refresh() {
+      this.volumes = await volumeApi.list()
     },
     /**
      * 获取数据卷列表
      */
     async fetchVolumes() {
-      await this.executeAction('获取数据卷', async () => {}, true)
+      await runStoreAction(this, '获取数据卷', () => this.refresh())
     },
     /**
      * 获取使用特定卷的容器
      */
     async fetchVolumeUsers(name: string) {
-      await this.executeAction('获取卷使用者', async () => {
+      await runStoreAction(this, '获取卷使用者', async () => {
         this.volumeUsers = await volumeApi.listContainers(name)
-      }, false)
+      })
     },
     /**
      * 在文件管理器中打开卷路径
      * @param path 卷路径
      */
     async openPath(path: string) {
-      await this.executeAction('打开卷路径', () => volumeApi.openPath(path), false)
+      await runStoreAction(this, '打开卷路径', () => volumeApi.openPath(path))
     },
     /**
      * 删除数据卷
      * @param name 卷名称
      */
     async removeVolume(name: string) {
-      await this.executeAction('删除卷', () => volumeApi.remove(name))
+      await runStoreAction(this, '删除卷', () => volumeApi.remove(name), () => this.refresh())
     },
     /**
      * 清理未使用的数据卷
      */
     async pruneVolumes() {
-      await this.executeAction('清理卷', () => volumeApi.prune())
+      await runStoreAction(this, '清理卷', () => volumeApi.prune(), () => this.refresh())
     }
   }
 })

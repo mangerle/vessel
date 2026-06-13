@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { useTaskStore } from './task'
+import { runStoreAction } from './helpers'
 import { imageApi } from '../api/image'
 import {
   EVT,
@@ -32,70 +33,28 @@ export const useImageStore = defineStore('image', {
   }),
   actions: {
     async fetchImages() {
-      this.loading = true
-      this.error = null
-      try {
+      await runStoreAction(this, '获取镜像', async () => {
         this.images = await imageApi.list()
-      } catch (err) {
-        console.error('获取镜像失败:', err)
-        this.error = String(err)
-      } finally {
-        this.loading = false
-      }
+      })
     },
     async searchImages(term: string) {
-      this.loading = true
-      this.error = null
-      try {
+      await runStoreAction(this, '搜索镜像', async () => {
         this.searchResults = await imageApi.search(term)
-      } catch (err) {
-        console.error('搜索镜像失败:', err)
-        this.error = String(err)
-      } finally {
-        this.loading = false
-      }
+      })
     },
     clearSearchResults() {
       this.searchResults = []
     },
     async inspectImage(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        return await imageApi.inspect(id)
-      } catch (err) {
-        console.error('获取镜像详情失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      return await runStoreAction(this, '获取镜像详情', () => imageApi.inspect(id))
     },
     async fetchImageHistory(id: string) {
-      this.loading = true
-      this.error = null
-      try {
+      await runStoreAction(this, '获取镜像历史', async () => {
         this.imageHistory = await imageApi.history(id)
-      } catch (err) {
-        console.error('获取镜像历史失败:', err)
-        this.error = String(err)
-      } finally {
-        this.loading = false
-      }
+      })
     },
     async removeImage(id: string) {
-      this.loading = true
-      this.error = null
-      try {
-        await imageApi.remove(id)
-        await this.fetchImages()
-      } catch (err) {
-        console.error('删除镜像失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      await runStoreAction(this, '删除镜像', () => imageApi.remove(id), () => this.fetchImages())
     },
     async pullImage(imageName: string, auth?: { username?: string; password?: string; serverAddress?: string }) {
       // 调试：确保 imageName 是字符串
@@ -193,19 +152,11 @@ export const useImageStore = defineStore('image', {
       }
     },
     async pruneDanglingImages() {
-      this.loading = true
-      this.error = null
-      try {
+      return await runStoreAction(this, '清理虚悬镜像', async () => {
         const result = await imageApi.prune()
         await this.fetchImages()
         return result
-      } catch (err) {
-        console.error('清理虚悬镜像失败:', err)
-        this.error = String(err)
-        throw err
-      } finally {
-        this.loading = false
-      }
+      })
     },
 
     async exportImage(imageId: string, imageName: string) {

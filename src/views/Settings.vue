@@ -194,48 +194,33 @@ const isDirty = computed(() => {
 
 const handleSave = async () => {
   info('用户尝试保存全局配置...')
-  // 1. 同步给后端 Rust 环境 (核心：连接引擎切换)
-  const activeConn = draft.value.connections.find(c => c.id === draft.value.activeConnectionId)
-  if (activeConn) {
-    try {
-      // 序列化整个活动连接为 ConnectionConfig 形状再下发给后端
-      const config = toConnectionConfig(activeConn)
-      await connectionApi.updateConfig(config)
-      // 主动 ping 一次，立即验证配置生效
-      try {
-        await connectionApi.ping()
-      } catch (e) {
-        warn(`已保存配置，但当前活动连接 ping 失败: ${e}`)
-        message.warning('配置已保存，但当前活动引擎尚未连通')
-      }
-    } catch (e) {
-      error(`后端配置同步失败: ${e}`)
-      console.error('后端配置同步失败:', e)
-      return
-    }
-  }
-
   try {
-    // 2. 保存到 store 状态中并自动持久化
-    settingsStore.theme = draft.value.theme
-    settingsStore.closeToTray = draft.value.closeToTray
-    settingsStore.refreshInterval = draft.value.refreshInterval
-    settingsStore.visibleMenus = [...draft.value.visibleMenus]
-    settingsStore.connections = draft.value.connections.map(c => ({ ...c }))
-    settingsStore.activeConnectionId = draft.value.activeConnectionId
-    settingsStore.registries = draft.value.registries.map(r => ({ ...r }))
+    // 三步保存（后端 RPC / autostart / 落盘）统一委托给 store.applyDraft，
+    // 这里只负责取出结果做 UI 提示，避免 view 层耦合多层 IO 错误处理。
+    const { connectionApplied, pingOk } = await settingsStore.applyDraft({
+      theme: draft.value.theme,
+      autoStart: draft.value.autoStart,
+      closeToTray: draft.value.closeToTray,
+      refreshInterval: draft.value.refreshInterval,
+      visibleMenus: draft.value.visibleMenus,
+      connections: draft.value.connections,
+      activeConnectionId: draft.value.activeConnectionId,
+      registries: draft.value.registries
+    })
 
-    await settingsStore.setAutoStart(draft.value.autoStart) // 会触发自启动插件并保存
-    await settingsStore.saveSettings()
+    if (connectionApplied && pingOk === false) {
+      warn('已保存配置，但当前活动连接 ping 失败')
+      message.warning('配置已保存，但当前活动引擎尚未连通')
+    }
 
-    // 3. 重新同步草稿，使 isDirty 变为 false，按钮自动退去高亮
+    // 重新同步草稿，使 isDirty 变为 false，按钮自动退去高亮
     syncDraftFromStore()
 
     info('配置保存成功并已落盘')
     message.success('配置已成功落盘，系统通信管道已重载！')
   } catch (e) {
     error(`配置保存失败: ${e}`)
-    message.error('配置保存失败')
+    message.error('配置保存失败: ' + e)
   }
 }
 

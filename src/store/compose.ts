@@ -3,6 +3,11 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { useContainerStore } from './container'
 import type { ComposeProject } from '../api/types'
 import { composeApi } from '../api/compose'
+import {
+  EVT,
+  type ComposeCmdOutputPayload,
+  type ComposeCmdErrorPayload
+} from '../api/events'
 
 /**
  * Compose 项目仓库
@@ -90,7 +95,7 @@ export const useComposeStore = defineStore('compose', {
       }
 
       try {
-        const unlistenOutput = await listen<string>('compose-cmd-output', (event) => {
+        const unlistenOutput = await listen<ComposeCmdOutputPayload>(EVT.composeCmdOutput, (event) => {
           this.commandOutput.push(event.payload)
           if (this.commandOutput.length > 1000) {
             this.commandOutput.shift()
@@ -98,7 +103,7 @@ export const useComposeStore = defineStore('compose', {
         })
         unlistenList.push(unlistenOutput)
 
-        const unlistenFinished = await listen('compose-cmd-finished', () => {
+        const unlistenFinished = await listen(EVT.composeCmdFinished, () => {
           cleanup()
           const refresh = () => {
             this.fetchProjects()
@@ -110,8 +115,10 @@ export const useComposeStore = defineStore('compose', {
         })
         unlistenList.push(unlistenFinished)
 
-        const unlistenError = await listen<string>('compose-cmd-error', (event) => {
-          this.error = event.payload
+        const unlistenError = await listen<ComposeCmdErrorPayload | string>(EVT.composeCmdError, (event) => {
+          // 后端有时直接 emit 字符串、有时 emit { error } 对象，做一次兼容收口
+          const payload = event.payload as ComposeCmdErrorPayload | string
+          this.error = typeof payload === 'string' ? payload : payload.error
           cleanup()
         })
         unlistenList.push(unlistenError)

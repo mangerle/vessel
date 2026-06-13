@@ -3,6 +3,8 @@ import { ref, watch, computed } from 'vue'
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { Store } from '@tauri-apps/plugin-store'
 import { emptyWslConfig, matchesConnectionConfig, toConnectionConfig } from '../api/connection'
+import { connectionApi } from '../api/connectionApi'
+import { safeParseField, settingsFieldSchemas } from './settingsSchema'
 import type { ConnectionConfigPayload } from '../api/connection'
 
 // 声明全局惰性 Store 实例
@@ -98,6 +100,8 @@ export const useSettingsStore = defineStore('settings', () => {
   }, { immediate: true })
 
   // 异步加载本地配置文件中的设置
+  // 修复 P1-8：每个字段先经 zod schema 校验，校验失败回退默认值并打 console.warn，
+  // 避免用户手动改坏的 settings.json 直接污染 store 状态。
   const loadSettings = async () => {
     try {
       autoStart.value = await isEnabled()
@@ -105,29 +109,83 @@ export const useSettingsStore = defineStore('settings', () => {
       const store = await getStore()
       const hasSavedTheme = await store.get<string>('theme')
       if (hasSavedTheme !== null) {
-        // 主题字段为受约束联合类型；store 中可能存有旧字面量，
-        // 用类型谓词做窄化后再赋值，避免 `as any`。
-        if (hasSavedTheme === 'deep-black' || hasSavedTheme === 'zed-gray' || hasSavedTheme === 'light-apple') {
-          theme.value = hasSavedTheme
-        }
-        closeToTray.value = (await store.get<boolean>('closeToTray')) ?? true
-        refreshInterval.value = (await store.get<number>('refreshInterval')) ?? 3
-        visibleMenus.value = (await store.get<string[]>('visibleMenus')) ?? ['compose', 'containers', 'images', 'networks', 'volumes']
+        theme.value = safeParseField(settingsFieldSchemas.theme, hasSavedTheme, theme.value, 'theme')
+        closeToTray.value = safeParseField(
+          settingsFieldSchemas.closeToTray,
+          await store.get<boolean>('closeToTray'),
+          true,
+          'closeToTray'
+        )
+        refreshInterval.value = safeParseField(
+          settingsFieldSchemas.refreshInterval,
+          await store.get<number>('refreshInterval'),
+          3,
+          'refreshInterval'
+        )
+        visibleMenus.value = safeParseField(
+          settingsFieldSchemas.visibleMenus,
+          await store.get<string[]>('visibleMenus'),
+          ['compose', 'containers', 'images', 'networks', 'volumes'],
+          'visibleMenus'
+        )
 
         // 读取旧字段到临时局部变量，仅用于一次性迁移到 connections[]
-        const legacyMode = (await store.get<'wsl' | 'ssh' | 'desktop'>('connectionMode')) ?? 'wsl'
-        const legacyDistro = (await store.get<string>('wslDistro')) ?? ''
-        const legacyHost = (await store.get<string>('sshHost')) ?? ''
-        const legacyPort = (await store.get<number>('sshPort')) ?? 22
-        const legacyUser = (await store.get<string>('sshUser')) ?? ''
-        const legacyPassword = (await store.get<string>('sshPassword')) ?? ''
+        const legacyMode = safeParseField(
+          settingsFieldSchemas.connectionMode,
+          await store.get<'wsl' | 'ssh' | 'desktop'>('connectionMode'),
+          'wsl',
+          'connectionMode'
+        )
+        const legacyDistro = safeParseField(
+          settingsFieldSchemas.wslDistro,
+          await store.get<string>('wslDistro'),
+          '',
+          'wslDistro'
+        )
+        const legacyHost = safeParseField(
+          settingsFieldSchemas.sshHost,
+          await store.get<string>('sshHost'),
+          '',
+          'sshHost'
+        )
+        const legacyPort = safeParseField(
+          settingsFieldSchemas.sshPort,
+          await store.get<number>('sshPort'),
+          22,
+          'sshPort'
+        )
+        const legacyUser = safeParseField(
+          settingsFieldSchemas.sshUser,
+          await store.get<string>('sshUser'),
+          '',
+          'sshUser'
+        )
+        const legacyPassword = safeParseField(
+          settingsFieldSchemas.sshPassword,
+          await store.get<string>('sshPassword'),
+          '',
+          'sshPassword'
+        )
 
-        // 加载多连接引擎配置
-        const savedConnections = await store.get<DockerConnection[]>('connections')
-        const savedActiveConnectionId = await store.get<string>('activeConnectionId')
-        if (savedConnections && Array.isArray(savedConnections) && savedConnections.length > 0) {
-          connections.value = savedConnections
-          activeConnectionId.value = savedActiveConnectionId || savedConnections[0].id
+        // 加载多连接引擎配置（schema 校验失败 → 回退到 legacy 迁移分支）
+        const savedConnectionsRaw = await store.get<DockerConnection[]>('connections')
+        const parsedConnections = savedConnectionsRaw === null
+          ? null
+          : safeParseField(
+              settingsFieldSchemas.connections,
+              savedConnectionsRaw,
+              [] as DockerConnection[],
+              'connections'
+            )
+        const savedActiveConnectionId = safeParseField(
+          settingsFieldSchemas.activeConnectionId,
+          await store.get<string>('activeConnectionId'),
+          '',
+          'activeConnectionId'
+        )
+        if (parsedConnections && parsedConnections.length > 0) {
+          connections.value = parsedConnections as DockerConnection[]
+          activeConnectionId.value = savedActiveConnectionId || (parsedConnections[0] as DockerConnection).id
         } else {
           // 一次性从旧字段迁移到 connections[]
           if (legacyMode === 'wsl') {
@@ -166,11 +224,21 @@ export const useSettingsStore = defineStore('settings', () => {
           }
         }
 
-        const savedRegistries = await store.get<Registry[]>('registries')
-        if (savedRegistries && Array.isArray(savedRegistries)) {
-          registries.value = savedRegistries
+        const savedRegistriesRaw = await store.get<Registry[]>('registries')
+        if (savedRegistriesRaw !== null) {
+          registries.value = safeParseField(
+            settingsFieldSchemas.registries,
+            savedRegistriesRaw,
+            registries.value,
+            'registries'
+          ) as Registry[]
         }
-        currentRegistryId.value = (await store.get<string>('currentRegistryId')) ?? 'default'
+        currentRegistryId.value = safeParseField(
+          settingsFieldSchemas.currentRegistryId,
+          await store.get<string>('currentRegistryId'),
+          'default',
+          'currentRegistryId'
+        )
       } else {
         // 若本地没有配置文件，则将当前的默认值保存落盘
         await saveSettings()
@@ -322,6 +390,62 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  /**
+   * Settings.vue 「保存」按钮的统一入口：
+   *
+   * 1. 把草稿同步到后端（update_connection_config + ping 探活），
+   * 2. 写入 store 状态，
+   * 3. 落盘 saveSettings + setAutoStart。
+   *
+   * 抽离自 Settings.vue 原 handleSave，避免 view 层混合 RPC + autostart 插件 + 持久化三层 IO。
+   * 返回值 { connectionApplied, pingOk }：
+   * - connectionApplied=true 表示已成功 update_connection_config（即使 ping 失败也算应用）；
+   * - pingOk 反映远端 docker 是否就绪，由 view 层决定提示色调（warning / success）。
+   */
+  const applyDraft = async (draft: {
+    theme: 'deep-black' | 'zed-gray' | 'light-apple'
+    autoStart: boolean
+    closeToTray: boolean
+    refreshInterval: number
+    visibleMenus: string[]
+    connections: DockerConnection[]
+    activeConnectionId: string
+    registries: Registry[]
+  }): Promise<{ connectionApplied: boolean; pingOk: boolean | null }> => {
+    let connectionApplied = false
+    let pingOk: boolean | null = null
+
+    // 1. 后端连接配置同步（仅当 active 连接存在时下发）
+    const activeConn = draft.connections.find(c => c.id === draft.activeConnectionId)
+    if (activeConn) {
+      const config = toConnectionConfig(activeConn)
+      await connectionApi.updateConfig(config)
+      connectionApplied = true
+      try {
+        await connectionApi.ping()
+        pingOk = true
+      } catch (e) {
+        console.warn('已保存配置，但当前活动连接 ping 失败:', e)
+        pingOk = false
+      }
+    }
+
+    // 2. 写入 store 状态
+    theme.value = draft.theme
+    closeToTray.value = draft.closeToTray
+    refreshInterval.value = draft.refreshInterval
+    visibleMenus.value = [...draft.visibleMenus]
+    connections.value = draft.connections.map(c => ({ ...c }))
+    activeConnectionId.value = draft.activeConnectionId
+    registries.value = draft.registries.map(r => ({ ...r }))
+
+    // 3. autostart 与持久化
+    await setAutoStart(draft.autoStart)
+    await saveSettings()
+
+    return { connectionApplied, pingOk }
+  }
+
   return {
     autoStart,
     closeToTray,
@@ -346,7 +470,8 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings,
     resetSettings,
     getActiveConnectionConfig,
-    applyBackendConfig
+    applyBackendConfig,
+    applyDraft
   }
 })
 

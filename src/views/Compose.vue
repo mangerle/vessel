@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useContainerStats } from '../hooks/useContainerStats'
 import { useComposeStore } from '../store/compose'
 import { useContainerStore } from '../store/container'
-import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { containerApi } from '../api/container'
 import { EVT } from '../api/events'
@@ -436,7 +435,7 @@ const handleShowTop = async (id: string, name: string) => {
   topTitles.value = []
   topProcesses.value = []
   try {
-    const res = await invoke<{ titles: string[]; processes: string[][] }>('top_container', { id })
+    const res = await containerApi.top(id)
     topTitles.value = res.titles
     topProcesses.value = res.processes
   } catch (e: any) {
@@ -453,10 +452,7 @@ const handleRunExec = async () => {
   execResult.value = null
   execExitCode.value = null
   try {
-    const res = await invoke<{ exit_code: number | null; output: string }>('exec_container', {
-      id: execTargetContainerId.value,
-      cmd: execCmdText.value.trim()
-    })
+    const res = await containerApi.exec(execTargetContainerId.value, execCmdText.value.trim())
     execResult.value = res.output || '[无输出]'
     execExitCode.value = res.exit_code
     if (res.exit_code === 0) {
