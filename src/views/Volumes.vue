@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch, h } from 'vue'
 import { useVolumeStore } from '../store/volume'
-import { useSettingsStore } from '../store/settings'
-import { Command } from '@tauri-apps/plugin-shell'
+import { volumeApi, type VolumeFileEntry } from '../api/volume'
 import {
   NDropdown,
   NScrollbar,
@@ -26,7 +25,6 @@ import {
 } from '@vicons/ionicons5'
 
 const volumeStore = useVolumeStore()
-const settingsStore = useSettingsStore()
 const message = useMessage()
 
 // --- 状态控制 ---
@@ -36,7 +34,7 @@ const activeTab = ref('users') // 默认：users 🗺️ 关联容器
 
 // 文件浏览器状态
 const currentPath = ref('')
-const fileList = ref<Array<{ name: string; isDir: boolean; path: string }>>([])
+const fileList = ref<VolumeFileEntry[]>([])
 const fileLoading = ref(false)
 const selectedFile = ref<string | null>(null)
 const fileContent = ref('')
@@ -49,7 +47,7 @@ const onSelect = async (id: string) => {
   selectedFile.value = null
   fileContent.value = ''
   fileList.value = []
-  
+
   if (activeTab.value === 'files') {
     await loadFiles()
   }
@@ -96,7 +94,10 @@ const handlePrune = async () => {
   }
 }
 
-// --- WSL 文件浏览器本土级超级优化 ---
+// --- 文件浏览器（修复 P0-7 / P0-17）---
+// 原实现直接 import `@tauri-apps/plugin-shell::Command` 起 wsl 子进程，
+// 路径与内容未做 shell 转义、SSH 模式 mock 假数据。现统一走后端 volumeApi，
+// 后端按 ConnectionMode 自动分派 Desktop/WSL/SSH。
 const loadFiles = async () => {
   if (!selectedId.value) return
   fileLoading.value = true
@@ -104,50 +105,17 @@ const loadFiles = async () => {
   fileContent.value = ''
 
   try {
-    const distro = settingsStore.wslDistro || 'Ubuntu'
-    const finalPath = `/var/lib/docker/volumes/${selectedId.value}/_data${currentPath.value}`
-    
-    let execCmd = 'wsl'
-    let args = ['-d', distro, '-u', 'root', '--', 'ls', '-p', finalPath]
-
-    if (settingsStore.connectionMode === 'ssh') {
-      // SSH 模式文件列表模拟
-      fileList.value = [
-        { name: 'config.json', isDir: false, path: '/config.json' },
-        { name: 'logs', isDir: true, path: '/logs' }
-      ]
-      fileLoading.value = false
-      return
-    }
-
-    const command = Command.create(execCmd, args)
-    const out = await command.execute()
-    
-    if (out.code === 0) {
-      fileList.value = out.stdout
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map((name: string) => {
-          const cleanName = name.trim().replace('/', '')
-          return {
-            name: cleanName,
-            isDir: name.trim().endsWith('/'),
-            path: currentPath.value + '/' + cleanName
-          }
-        })
-    } else {
-      fileList.value = []
-    }
-  } catch (e: any) {
-    message.error('读取 Linux 数据卷目录树失败')
+    fileList.value = await volumeApi.listFiles(selectedId.value, currentPath.value)
+  } catch (e) {
+    message.error('读取数据卷目录失败: ' + e)
+    fileList.value = []
   } finally {
     fileLoading.value = false
   }
 }
 
-const clickFileNode = async (node: any) => {
-  if (node.isDir) {
+const clickFileNode = async (node: VolumeFileEntry) => {
+  if (node.is_dir) {
     currentPath.value = node.path
     await loadFiles()
   } else {
@@ -164,20 +132,12 @@ const goBackDir = async () => {
 }
 
 const readVolumeFile = async (filePath: string) => {
-  const distro = settingsStore.wslDistro || 'Ubuntu'
-  const finalPath = `/var/lib/docker/volumes/${selectedId.value}/_data${filePath}`
-  
+  if (!selectedId.value) return
   try {
     fileLoading.value = true
-    const command = Command.create('wsl', ['-d', distro, '-u', 'root', '--', 'cat', finalPath])
-    const out = await command.execute()
-    if (out.code === 0) {
-      fileContent.value = out.stdout
-    } else {
-      throw new Error(out.stderr)
-    }
-  } catch (e: any) {
-    message.error('载入文件内容失败')
+    fileContent.value = await volumeApi.readTextFile(selectedId.value, filePath)
+  } catch (e) {
+    message.error('载入文件内容失败: ' + e)
   } finally {
     fileLoading.value = false
   }
@@ -186,27 +146,11 @@ const readVolumeFile = async (filePath: string) => {
 const handleSaveFile = async () => {
   if (!selectedId.value || !selectedFile.value) return
   fileSaving.value = true
-
-  const distro = settingsStore.wslDistro || 'Ubuntu'
-  const finalPath = `/var/lib/docker/volumes/${selectedId.value}/_data${selectedFile.value}`
-
   try {
-    // 免密写回 WSL
-    const command = Command.create('wsl', [
-      '-d', distro, 
-      '-u', 'root', 
-      '--', 'sh', '-c', 
-      `cat << 'EOF' > ${finalPath}\n${fileContent.value}\nEOF`
-    ])
-    const out = await command.execute()
-    
-    if (out.code === 0) {
-      message.success('文件内容已保存并无损写回宿主')
-    } else {
-      throw new Error(out.stderr)
-    }
-  } catch (e: any) {
-    message.error('保存失败: ' + e.message)
+    await volumeApi.writeTextFile(selectedId.value, selectedFile.value, fileContent.value)
+    message.success('文件内容已保存并写回宿主')
+  } catch (e) {
+    message.error('保存失败: ' + e)
   } finally {
     fileSaving.value = false
   }
@@ -409,7 +353,7 @@ onMounted(() => {
                     @click="clickFileNode(file)"
                   >
                     <span class="node-bullet">
-                      <n-icon :component="file.isDir ? FolderOutline : DocumentOutline" />
+                      <n-icon :component="file.is_dir ? FolderOutline : DocumentOutline" />
                     </span>
                     <span class="node-text">{{ file.name }}</span>
                   </div>

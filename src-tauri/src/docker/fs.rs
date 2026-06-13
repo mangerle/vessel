@@ -6,6 +6,33 @@ fn escape_shell_arg(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))
 }
 
+/// 修复 P0-5：容器内文件路径白名单校验
+///
+/// 即便 escape_shell_arg 已做单引号转义，路径中残留的 `..` 仍可能让用户误删父目录或宿主映射卷。
+/// 这里在转义之前再加一层语义校验：拒绝空串、根目录、含 `..`、含 NUL、过长（>4096）。
+/// 不限制具体根（容器内 root 用户无所不能），只把"误用 + 下游解析风险"降为零。
+fn validate_container_fs_path(path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+    if path == "/" {
+        return Err("禁止操作容器根目录".to_string());
+    }
+    if path.len() > 4096 {
+        return Err("路径长度超限（>4096）".to_string());
+    }
+    if path.contains('\0') {
+        return Err("路径包含 NUL 字符".to_string());
+    }
+    // 拒绝任何路径段为 `..`（避免相对回溯）
+    for seg in path.split('/') {
+        if seg == ".." {
+            return Err(format!("路径包含 .. 段，拒绝执行: {}", path));
+        }
+    }
+    Ok(())
+}
+
 /// 修复 P0-6（zip-slip 防护）：解压前校验 tar entry 的相对路径是否会逃出根目录。
 /// container_path 含 `../` 或绝对路径时，恶意 tar 可在用户主机任意位置写文件。
 ///
@@ -115,6 +142,16 @@ pub async fn list_container_files(id: String, path: String) -> AppResult<Vec<Con
     } else {
         path
     };
+    // 修复 P0-5：浏览路径仍要拒绝 .. / NUL / 超长（list 允许根目录）
+    if target_path.len() > 4096 {
+        return Err("路径长度超限（>4096）".to_string().into());
+    }
+    if target_path.contains('\0') {
+        return Err("路径包含 NUL 字符".to_string().into());
+    }
+    if target_path.split('/').any(|seg| seg == "..") {
+        return Err(format!("路径包含 .. 段，拒绝执行: {}", target_path).into());
+    }
 
     let escaped_path = escape_shell_arg(&target_path);
     let stat_script = format!(
@@ -424,10 +461,11 @@ pub async fn upload_file_to_container(
 #[tauri::command]
 pub async fn delete_container_file(id: String, path: String) -> AppResult<()> {
     log::info!("正在删除容器 {} 内的文件: {}", id, path);
-    if path.is_empty() || path == "/" {
-        log::error!("拒绝删除容器 {} 的根目录", id);
-        return Err("安全起见，禁止删除容器根目录".to_string().into());
-    }
+    // 修复 P0-5：进入即按白名单校验，禁止根目录 / 空 / .. / NUL / 超长
+    validate_container_fs_path(&path).map_err(|e| {
+        log::error!("拒绝删除容器 {} 文件 {}: {}", id, path, e);
+        e
+    })?;
     let cmd = vec![
         "sh".to_string(),
         "-c".to_string(),
@@ -454,10 +492,11 @@ pub async fn create_container_file(id: String, path: String, is_dir: bool) -> Ap
         if is_dir { "目录" } else { "文件" },
         path
     );
-    if path.is_empty() {
-        log::error!("创建失败：路径不能为空");
-        return Err("路径不能为空".to_string().into());
-    }
+    // 修复 P0-5：路径白名单校验
+    validate_container_fs_path(&path).map_err(|e| {
+        log::error!("拒绝在容器 {} 创建 {}: {}", id, path, e);
+        e
+    })?;
     let cmd = if is_dir {
         vec![
             "sh".to_string(),
@@ -486,10 +525,15 @@ pub async fn create_container_file(id: String, path: String, is_dir: bool) -> Ap
 #[tauri::command]
 pub async fn rename_container_file(id: String, src: String, dest: String) -> AppResult<()> {
     log::info!("正在容器 {} 内重命名: {} -> {}", id, src, dest);
-    if src.is_empty() || dest.is_empty() {
-        log::error!("重命名失败：路径不能为空");
-        return Err("路径不能为空".to_string().into());
-    }
+    // 修复 P0-5：源与目标都做路径白名单校验
+    validate_container_fs_path(&src).map_err(|e| {
+        log::error!("拒绝在容器 {} 内重命名（源非法）: {}", id, e);
+        e
+    })?;
+    validate_container_fs_path(&dest).map_err(|e| {
+        log::error!("拒绝在容器 {} 内重命名（目标非法）: {}", id, e);
+        e
+    })?;
     let cmd = vec![
         "sh".to_string(),
         "-c".to_string(),
@@ -514,6 +558,8 @@ pub async fn read_container_text_file(id: String, path: String) -> AppResult<Str
     use tar::Archive;
 
     log::info!("正在读取容器 {} 的文本文件: {}", id, path);
+    // 修复 P0-5：路径白名单校验
+    validate_container_fs_path(&path)?;
 
     let docker = get_docker_client().await?;
 
@@ -557,6 +603,8 @@ pub async fn write_container_text_file(id: String, path: String, content: String
     use tar::Builder;
 
     log::info!("正在写入内容到容器 {} 的文件: {}", id, path);
+    // 修复 P0-5：路径白名单校验
+    validate_container_fs_path(&path)?;
     let docker = get_docker_client().await?;
 
     let path_buf = Path::new(&path);
@@ -600,5 +648,66 @@ pub async fn write_container_text_file(id: String, path: String, content: String
             log::error!("向容器 {} 内文件 {} 写入内容失败: {}", id, path, e);
             Err(e.into())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn validate_container_fs_path_accepts_normal() {
+        assert!(validate_container_fs_path("/etc/nginx/nginx.conf").is_ok());
+        assert!(validate_container_fs_path("/var/log/app.log").is_ok());
+        assert!(validate_container_fs_path("relative/path.txt").is_ok());
+    }
+
+    #[test]
+    fn validate_container_fs_path_rejects_root_and_empty() {
+        assert!(validate_container_fs_path("").is_err(), "空路径应拒绝");
+        assert!(validate_container_fs_path("/").is_err(), "根目录应拒绝");
+    }
+
+    #[test]
+    fn validate_container_fs_path_rejects_dot_dot() {
+        assert!(validate_container_fs_path("/etc/../etc/passwd").is_err());
+        assert!(validate_container_fs_path("../escape").is_err());
+        assert!(validate_container_fs_path("/foo/bar/..").is_err());
+        // 但同名前缀 .. 不算单段不应拒绝（如 ..config）
+        assert!(validate_container_fs_path("/etc/..config").is_ok());
+    }
+
+    #[test]
+    fn validate_container_fs_path_rejects_nul_and_overlong() {
+        assert!(validate_container_fs_path("/etc/x\0evil").is_err());
+        let long = "/".to_string() + &"a".repeat(4096);
+        assert!(validate_container_fs_path(&long).is_err());
+    }
+
+    #[test]
+    fn ensure_safe_tar_entry_accepts_normal_relative() {
+        let root = std::env::temp_dir();
+        assert!(ensure_safe_tar_entry(Path::new("inner/file.txt"), &root).is_ok());
+        assert!(ensure_safe_tar_entry(Path::new("./inner/file.txt"), &root).is_ok());
+    }
+
+    #[test]
+    fn ensure_safe_tar_entry_rejects_parent_dir_and_absolute() {
+        let root = std::env::temp_dir();
+        assert!(
+            ensure_safe_tar_entry(Path::new("../escape.txt"), &root).is_err(),
+            ".. 段应拒绝"
+        );
+        assert!(
+            ensure_safe_tar_entry(Path::new("/etc/passwd"), &root).is_err(),
+            "绝对路径应拒绝"
+        );
+    }
+
+    #[test]
+    fn escape_shell_arg_neutralizes_single_quote() {
+        assert_eq!(escape_shell_arg("plain"), "'plain'");
+        assert_eq!(escape_shell_arg("a'b"), "'a'\\''b'");
     }
 }

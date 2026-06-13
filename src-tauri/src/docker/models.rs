@@ -430,6 +430,17 @@ pub struct ContainerFileInfo {
     pub permissions: String,
 }
 
+/// 数据卷内文件信息（Volumes 视图文件浏览器使用）
+///
+/// 修复 P0-7：原 Volumes.vue 直接走 plugin-shell 起 wsl 子进程，
+/// 含命令注入与 SSH 模式 mock 假数据。统一下推到后端按 mode 分派。
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct VolumeFileEntry {
+    pub name: String,
+    pub is_dir: bool,
+    pub path: String,
+}
+
 /// 镜像操作进度负载
 #[derive(Serialize, Clone)]
 pub struct ImageProgressPayload {
