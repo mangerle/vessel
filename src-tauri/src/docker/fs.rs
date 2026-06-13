@@ -6,8 +6,15 @@ fn escape_shell_arg(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "'\\''"))
 }
 
-/// 在容器中同步运行命令并获取 stdout 和 stderr 字符串的辅助函数
-async fn run_exec_to_string(container_id: &str, cmd: Vec<String>) -> AppResult<(String, String)> {
+/// 在容器中同步运行命令并获取 stdout、stderr 与 exit_code 的辅助函数。
+///
+/// 修复 S1-12：原实现仅返回 (stdout, stderr) 由调用方拼 stderr 字符串判断成功，
+/// 当目标命令本身向 stderr 输出 warning 时会被误判为失败。
+/// 改为通过 `docker.inspect_exec()` 拿真正的 exit_code，调用方据此判定。
+async fn run_exec_to_string(
+    container_id: &str,
+    cmd: Vec<String>,
+) -> AppResult<(String, String, Option<i64>)> {
     use bollard::container::LogOutput;
     use bollard::exec::{CreateExecOptions, StartExecResults};
     use futures_util::StreamExt;
@@ -43,9 +50,12 @@ async fn run_exec_to_string(container_id: &str, cmd: Vec<String>) -> AppResult<(
         }
     }
 
+    let exit_code = docker.inspect_exec(&exec.id).await.ok().and_then(|i| i.exit_code);
+
     Ok((
         String::from_utf8_lossy(&stdout).into_owned(),
         String::from_utf8_lossy(&stderr).into_owned(),
+        exit_code,
     ))
 }
 
@@ -68,7 +78,7 @@ pub async fn list_container_files(id: String, path: String) -> AppResult<Vec<Con
     let mut files = Vec::new();
 
     match run_exec_to_string(&id, cmd).await {
-        Ok((stdout, _stderr)) if !stdout.trim().is_empty() => {
+        Ok((stdout, _stderr, _exit)) if !stdout.trim().is_empty() => {
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.splitn(5, '|').collect();
                 if parts.len() < 5 {
@@ -96,7 +106,7 @@ pub async fn list_container_files(id: String, path: String) -> AppResult<Vec<Con
         _ => {
             let ls_script = format!("ls -la {}", escaped_path);
             let cmd = vec!["sh".to_string(), "-c".to_string(), ls_script];
-            if let Ok((stdout, _stderr)) = run_exec_to_string(&id, cmd).await {
+            if let Ok((stdout, _stderr, _exit)) = run_exec_to_string(&id, cmd).await {
                 for line in stdout.lines() {
                     let trimmed = line.trim();
                     if trimmed.is_empty() || trimmed.starts_with("total") {
@@ -348,10 +358,12 @@ pub async fn delete_container_file(id: String, path: String) -> AppResult<()> {
         "-c".to_string(),
         format!("rm -rf {}", escape_shell_arg(&path)),
     ];
-    let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
-    if !stderr.trim().is_empty() {
-        let err_msg = format!("删除失败: {}", stderr);
-        log::error!("删除容器 {} 文件 {} 失败: {}", id, path, stderr);
+    let (_stdout, stderr, exit_code) = run_exec_to_string(&id, cmd).await?;
+    // 修复 S1-12：以 exit_code != 0 判定失败，stderr 仅作日志线索；
+    // 部分容器内程序成功时也可能写 stderr（warning），不能用空判作失败
+    if matches!(exit_code, Some(code) if code != 0) {
+        let err_msg = format!("删除失败 (exit={:?}): {}", exit_code, stderr.trim());
+        log::error!("删除容器 {} 文件 {} 失败: {}", id, path, err_msg);
         return Err(err_msg.into());
     }
     log::info!("删除容器 {} 文件成功: {}", id, path);
@@ -384,10 +396,11 @@ pub async fn create_container_file(id: String, path: String, is_dir: bool) -> Ap
             format!("touch {}", escape_shell_arg(&path)),
         ]
     };
-    let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
-    if !stderr.trim().is_empty() {
-        let err_msg = format!("创建失败: {}", stderr);
-        log::error!("容器 {} 内创建 {} 失败: {}", id, path, stderr);
+    let (_stdout, stderr, exit_code) = run_exec_to_string(&id, cmd).await?;
+    // 修复 S1-12：以 exit_code 判定，stderr 不再作为成功失败开关
+    if matches!(exit_code, Some(code) if code != 0) {
+        let err_msg = format!("创建失败 (exit={:?}): {}", exit_code, stderr.trim());
+        log::error!("容器 {} 内创建 {} 失败: {}", id, path, err_msg);
         return Err(err_msg.into());
     }
     log::info!("容器 {} 内创建 {} 成功", id, path);
@@ -407,10 +420,11 @@ pub async fn rename_container_file(id: String, src: String, dest: String) -> App
         "-c".to_string(),
         format!("mv {} {}", escape_shell_arg(&src), escape_shell_arg(&dest)),
     ];
-    let (_stdout, stderr) = run_exec_to_string(&id, cmd).await?;
-    if !stderr.trim().is_empty() {
-        let err_msg = format!("重命名失败: {}", stderr);
-        log::error!("容器 {} 内重命名失败 ({} -> {}): {}", id, src, dest, stderr);
+    let (_stdout, stderr, exit_code) = run_exec_to_string(&id, cmd).await?;
+    // 修复 S1-12：以 exit_code 判定，stderr 不再作为成功失败开关
+    if matches!(exit_code, Some(code) if code != 0) {
+        let err_msg = format!("重命名失败 (exit={:?}): {}", exit_code, stderr.trim());
+        log::error!("容器 {} 内重命名失败 ({} -> {}): {}", id, src, dest, err_msg);
         return Err(err_msg.into());
     }
     log::info!("容器 {} 内重命名成功: {} -> {}", id, src, dest);

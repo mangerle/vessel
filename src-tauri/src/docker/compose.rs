@@ -114,8 +114,8 @@ async fn read_file_via_wsl(distro: Option<&str>, path: &str) -> AppResult<String
 async fn read_file_via_ssh(config: &ConnectionConfig, path: &str) -> AppResult<String> {
     let ssh_config = build_ssh_config(config)?;
     let bridge = ssh::SshBridge::new(ssh_config);
-    // 优先尝试单引号双层转义，保持远端路径原样
-    let escaped = path.replace('\'', r"'\''");
+    // 与 WSL 分支保持一致：通过 shell_escape_single_quote 完整转义后单引号包裹
+    let escaped = shell_escape_single_quote(path);
     let cmd = format!("cat '{}'", escaped);
     let out = bridge.exec_command(&cmd).await?;
     Ok(out)
@@ -148,14 +148,26 @@ async fn write_file_via_wsl(
     path: &str,
     content: &str,
 ) -> AppResult<()> {
+    // 修复 S1-10：原实现 `sh -c "cat > \"$1\"" -- "$path"` 在 path 含 `$`/双引号/`\` 时
+    // 会被 shell 二次解释，存在命令注入风险。改为：
+    // 1) 将 content 走 stdin 输入，避免任何 shell 解释
+    // 2) 远端 sh -c 中用单引号包裹的转义路径，单引号内除单引号外不会触发任何 shell 解释
+    let escaped_path = shell_escape_single_quote(path);
+
     let mut cmd = tokio::process::Command::new("wsl");
     if let Some(d) = distro
         && !d.is_empty()
     {
         cmd.args(["-d", d]);
     }
-    // 使用 $1 接收路径，cat 通过 stdin 接收内容，避免 shell 注入
-    cmd.args(["-u", "root", "--", "sh", "-c", "cat > \"$1\"", "--", path]);
+    cmd.args([
+        "-u",
+        "root",
+        "--",
+        "sh",
+        "-c",
+        &format!("cat > '{}'", escaped_path),
+    ]);
     cmd.stdin(Stdio::piped());
 
     #[cfg(windows)]
@@ -178,6 +190,11 @@ async fn write_file_via_wsl(
     }
 }
 
+/// 把字符串中的单引号替换为 `'\''`，配合外层单引号包裹即可安全嵌入 sh -c。
+fn shell_escape_single_quote(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
 async fn write_file_via_ssh(
     config: &ConnectionConfig,
     path: &str,
@@ -188,7 +205,7 @@ async fn write_file_via_ssh(
     // 使用 base64 编码避免引号/换行/特殊字符的 shell 注入问题
     use base64::Engine;
     let encoded = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
-    let escaped_path = path.replace('\'', r"'\''");
+    let escaped_path = shell_escape_single_quote(path);
     let cmd = format!(
         "echo '{}' | base64 -d > '{}'",
         encoded, escaped_path
@@ -203,12 +220,12 @@ fn build_ssh_config(config: &ConnectionConfig) -> AppResult<ssh::SshConfig> {
         host: config
             .ssh_host
             .clone()
-            .ok_or_else(|| "SSH 主机未配置".to_string())?,
+            .ok_or_else(|| crate::error::AppError::ConfigMissing("SSH 主机未配置".to_string()))?,
         port: config.ssh_port.unwrap_or(22),
         user: config
             .ssh_user
             .clone()
-            .ok_or_else(|| "SSH 用户未配置".to_string())?,
+            .ok_or_else(|| crate::error::AppError::ConfigMissing("SSH 用户未配置".to_string()))?,
         password: config.ssh_password.clone(),
         use_sudo: config.use_sudo,
     };
@@ -353,13 +370,13 @@ fn build_ssh_compose_command(
     let docker_prefix = if config.use_sudo { "sudo -n docker" } else { "docker" };
     let mut remote_cmd = format!(
         "cd '{}' && {} compose",
-        project_dir.replace('\'', r"'\''"),
+        shell_escape_single_quote(project_dir),
         docker_prefix
     );
     for a in args {
         remote_cmd.push(' ');
         remote_cmd.push('\'');
-        remote_cmd.push_str(&a.replace('\'', r"'\''"));
+        remote_cmd.push_str(&shell_escape_single_quote(a));
         remote_cmd.push('\'');
     }
 

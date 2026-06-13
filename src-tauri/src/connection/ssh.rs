@@ -9,7 +9,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, Mutex};
 use std::sync::LazyLock;
 
+use crate::error::{AppError, AppResult};
+
 const SSH_CONNECT_TIMEOUT_SECS: u64 = 15;
+const SSH_USER_MAX_LEN: usize = 64;
+const SSH_HOST_MAX_LEN: usize = 253;
 
 /// russh 0.54 的 Channel 默认消息类型别名
 type SshChannel = Channel<russh::client::Msg>;
@@ -27,15 +31,39 @@ pub struct SshConfig {
 }
 
 impl SshConfig {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> AppResult<()> {
         if self.host.trim().is_empty() {
-            return Err("SSH 主机地址不能为空".to_string());
+            return Err(AppError::SshBridge("SSH 主机地址不能为空".to_string()));
         }
         if self.user.trim().is_empty() {
-            return Err("SSH 用户名不能为空".to_string());
+            return Err(AppError::SshBridge("SSH 用户名不能为空".to_string()));
         }
         if self.port == 0 {
-            return Err("SSH 端口非法".to_string());
+            return Err(AppError::SshBridge("SSH 端口非法".to_string()));
+        }
+        // 修复 S1-13：白名单限制 host/user 字符集与长度，
+        // 防止畸形 host/user 拼接出危险的 ssh 命令行
+        if self.user.len() > SSH_USER_MAX_LEN
+            || !self
+                .user
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+        {
+            return Err(AppError::SshBridge(format!(
+                "SSH 用户名仅允许字母/数字/_-. 且长度 ≤ {}",
+                SSH_USER_MAX_LEN
+            )));
+        }
+        if self.host.len() > SSH_HOST_MAX_LEN
+            || self
+                .host
+                .chars()
+                .any(|c| c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '$' | '|' | '&' | ';' | '<' | '>' | '\\' | ' '))
+        {
+            return Err(AppError::SshBridge(format!(
+                "SSH 主机地址含非法字符或长度超过 {}",
+                SSH_HOST_MAX_LEN
+            )));
         }
         Ok(())
     }
