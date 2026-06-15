@@ -1,5 +1,7 @@
 # Changelog
 
+### [0.1.14](https://github.com/mangerle/vessel/compare/v0.1.13...v0.1.14) (2026-06-15)
+
 ### [0.1.13](https://github.com/mangerle/vessel/compare/v0.1.9...v0.1.13) (2026-06-15)
 
 
