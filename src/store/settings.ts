@@ -10,6 +10,19 @@ import type { ConnectionConfigPayload } from '../api/connection'
 
 // 声明全局惰性 Store 实例
 let storeInstance: Store | null = null
+
+/**
+ * 老版本扁平字段列表。新版以 connections[] + activeConnectionId 为单一数据源，
+ * 旧字段不再读取、不再写入，仅在 saveSettings 末尾物理删除以清理历史脏数据。
+ */
+const LEGACY_KEYS = [
+  'connectionMode',
+  'wslDistro',
+  'sshHost',
+  'sshPort',
+  'sshUser',
+  'sshPassword'
+] as const
 const getStore = async () => {
   if (!storeInstance) {
     storeInstance = await Store.load('settings.json')
@@ -137,45 +150,7 @@ export const useSettingsStore = defineStore('settings', () => {
           'visibleMenus'
         )
 
-        // 读取旧字段到临时局部变量，仅用于一次性迁移到 connections[]
-        const legacyMode = safeParseField(
-          settingsFieldSchemas.connectionMode,
-          await store.get<'wsl' | 'ssh' | 'desktop'>('connectionMode'),
-          'wsl',
-          'connectionMode'
-        )
-        const legacyDistro = safeParseField(
-          settingsFieldSchemas.wslDistro,
-          await store.get<string>('wslDistro'),
-          '',
-          'wslDistro'
-        )
-        const legacyHost = safeParseField(
-          settingsFieldSchemas.sshHost,
-          await store.get<string>('sshHost'),
-          '',
-          'sshHost'
-        )
-        const legacyPort = safeParseField(
-          settingsFieldSchemas.sshPort,
-          await store.get<number>('sshPort'),
-          DEFAULT_SSH_PORT,
-          'sshPort'
-        )
-        const legacyUser = safeParseField(
-          settingsFieldSchemas.sshUser,
-          await store.get<string>('sshUser'),
-          '',
-          'sshUser'
-        )
-        const legacyPassword = safeParseField(
-          settingsFieldSchemas.sshPassword,
-          await store.get<string>('sshPassword'),
-          '',
-          'sshPassword'
-        )
-
-        // 加载多连接引擎配置（schema 校验失败 → 回退到 legacy 迁移分支）
+        // 加载多连接引擎配置（schema 校验失败 → connections 保持默认 desktop + WSL）
         const savedConnectionsRaw = await store.get<DockerConnection[]>('connections')
         const parsedConnections = savedConnectionsRaw === null
           ? null
@@ -194,50 +169,6 @@ export const useSettingsStore = defineStore('settings', () => {
         if (parsedConnections && parsedConnections.length > 0) {
           connections.value = parsedConnections as DockerConnection[]
           activeConnectionId.value = savedActiveConnectionId || (parsedConnections[0] as DockerConnection).id
-        } else {
-          // 一次性从旧字段迁移到 connections[]
-          if (legacyMode === 'wsl') {
-            connections.value = [
-              {
-                id: 'conn_default_wsl',
-                name: `WSL (${legacyDistro || 'Ubuntu'})`,
-                type: 'wsl',
-                wslDistro: legacyDistro || 'Ubuntu'
-              },
-              {
-                id: 'conn_default_desktop',
-                name: 'Docker Desktop (命名管道)',
-                type: 'desktop'
-              }
-            ]
-            activeConnectionId.value = 'conn_default_wsl'
-          } else {
-            connections.value = [
-              {
-                id: 'conn_default_ssh',
-                name: `SSH (${legacyUser || 'root'}@${legacyHost || 'localhost'})`,
-                type: 'ssh',
-                sshHost: legacyHost,
-                sshPort: legacyPort,
-                sshUser: legacyUser,
-                sshPassword: legacyPassword
-              },
-              {
-                id: 'conn_default_desktop',
-                name: 'Docker Desktop (命名管道)',
-                type: 'desktop'
-              }
-            ]
-            activeConnectionId.value = 'conn_default_ssh'
-            // 修复 P0-3：legacy 迁移路径同样要把密码搬到 keyring
-            if (legacyPassword) {
-              try {
-                await secretsApi.set(sshPasswordKey('conn_default_ssh'), legacyPassword)
-              } catch (e) {
-                logWarn(`legacy SSH 密码迁移到 keyring 失败: ${e}`).catch(() => {})
-              }
-            }
-          }
         }
 
         // 修复 P0-3：connections / registries 加载完成后，密码统一从 keyring 回填到内存
@@ -389,8 +320,8 @@ export const useSettingsStore = defineStore('settings', () => {
         })
       )
 
-      // 待持久化的键值：不再写 legacy 字段（connectionMode/wslDistro/sshHost/sshPort/sshUser/sshPassword），
-      // 旧版本兼容由 loadSettings 一次性迁移路径承担。
+      // 待持久化的键值：仅含新版结构（connections[] / activeConnectionId / registries / ...），
+      // 旧版扁平字段由下方 LEGACY_KEYS.delete 物理抹除，不再做迁移兼容。
       const snapshot: Record<string, unknown> = {
         autoStart: autoStart.value,
         closeToTray: closeToTray.value,
@@ -417,6 +348,11 @@ export const useSettingsStore = defineStore('settings', () => {
       // 修复 P1-1：必须存深拷贝，store 中 connections/registries 是被同一引用持有的响应式数组，
       // 直接存 snapshot 会让 lastSavedSnapshot 与下一次快照顶层 ===，deepEqual 失效。
       lastSavedSnapshot.value = cloneSnapshot(snapshot)
+      // 抹掉老版本扁平字段（connectionMode/wslDistro/sshHost/sshPort/sshUser/sshPassword）：
+      // 新版完全以 connections[] + activeConnectionId 为单一数据源，不再保留 legacy 兼容路径。
+      // 一次性从 settings.json 物理文件清除，避免后续启动 zod 报「字段格式非法」WARN。
+      // 已被删过的 key 第二次 delete 是 no-op，开销可忽略。
+      await Promise.all(LEGACY_KEYS.map(k => store.delete(k)))
       await store.save()
     } catch (e) {
       logError(`保存配置到 settings.json 失败: ${e}`).catch(() => {})
