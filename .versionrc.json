@@ -1,6 +1,11 @@
 {
   "header": "# Changelog\n",
   "releaseCommitMessageFormat": "chore(release): 升级项目版本为 v{{currentTag}}",
+  "commitAll": true,
+  "scripts": {
+    "postbump": "cd src-tauri && cargo update -p vessel --offline",
+    "precommit": "git add src-tauri/Cargo.lock .versionrc.json"
+  },
   "bumpFiles": [
     {
       "filename": "package.json",
