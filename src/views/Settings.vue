@@ -71,6 +71,23 @@ const themeOptions = [
   { label: '苹果亮白 (Light Apple)', value: 'light-apple' }
 ]
 
+// 平台自适应判断
+const isWindows = typeof navigator !== 'undefined' && /win/i.test(navigator.userAgent || '')
+
+const connectionTypeOptions = computed(() => {
+  if (isWindows) {
+    return [
+      { label: '本地 WSL 管道侧载', value: 'wsl' },
+      { label: '远程 SSH 密码连接', value: 'ssh' },
+      { label: 'Docker Desktop (本地默认)', value: 'desktop' }
+    ]
+  }
+  return [
+    { label: '本地 Docker Engine (Local Socket)', value: 'desktop' },
+    { label: '远程 SSH 密码连接', value: 'ssh' }
+  ]
+})
+
 // 本地 WSL 分发版备选项
 const wslOptions = ref<{ label: string; value: string }[]>([])
 
@@ -913,17 +930,13 @@ onMounted(async () => {
     <div class="add-registry-form">
       <div class="form-field-item">
         <span class="field-label">连接名称 *</span>
-        <n-input v-model:value="newConnection.name" placeholder="例如: 本地 WSL Ubuntu" size="small" />
+        <n-input v-model:value="newConnection.name" :placeholder="isWindows ? '例如: 本地 WSL Ubuntu' : '例如: 本地 Linux 服务器'" size="small" />
       </div>
       <div class="form-field-item">
         <span class="field-label">连接类型 *</span>
         <n-select 
           v-model:value="newConnection.type" 
-          :options="[
-            { label: '本地 WSL 管道侧载', value: 'wsl' },
-            { label: '远程 SSH 密码连接', value: 'ssh' },
-            { label: 'Docker Desktop (本地默认)', value: 'desktop' }
-          ]" 
+          :options="connectionTypeOptions" 
           size="small" 
         />
       </div>

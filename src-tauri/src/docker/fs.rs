@@ -125,7 +125,11 @@ async fn run_exec_to_string(
         }
     }
 
-    let exit_code = docker.inspect_exec(&exec.id).await.ok().and_then(|i| i.exit_code);
+    let exit_code = docker
+        .inspect_exec(&exec.id)
+        .await
+        .ok()
+        .and_then(|i| i.exit_code);
 
     Ok((
         String::from_utf8_lossy(&stdout).into_owned(),
@@ -320,8 +324,8 @@ pub async fn download_file_from_container(
 
             // 第一遍：仅校验所有 entry 的相对路径，无 IO 副作用
             {
-                let tar_file = std::fs::File::open(&temp_file_path_for_blocking)
-                    .map_err(|e| e.to_string())?;
+                let tar_file =
+                    std::fs::File::open(&temp_file_path_for_blocking).map_err(|e| e.to_string())?;
                 let mut archive = tar::Archive::new(tar_file);
                 for entry in archive.entries().map_err(|e| e.to_string())? {
                     let entry = entry.map_err(|e| e.to_string())?;
@@ -331,12 +335,10 @@ pub async fn download_file_from_container(
             }
 
             // 第二遍：实际解压（archive.entries() 是消费式迭代器，必须重开 File）
-            let tar_file = std::fs::File::open(&temp_file_path_for_blocking)
-                .map_err(|e| e.to_string())?;
+            let tar_file =
+                std::fs::File::open(&temp_file_path_for_blocking).map_err(|e| e.to_string())?;
             let mut archive = Archive::new(tar_file);
-            archive
-                .unpack(&canonical_root)
-                .map_err(|e| e.to_string())?;
+            archive.unpack(&canonical_root).map_err(|e| e.to_string())?;
             Ok(())
         })
         .await
@@ -543,7 +545,13 @@ pub async fn rename_container_file(id: String, src: String, dest: String) -> App
     // 修复 S1-12：以 exit_code 判定，stderr 不再作为成功失败开关
     if matches!(exit_code, Some(code) if code != 0) {
         let err_msg = format!("重命名失败 (exit={:?}): {}", exit_code, stderr.trim());
-        log::error!("容器 {} 内重命名失败 ({} -> {}): {}", id, src, dest, err_msg);
+        log::error!(
+            "容器 {} 内重命名失败 ({} -> {}): {}",
+            id,
+            src,
+            dest,
+            err_msg
+        );
         return Err(err_msg.into());
     }
     log::info!("容器 {} 内重命名成功: {} -> {}", id, src, dest);
@@ -583,7 +591,9 @@ pub async fn read_container_text_file(id: String, path: String) -> AppResult<Str
         if let Some(entry_result) = archive.entries().map_err(|e| e.to_string())?.next() {
             let mut entry = entry_result.map_err(|e| e.to_string())?;
             let mut content_bytes = Vec::new();
-            entry.read_to_end(&mut content_bytes).map_err(|e| e.to_string())?;
+            entry
+                .read_to_end(&mut content_bytes)
+                .map_err(|e| e.to_string())?;
             Ok(String::from_utf8_lossy(&content_bytes).into_owned())
         } else {
             Err("在归档中未找到任何文件".to_string())

@@ -75,15 +75,17 @@ fn shell_escape_single_quote(s: &str) -> String {
 
 /// 列出卷内目录文件（按当前连接模式分派）
 #[tauri::command]
-pub async fn list_volume_files(
-    volume: String,
-    path: String,
-) -> AppResult<Vec<VolumeFileEntry>> {
+pub async fn list_volume_files(volume: String, path: String) -> AppResult<Vec<VolumeFileEntry>> {
     validate_volume_name(&volume)?;
     validate_volume_path(&path)?;
     let config = current_config().await;
     let full = build_full_path(&volume, &path);
-    log::info!("列卷文件: volume={} path={} mode={:?}", volume, path, config.mode);
+    log::info!(
+        "列卷文件: volume={} path={} mode={:?}",
+        volume,
+        path,
+        config.mode
+    );
     list_dir_via_config(&config, &full, &path).await
 }
 
@@ -97,7 +99,12 @@ pub async fn read_volume_text_file(volume: String, path: String) -> AppResult<St
     }
     let config = current_config().await;
     let full = build_full_path(&volume, &path);
-    log::info!("读卷文件: volume={} path={} mode={:?}", volume, path, config.mode);
+    log::info!(
+        "读卷文件: volume={} path={} mode={:?}",
+        volume,
+        path,
+        config.mode
+    );
     read_file_via_config(&config, &full).await
 }
 
@@ -115,7 +122,12 @@ pub async fn write_volume_text_file(
     }
     let config = current_config().await;
     let full = build_full_path(&volume, &path);
-    log::info!("写卷文件: volume={} path={} mode={:?}", volume, path, config.mode);
+    log::info!(
+        "写卷文件: volume={} path={} mode={:?}",
+        volume,
+        path,
+        config.mode
+    );
     write_file_via_config(&config, &full, &content).await
 }
 
@@ -128,15 +140,17 @@ async fn list_dir_via_config(
 ) -> AppResult<Vec<VolumeFileEntry>> {
     match config.mode {
         ConnectionMode::Desktop => list_dir_local(full, path_in_volume),
-        ConnectionMode::Wsl => list_dir_wsl(config.wsl_distro.as_deref(), full, path_in_volume).await,
+        ConnectionMode::Wsl => {
+            list_dir_wsl(config.wsl_distro.as_deref(), full, path_in_volume).await
+        }
         ConnectionMode::Ssh => list_dir_ssh(config, full, path_in_volume).await,
     }
 }
 
 fn list_dir_local(full: &str, path_in_volume: &str) -> AppResult<Vec<VolumeFileEntry>> {
     let mut out = Vec::new();
-    let entries = std::fs::read_dir(full)
-        .map_err(|e| AppError::Custom(format!("读取目录失败: {}", e)))?;
+    let entries =
+        std::fs::read_dir(full).map_err(|e| AppError::Custom(format!("读取目录失败: {}", e)))?;
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
@@ -247,7 +261,9 @@ async fn write_file_wsl(distro: Option<&str>, full: &str, content: &str) -> AppR
         "-c",
         &format!("cat > '{}'", escaped),
     ]);
-    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     let mut child = cmd.spawn()?;

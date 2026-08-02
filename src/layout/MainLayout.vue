@@ -166,12 +166,14 @@ const showSwitcher = ref(false)
 const isConnected = ref(true) // 默认假设已连接，稍后通过轮询探测
 const connecting = ref(false)
 
+const isWindows = typeof navigator !== 'undefined' && /win/i.test(navigator.userAgent || '')
+
 const currentConnectionShortName = computed(() => {
   const activeConn = settingsStore.connections.find(c => c.id === settingsStore.activeConnectionId)
-  if (!activeConn) return 'DKP'
+  if (!activeConn) return isWindows ? 'DKP' : 'LOCAL'
   if (activeConn.type === 'wsl') return activeConn.wslDistro || 'WSL'
   if (activeConn.type === 'ssh') return 'SSH'
-  return 'DKP'
+  return isWindows ? 'DKP' : 'LOCAL'
 })
 
 const currentConnectionMode = computed(() => {

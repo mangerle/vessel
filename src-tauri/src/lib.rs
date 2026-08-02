@@ -4,9 +4,9 @@ pub mod error;
 pub mod secrets;
 
 use tauri::{
+    Emitter, Manager,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
 };
 
 /// 修复 P1-11：构建并安装自定义 tokio multi-thread runtime 作为 tauri 全局 runtime。
@@ -77,12 +77,29 @@ pub fn run() {
             let quit_i = MenuItem::with_id(app, "quit", "退出 Vessel", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            // 优先从编译期内嵌包含图标，避免 Linux 环境下 default_window_icon() 为 None 导致的齿轮fallback
+            let icon_bytes = include_bytes!("../icons/128x128.png");
+            let tray_icon = image::load_from_memory(icon_bytes)
+                .ok()
+                .map(|img| {
+                    let rgba = img.to_rgba8();
+                    let (width, height) = rgba.dimensions();
+                    tauri::image::Image::new_owned(rgba.into_raw(), width, height)
+                })
+                .or_else(|| app.default_window_icon().cloned());
+
+            #[cfg(target_os = "linux")]
+            let show_menu = true;
+            #[cfg(not(target_os = "linux"))]
+            let show_menu = false;
+
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&menu)
-                .show_menu_on_left_click(false);
+                .show_menu_on_left_click(show_menu);
 
-            if let Some(icon) = app.default_window_icon() {
-                tray_builder = tray_builder.icon(icon.clone());
+            if let Some(icon) = tray_icon {
+                tray_builder = tray_builder.icon(icon);
             }
 
             let _tray = tray_builder
@@ -123,7 +140,7 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let window = window.clone();
-                
+
                 // 默认拦截并隐藏，由前端设置决定是否退出
                 api.prevent_close();
                 let _ = window.hide();

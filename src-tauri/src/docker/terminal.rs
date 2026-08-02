@@ -1,12 +1,12 @@
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions, StartExecResults};
+use futures_util::stream::StreamExt;
 use std::collections::HashMap;
 use std::sync::LazyLock;
-use tokio::sync::{mpsc, Mutex};
 use tauri::{AppHandle, Emitter};
-use futures_util::stream::StreamExt;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::{Mutex, mpsc};
 
 use super::events;
 
@@ -137,20 +137,10 @@ pub async fn write_to_terminal(exec_id: String, data: Vec<u8>) -> AppResult<()> 
 
 /// 调整终端大小
 #[tauri::command]
-pub async fn resize_container_terminal(
-    exec_id: String,
-    height: u16,
-    width: u16,
-) -> AppResult<()> {
+pub async fn resize_container_terminal(exec_id: String, height: u16, width: u16) -> AppResult<()> {
     let docker = get_docker_client().await?;
     docker
-        .resize_exec(
-            &exec_id,
-            ResizeExecOptions {
-                height,
-                width,
-            },
-        )
+        .resize_exec(&exec_id, ResizeExecOptions { height, width })
         .await?;
     Ok(())
 }
@@ -162,4 +152,3 @@ pub async fn close_container_terminal(exec_id: String) -> AppResult<()> {
     sessions.remove(&exec_id);
     Ok(())
 }
-

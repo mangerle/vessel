@@ -106,11 +106,7 @@ impl Handler for KnownHostsHandler {
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
         let key_id = format!("{}:{}", self.host, self.port);
-        // 计算 SHA256 指纹（同 OpenSSH 默认）
-        let fingerprint = match server_public_key.fingerprint(HashAlg::Sha256) {
-            // russh::keys::ssh_key::Fingerprint 实现 Display，输出形如 "SHA256:..."
-            fp => fp.to_string(),
-        };
+        let fingerprint = server_public_key.fingerprint(HashAlg::Sha256).to_string();
 
         let mut known = load_known_hosts(&self.known_hosts_path).unwrap_or_default();
         match known.get(&key_id) {
@@ -161,8 +157,7 @@ fn directories_data_dir() -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 fn directories_data_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .map(|p| PathBuf::from(p).join("Library/Application Support/vessel"))
+    std::env::var_os("HOME").map(|p| PathBuf::from(p).join("Library/Application Support/vessel"))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -183,8 +178,7 @@ fn load_known_hosts(
     if raw.trim().is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-    serde_json::from_str(&raw)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    serde_json::from_str(&raw).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
 fn save_known_hosts(

@@ -1,3 +1,5 @@
+#![allow(unused_imports, dead_code)]
+
 use bollard::{API_DEFAULT_VERSION, Docker};
 use std::pin::Pin;
 use std::process::Stdio;
@@ -46,6 +48,15 @@ impl WslBridge {
         Self { distro }
     }
 
+    #[cfg(not(windows))]
+    pub async fn connect(&self) -> Result<Docker, String> {
+        Err(
+            "WSL 模式仅在 Windows 平台受支持，Linux 环境请使用 Desktop (本地 Socket) 或 SSH 模式"
+                .to_string(),
+        )
+    }
+
+    #[cfg(windows)]
     pub async fn connect(&self) -> Result<Docker, String> {
         // 1. 确保代理服务器已启动
         let port = self.ensure_proxy().await?;
@@ -134,10 +145,7 @@ impl WslBridge {
 }
 
 /// 处理单个 TCP 代理连接：启动一个 wsl 进程并透传字节流
-async fn handle_proxy_connection(
-    mut client_socket: tokio::net::TcpStream,
-    distro: Option<String>,
-) {
+async fn handle_proxy_connection(mut client_socket: tokio::net::TcpStream, distro: Option<String>) {
     let mut cmd = Command::new("wsl");
     if let Some(d) = distro.as_deref()
         && !d.is_empty()

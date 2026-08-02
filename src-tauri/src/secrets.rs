@@ -17,7 +17,8 @@ fn entry(key: &str) -> AppResult<keyring::Entry> {
     if key.is_empty() {
         return Err(AppError::Custom("secret key 不能为空".to_string()));
     }
-    keyring::Entry::new(SERVICE, key).map_err(|e| AppError::Custom(format!("打开凭据条目失败: {}", e)))
+    keyring::Entry::new(SERVICE, key)
+        .map_err(|e| AppError::Custom(format!("打开凭据条目失败: {}", e)))
 }
 
 /// 写入密钥；空字符串等价于删除（避免前端误把"清空密码"当成保存空串）

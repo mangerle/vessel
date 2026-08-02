@@ -105,9 +105,14 @@ impl ConnectionConfig {
 
 /// 全局活动连接配置
 pub static CONNECTION_CONFIG: LazyLock<RwLock<ConnectionConfig>> = LazyLock::new(|| {
+    #[cfg(windows)]
+    let (default_mode, name) = (ConnectionMode::Wsl, "WSL".to_string());
+    #[cfg(not(windows))]
+    let (default_mode, name) = (ConnectionMode::Desktop, "Docker Desktop".to_string());
+
     RwLock::new(ConnectionConfig {
-        mode: ConnectionMode::Wsl,
-        name: "WSL".to_string(),
+        mode: default_mode,
+        name,
         wsl_distro: None,
         ssh_host: None,
         ssh_port: None,
@@ -264,7 +269,7 @@ pub async fn get_docker_client() -> AppResult<Docker> {
     }
 }
 
-/// 探测并连接本地 Docker Desktop 命名管道
+/// 探测并连接本地 Docker（Windows 上使用命名管道，Linux/macOS 上使用 Unix Socket）
 #[cfg(windows)]
 async fn connect_desktop() -> Result<Docker, String> {
     use bollard::Docker;
@@ -278,7 +283,18 @@ async fn connect_desktop() -> Result<Docker, String> {
 
 #[cfg(not(windows))]
 async fn connect_desktop() -> Result<Docker, String> {
-    Err("Desktop 模式仅在 Windows 平台受支持".to_string())
+    use bollard::Docker;
+    if let Ok(docker) = Docker::connect_with_socket_defaults()
+        && docker.ping().await.is_ok()
+    {
+        return Ok(docker);
+    }
+    if let Ok(docker) = Docker::connect_with_local_defaults()
+        && docker.ping().await.is_ok()
+    {
+        return Ok(docker);
+    }
+    Err("无法连接到本地 Docker Unix Socket (请确保 Docker 服务已启动且当前用户有权访问 /var/run/docker.sock)".to_string())
 }
 
 /// 轻量级 Docker 连通性测试命令

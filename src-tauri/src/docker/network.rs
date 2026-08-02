@@ -1,7 +1,7 @@
-use crate::handle_docker_op;
 use super::{NetworkDetails, NetworkInfo};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
+use crate::handle_docker_op;
 use bollard::network::InspectNetworkOptions;
 
 /// 获取网络列表
@@ -26,7 +26,11 @@ pub async fn remove_network(id: String) -> AppResult<()> {
 pub async fn prune_networks() -> AppResult<()> {
     log::info!("正在清理未使用的网络...");
     let docker = get_docker_client().await?;
-    handle_docker_op!("网络清理", "所有未使用的网络", docker.prune_networks::<String>(None))
+    handle_docker_op!(
+        "网络清理",
+        "所有未使用的网络",
+        docker.prune_networks::<String>(None)
+    )
 }
 
 /// 断开网络连接

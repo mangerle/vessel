@@ -8,9 +8,11 @@ import type { ImageInfo, ImageDetails, ImageSearchResult, ImageHistoryInfo } fro
  */
 export interface PullParams extends Record<string, unknown> {
   image_name: string
+  imageName?: string
   username?: string | null
   password?: string | null
   server_address?: string | null
+  serverAddress?: string | null
 }
 
 /**
@@ -38,9 +40,16 @@ export const imageApi = {
   search: (term: string) => invoke<ImageSearchResult[]>(CMD.searchImages, { term }),
 
   /**
-   * 拉取镜像
+   * 拉取镜像（同时携带 image_name 与 imageName 避免 Tauri 框架属性解析漂移）
    */
-  pull: (params: PullParams) => invoke<void>(CMD.pullImage, params),
+  pull: (params: PullParams) =>
+    invoke<void>(CMD.pullImage, {
+      ...params,
+      image_name: params.image_name || params.imageName || '',
+      imageName: params.imageName || params.image_name || '',
+      server_address: params.server_address || params.serverAddress || null,
+      serverAddress: params.serverAddress || params.server_address || null
+    }),
 
   /**
    * 清理虚悬镜像

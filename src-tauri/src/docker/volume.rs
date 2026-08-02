@@ -1,7 +1,7 @@
-use crate::handle_docker_op;
 use super::{VolumeInfo, VolumeUser};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
+use crate::handle_docker_op;
 use bollard::container::ListContainersOptions;
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
@@ -29,7 +29,11 @@ pub async fn remove_volume(name: String) -> AppResult<()> {
 pub async fn prune_volumes() -> AppResult<()> {
     log::info!("正在清理未使用的卷...");
     let docker = get_docker_client().await?;
-    handle_docker_op!("卷清理", "所有未使用的卷", docker.prune_volumes::<String>(None))
+    handle_docker_op!(
+        "卷清理",
+        "所有未使用的卷",
+        docker.prune_volumes::<String>(None)
+    )
 }
 
 /// 获取使用特定卷的容器列表
@@ -62,9 +66,7 @@ pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> 
         if let Some(mounts) = c.mounts {
             for mount in mounts {
                 // 命名卷：mount.name 命中；bind mount：mount.source 命中
-                if mount.name.as_deref() == Some(&name)
-                    || mount.source.as_deref() == Some(&name)
-                {
+                if mount.name.as_deref() == Some(&name) || mount.source.as_deref() == Some(&name) {
                     users.push(VolumeUser {
                         container_id: id.clone(),
                         container_name: container_name.clone(),
@@ -85,5 +87,7 @@ pub async fn list_volume_containers(name: String) -> AppResult<Vec<VolumeUser>> 
 #[tauri::command]
 pub async fn open_volume_path(app: AppHandle, path: String) -> AppResult<()> {
     log::info!("正在文件管理器中打开路径: {}", path);
-    handle_docker_op!("打开路径", path, async { app.opener().open_path(&path, None::<String>) })
+    handle_docker_op!("打开路径", path, async {
+        app.opener().open_path(&path, None::<String>)
+    })
 }

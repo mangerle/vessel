@@ -77,7 +77,7 @@ pub async fn get_image_history(id: String) -> AppResult<Vec<ImageHistoryInfo>> {
 }
 
 /// 拉取镜像
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn pull_image(
     app: AppHandle,
     image_name: String,

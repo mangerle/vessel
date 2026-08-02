@@ -15,7 +15,8 @@ use tokio::sync::Mutex;
 /// 修复 P0-15：compose 命令任务表，按 cmd_id 跟踪后台 JoinHandle。
 /// 切换连接 / 关闭项目时统一 abort，避免子进程孤儿与事件污染。
 type ComposeTaskMap = HashMap<String, Vec<tokio::task::JoinHandle<()>>>;
-static COMPOSE_TASKS: LazyLock<Mutex<ComposeTaskMap>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static COMPOSE_TASKS: LazyLock<Mutex<ComposeTaskMap>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// compose 命令完成/失败的 payload，与前端 events.ts 中的 EVT.composeCmd* 一一对应
 #[derive(serde::Serialize, Clone)]

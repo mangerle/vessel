@@ -1,4 +1,6 @@
-use super::{ContainerDetails, ContainerInfo, LOGS_STREAMS, STATS_STREAMS, events, spawn_stream_handler};
+use super::{
+    ContainerDetails, ContainerInfo, LOGS_STREAMS, STATS_STREAMS, events, spawn_stream_handler,
+};
 use crate::connection::get_docker_client;
 use crate::error::AppResult;
 use crate::handle_docker_op;

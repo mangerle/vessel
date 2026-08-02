@@ -72,20 +72,35 @@ export const useSettingsStore = defineStore('settings', () => {
   // 改为 computed 派生自 activeConnection，向后兼容旧消费方（如 Volumes.vue）
   // 的同时消除「双源 + 双向 watch」架构硬伤。
 
+  const isWindows = typeof navigator !== 'undefined' && /win/i.test(navigator.userAgent || '')
+
   // 多引擎连接配置（单一数据源）
-  const connections = ref<DockerConnection[]>([
-    {
-      id: 'conn_default_desktop',
-      name: 'Docker Desktop',
-      type: 'desktop'
-    },
-    {
-      id: 'conn_default_wsl',
-      name: 'WSL (Ubuntu)',
-      type: 'wsl',
-      wslDistro: 'Ubuntu'
+  const getDefaultConnections = (): DockerConnection[] => {
+    if (isWindows) {
+      return [
+        {
+          id: 'conn_default_desktop',
+          name: 'Docker Desktop',
+          type: 'desktop'
+        },
+        {
+          id: 'conn_default_wsl',
+          name: 'WSL (Ubuntu)',
+          type: 'wsl',
+          wslDistro: 'Ubuntu'
+        }
+      ]
     }
-  ])
+    return [
+      {
+        id: 'conn_default_desktop',
+        name: '本地 Docker Engine',
+        type: 'desktop'
+      }
+    ]
+  }
+
+  const connections = ref<DockerConnection[]>(getDefaultConnections())
   const activeConnectionId = ref<string>('conn_default_desktop')
 
   const activeConnection = computed(() => {
@@ -167,8 +182,28 @@ export const useSettingsStore = defineStore('settings', () => {
           'activeConnectionId'
         )
         if (parsedConnections && parsedConnections.length > 0) {
-          connections.value = parsedConnections as DockerConnection[]
-          activeConnectionId.value = savedActiveConnectionId || (parsedConnections[0] as DockerConnection).id
+          let list = parsedConnections as DockerConnection[]
+          if (!isWindows) {
+            // 在非 Windows 平台（Linux/macOS）上：
+            // 1. 过滤不适用的 WSL 模式连接
+            list = list.filter(c => c.type !== 'wsl')
+            // 2. 将原先硬编码的 "Docker Desktop" 名称自动升级迁移为 "本地 Docker Engine"
+            list = list.map(c => {
+              if (c.type === 'desktop' && (c.name === 'Docker Desktop' || !c.name)) {
+                return { ...c, name: '本地 Docker Engine' }
+              }
+              return c
+            })
+            if (list.length === 0) {
+              list = getDefaultConnections()
+            }
+          }
+          connections.value = list
+          let targetActive = savedActiveConnectionId
+          if (!list.some(c => c.id === targetActive)) {
+            targetActive = list[0].id
+          }
+          activeConnectionId.value = targetActive
         }
 
         // 修复 P0-3：connections / registries 加载完成后，密码统一从 keyring 回填到内存
