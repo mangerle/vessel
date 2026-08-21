@@ -1,4 +1,6 @@
-# Vessel
+<p align="center">
+  <img src="public/logo-with-name.svg" alt="Vessel" width="380" />
+</p>
 
 Vessel 是一款为现代开发者打造的极致简约、两栖式 Docker 桌面容器管理客户端。它不仅专为 WSL (Windows Subsystem for Linux) 环境优化，更全面支持远程多节点 SSH 部署，旨在提供一种如空气般轻盈、极速、无感的容器管理体验。
 

@@ -405,7 +405,7 @@ onMounted(() => {
       <!-- 空白缺省页 -->
       <div v-else class="empty-state">
         <div class="empty-logo">
-          <img src="/logo.png" alt="Vessel Logo" style="width: 80px; height: 80px; object-fit: contain;" />
+          <img src="/logo-with-name.svg" alt="Vessel Logo" style="width: 140px; height: auto; object-fit: contain;" />
         </div>
         <div class="empty-title">持久化数据卷</div>
         <div class="empty-sub">选择左侧的数据卷以观测其挂载状态，或使用内置文件树直接操作内部文件。</div>

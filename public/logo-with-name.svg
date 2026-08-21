@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 95 32" width="95" height="32">
+  <defs>
+    <!-- 完全对齐 RDDNS 渐变色：#6366f1 -> #06b6d4 -->
+    <linearGradient id="badgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+  </defs>
+
+  <!-- 1. 外层圆角矩形 (完全对齐 RDDNS 95x32, rx=8) -->
+  <rect width="95" height="32" rx="8" fill="url(#badgeGrad)" />
+
+  <!-- 2. 左侧 Vessel 极简核心图标 (居中平移，左边距与右边距严格对称 ~8.6px) -->
+  <g transform="translate(17.5, 16) scale(0.062) translate(-256, -256)" fill="#ffffff">
+    <!-- 集装箱矩阵 -->
+    <rect x="285" y="124" width="42" height="34" rx="6" />
+    <rect x="235" y="168" width="42" height="34" rx="6" />
+    <rect x="285" y="168" width="42" height="34" rx="6" />
+    <rect x="335" y="168" width="42" height="34" rx="6" />
+    <rect x="135" y="212" width="42" height="34" rx="6" />
+    <rect x="185" y="212" width="42" height="34" rx="6" />
+    <rect x="235" y="212" width="42" height="34" rx="6" />
+    <rect x="285" y="212" width="42" height="34" rx="6" />
+    <rect x="335" y="212" width="42" height="34" rx="6" />
+
+    <!-- 母舰船体 -->
+    <path d="M 112 260 C 112 336, 168 388, 256 388 C 344 388, 400 336, 400 260 Z" />
+
+    <!-- 终端提示符 > _ -->
+    <path d="M 148 224 L 156 229 L 148 234" fill="none" stroke="url(#badgeGrad)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+    <line x1="159" y1="234" x2="167" y2="234" stroke="url(#badgeGrad)" stroke-width="4.5" stroke-linecap="round" />
+
+    <!-- 船体科技流线 -->
+    <path d="M 146 288 C 190 330, 260 340, 366 288" fill="none" stroke="url(#badgeGrad)" stroke-width="6.5" stroke-linecap="round" />
+  </g>
+
+  <!-- 3. 右侧项目名称 (平移对齐，形成左右均等边距) -->
+  <text x="31" y="22" 
+        fill="#ffffff" 
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" 
+        font-size="15" 
+        font-weight="800" 
+        letter-spacing="0.5">VESSEL</text>
+</svg>

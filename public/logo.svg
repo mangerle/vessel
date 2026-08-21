@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- 完全对齐 RDDNS 渐变色：#6366f1 (Indigo-500) -> #06b6d4 (Cyan-500) -->
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+  </defs>
+
+  <!-- 1. 外层应用方块 (对齐 RDDNS rx=8/32 = 0.25 黄金圆角比：512*0.25 = 128) -->
+  <rect width="512" height="512" rx="128" fill="url(#g)" />
+
+  <!-- 2. 中间核心 Vessel 极简纯白图标 -->
+  <g fill="#ffffff">
+    <!-- A. 集装箱模块矩阵 (精细对齐与微圆角) -->
+    <g id="containers">
+      <!-- 顶层 -->
+      <rect x="285" y="124" width="42" height="34" rx="6" />
+
+      <!-- 中层 -->
+      <rect x="235" y="168" width="42" height="34" rx="6" />
+      <rect x="285" y="168" width="42" height="34" rx="6" />
+      <rect x="335" y="168" width="42" height="34" rx="6" />
+
+      <!-- 底层 -->
+      <!-- 第 1 块：Vessel 核心终端主控块 (内嵌 > _ 符号) -->
+      <rect x="135" y="212" width="42" height="34" rx="6" />
+      <!-- 第 2~5 块：标准集装箱 -->
+      <rect x="185" y="212" width="42" height="34" rx="6" />
+      <rect x="235" y="212" width="42" height="34" rx="6" />
+      <rect x="285" y="212" width="42" height="34" rx="6" />
+      <rect x="335" y="212" width="42" height="34" rx="6" />
+    </g>
+
+    <!-- B. 极简 Vessel 母舰船体 (去尾巴，饱满流线弧度) -->
+    <path d="M 112 260
+             C 112 336, 168 388, 256 388
+             C 344 388, 400 336, 400 260
+             Z" />
+
+    <!-- C. 负空间细节 (呼应背景渐变) -->
+    <!-- 终端提示符 > _ -->
+    <path d="M 148 224 L 156 229 L 148 234" fill="none" stroke="url(#g)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    <line x1="159" y1="234" x2="167" y2="234" stroke="url(#g)" stroke-width="3" stroke-linecap="round" />
+
+    <!-- 船体科技流线 -->
+    <path d="M 146 288 C 190 330, 260 340, 366 288" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round" />
+  </g>
+</svg>

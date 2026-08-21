@@ -222,7 +222,7 @@
 
     <div v-else class="empty-state" key="empty-state-pane">
       <div class="empty-logo">
-        <img src="/logo.png" alt="Vessel Logo" style="width: 80px; height: 80px; object-fit: contain;" />
+        <img src="/logo-with-name.svg" alt="Vessel Logo" style="width: 140px; height: auto; object-fit: contain;" />
       </div>
       <div class="empty-title">欢迎使用 Vessel</div>
       <div class="empty-sub">请在左侧选择一个项目或容器，开始高效微服务管控</div>

@@ -27,7 +27,7 @@ import {
 } from 'naive-ui'
 import {
   DesktopOutline,
-  LogoDocker,
+  ServerOutline,
   GlobeOutline,
   ShieldCheckmarkOutline,
   SaveOutline,
@@ -35,7 +35,6 @@ import {
   TrashOutline,
   AddOutline,
   InformationCircleOutline,
-  SparklesOutline,
   SyncOutline
 } from '@vicons/ionicons5'
 
@@ -48,7 +47,7 @@ const activeTab = ref<string>('general')
 // 页面分类小页签
 const tabs = [
   { label: '基础常规', value: 'general', icon: DesktopOutline },
-  { label: 'Docker 引擎', value: 'docker', icon: LogoDocker },
+  { label: 'Docker 引擎', value: 'docker', icon: ServerOutline },
   { label: '镜像仓库', value: 'registries', icon: GlobeOutline },
   { label: '账户凭证', value: 'credentials', icon: ShieldCheckmarkOutline },
   { label: '数据备份', value: 'backup', icon: SaveOutline },
@@ -788,7 +787,7 @@ onMounted(async () => {
               <p>系统已为下一阶段接入 Win32 硬件特征隐形锁（AES-256-GCM）一机一密加密提供了平滑过渡策略。</p>
               
               <button class="danger-border-btn" @click="syncDraftFromStore">
-                🛡️ 擦除并重置全部机密凭证
+                擦除并重置全部机密凭证
               </button>
             </div>
           </div>
@@ -804,7 +803,7 @@ onMounted(async () => {
               </div>
               <div class="row-value-area">
                 <button class="form-action-btn border-btn" @click="handleOpenConfigDir">
-                  📂 打开配置文件目录
+                  打开配置文件目录
                 </button>
               </div>
             </div>
@@ -816,7 +815,7 @@ onMounted(async () => {
               </div>
               <div class="row-value-area">
                 <button class="form-action-btn border-btn" @click="handleOpenLogDir">
-                  📜 打开日志目录
+                  打开日志目录
                 </button>
               </div>
             </div>
@@ -828,7 +827,7 @@ onMounted(async () => {
               </div>
               <div class="row-value-area">
                 <button class="danger-solid-btn" @click="handleResetFactory">
-                  💥 恢复出厂设置
+                  恢复出厂设置
                 </button>
               </div>
             </div>
@@ -837,10 +836,7 @@ onMounted(async () => {
           <!-- ℹ️ 关于 Vessel (About) -->
           <div v-show="activeTab === 'about'" class="form-section about-section">
             <div class="about-logo-wrapper">
-              <div class="about-logo-icon-bg">
-                <img src="/logo.png" alt="Vessel Logo" class="about-logo-img" style="width: 52px; height: 52px; object-fit: contain;" />
-              </div>
-              <div class="about-app-name">Vessel</div>
+              <img src="/logo-with-name.svg" alt="Vessel Logo" style="width: 170px; height: auto; object-fit: contain; margin-bottom: 4px;" />
               <div class="about-app-version">{{ appVersion }}</div>
             </div>
 
@@ -855,7 +851,7 @@ onMounted(async () => {
                 :disabled="checkingUpdate"
                 @click="handleCheckUpdate"
               >
-                <n-icon :component="checkingUpdate ? SyncOutline : SparklesOutline" :class="{ 'rotating-icon': checkingUpdate }" style="margin-right: 6px;" />
+                <n-icon v-if="checkingUpdate" :component="SyncOutline" class="rotating-icon" style="margin-right: 6px;" />
                 {{ checkingUpdate ? '正在检查更新...' : '检查更新' }}
               </button>
             </div>
