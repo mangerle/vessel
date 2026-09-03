@@ -19,6 +19,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -38,16 +40,21 @@ jobs:
       - name: Install node dependencies
         run: npm install
 
-      - name: Generate Release Notes
+      - name: 基于 Commit 生成分类 Changelog
+        uses: orhun/git-cliff-action@v4
+        id: git_cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: RELEASE_CHANGELOG.md
+
+      - name: 读取 Release Notes
         id: release_notes
         shell: bash
         run: |
-          # 1. 运行提取脚本，直接从 CHANGELOG.md 提取最新版中文日志
-          body=$(node scripts/extract-changelog.cjs)
-          
-          # 2. 将多行文本安全写入 GitHub 环境变量输出
           echo "BODY<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$body" >> "$GITHUB_OUTPUT"
+          cat RELEASE_CHANGELOG.md >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Build and release Tauri app

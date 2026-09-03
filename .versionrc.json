@@ -20,10 +20,13 @@
       "updater": "scripts/cargo-updater.cjs"
     }
   ],
+  "skip": {
+    "changelog": true
+  },
   "types": [
-    { "type": "feat", "section": "🚀 新增功能 (Features)" },
-    { "type": "fix", "section": "🐛 Bug 修复 (Bug Fixes)" },
-    { "type": "perf", "section": "⚡ 性能优化 (Performance)" },
+    { "type": "feat", "section": "新增功能 (Features)" },
+    { "type": "fix", "section": "Bug 修复 (Bug Fixes)" },
+    { "type": "perf", "section": "性能优化 (Performance)" },
     { "type": "chore", "hidden": true },
     { "type": "docs", "hidden": true },
     { "type": "style", "hidden": true },
