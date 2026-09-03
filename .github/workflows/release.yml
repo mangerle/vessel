@@ -53,8 +53,8 @@ jobs:
       - name: Build and release Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
-          # 使用具有公开分发仓库写入权限的 PAT
-          GITHUB_TOKEN: ${{ secrets.CROSS_REPO_RELEASE_TOKEN }}
+          # 使用 GitHub 内置的 GITHUB_TOKEN 发布到当前仓库
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
@@ -63,6 +63,3 @@ jobs:
           releaseBody: ${{ steps.release_notes.outputs.BODY }}
           releaseDraft: false
           prerelease: false
-          owner: mangerle
-          repo: vesselApp
-          releaseCommitish: 'main'

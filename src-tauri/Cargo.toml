@@ -4,8 +4,8 @@ version = "0.2.0"
 description = "A modern desktop client for Docker management."
 authors = ["mangerle"]
 edition = "2024"
-repository = "https://github.com/mangerle/vesselApp"
-homepage = "https://github.com/mangerle/vesselApp"
+repository = "https://github.com/mangerle/vessel"
+homepage = "https://github.com/mangerle/vessel"
 license = "MIT"
 readme = "../README.md"
 

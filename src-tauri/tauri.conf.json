@@ -36,7 +36,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/mangerle/vesselApp/releases/latest/download/latest.json"
+        "https://github.com/mangerle/vessel/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM5REJFNjZEM0Q4QzhBRDMKUldUVGlvdzliZWJiT2RHcksvWS9BckFPRHFVOXBMT21IWGdKSGEwNEI5Y0M1ekRSekwzWVZVOEgK"
     }
