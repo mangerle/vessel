@@ -55,7 +55,12 @@ const message = useMessage()
 const selectedId = ref<string | null>(null)
 const selectedDetails = ref<ImageDetails | null>(null)
 const loadingDetails = ref(false)
-const pullImageName = ref('')
+const pullImageName = computed({
+  get: () => imageStore.hubSearchQuery,
+  set: (val: string) => {
+    imageStore.hubSearchQuery = val
+  }
+})
 const activeTab = ref('pull') // 默认：pull 🔍 镜像仓库
 
 const localSearchQuery = ref('') // 本地镜像检索输入词

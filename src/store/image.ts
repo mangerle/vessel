@@ -40,6 +40,7 @@ export const useImageStore = defineStore('image', () => {
   const loading = ref(false)
   const searching = ref(false)
   const hasSearched = ref(false)
+  const hubSearchQuery = ref('')
   const pulling = ref(false)
   const error = ref<string | null>(null)
 
@@ -365,6 +366,7 @@ export const useImageStore = defineStore('image', () => {
     loading,
     searching,
     hasSearched,
+    hubSearchQuery,
     pulling,
     error,
     fetchImages,

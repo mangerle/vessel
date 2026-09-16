@@ -80,8 +80,10 @@
 
       <!-- 主要内容区域 -->
       <div class="content-view" :class="{ 'with-banner': !isConnected }">
-        <router-view v-slot="{ Component }">
-          <component :is="Component" />
+        <router-view v-slot="{ Component, route }">
+          <keep-alive>
+            <component :is="Component" :key="route.name === 'container-detail' ? route.fullPath : (route.name || route.path)" />
+          </keep-alive>
         </router-view>
       </div>
     </div>
