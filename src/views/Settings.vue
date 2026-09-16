@@ -487,7 +487,7 @@ const handleResetFactory = async () => {
 }
 
 // 关于及检查更新相关状态
-const appVersion = ref('v0.1.0')
+const appVersion = ref('v0.2.2')
 const checkingUpdate = ref(false)
 const showUpdateModal = ref(false)
 const updateProgress = ref(0)
