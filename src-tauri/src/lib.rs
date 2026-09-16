@@ -191,6 +191,7 @@ pub fn run() {
             let show_menu = false;
 
             let mut tray_builder = TrayIconBuilder::new()
+                .tooltip("Vessel")
                 .menu(&menu)
                 .show_menu_on_left_click(show_menu);
 
