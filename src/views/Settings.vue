@@ -23,7 +23,8 @@ import {
   NModal,
   NButton,
   NSpace,
-  useMessage
+  useMessage,
+  useDialog
 } from 'naive-ui'
 import {
   DesktopOutline,
@@ -40,6 +41,7 @@ import {
 
 const settingsStore = useSettingsStore()
 const message = useMessage()
+const dialog = useDialog()
 const route = useRoute()
 
 const activeTab = ref<string>('general')
@@ -147,6 +149,7 @@ const draft = ref({
   theme: 'deep-black' as 'deep-black' | 'zed-gray' | 'light-apple',
   autoStart: false,
   closeToTray: true,
+  gpuAcceleration: true,
   refreshInterval: 3,
   visibleMenus: ['compose', 'containers', 'images', 'networks', 'volumes'] as string[],
   connections: [] as DockerConnection[],
@@ -160,6 +163,7 @@ const syncDraftFromStore = () => {
     theme: settingsStore.theme,
     autoStart: settingsStore.autoStart,
     closeToTray: settingsStore.closeToTray,
+    gpuAcceleration: settingsStore.gpuAcceleration,
     refreshInterval: settingsStore.refreshInterval,
     visibleMenus: [...settingsStore.visibleMenus],
     connections: settingsStore.connections.map(c => ({ ...c })),
@@ -177,6 +181,7 @@ const isDirty = computed(() => {
   if (d.theme !== s.theme) return true
   if (d.autoStart !== s.autoStart) return true
   if (d.closeToTray !== s.closeToTray) return true
+  if (d.gpuAcceleration !== s.gpuAcceleration) return true
   if (d.refreshInterval !== s.refreshInterval) return true
   if (d.activeConnectionId !== s.activeConnectionId) return true
 
@@ -221,6 +226,10 @@ const handleSave = async () => {
     const nextActive = draft.value.connections.find(
       c => c.id === draft.value.activeConnectionId
     )
+    const prevGpu = settingsStore.gpuAcceleration
+    const nextGpu = draft.value.gpuAcceleration
+    const gpuChanged = prevGpu !== nextGpu
+
     const activeChanged =
       draft.value.activeConnectionId !== settingsStore.activeConnectionId
     const activeFieldsChanged = !!(prevActive && nextActive && (
@@ -240,6 +249,7 @@ const handleSave = async () => {
       theme: draft.value.theme,
       autoStart: draft.value.autoStart,
       closeToTray: draft.value.closeToTray,
+      gpuAcceleration: draft.value.gpuAcceleration,
       refreshInterval: draft.value.refreshInterval,
       visibleMenus: draft.value.visibleMenus,
       connections: draft.value.connections,
@@ -263,6 +273,27 @@ const handleSave = async () => {
 
     info('配置保存成功并已落盘')
     message.success('配置已成功落盘，系统通信管道已重载！')
+
+    // 3. 若检测到 GPU 加速设置变更，提示用户重启应用生效
+    if (gpuChanged) {
+      dialog.info({
+        title: 'GPU 加速设置已变更',
+        content: '修改 GPU 加速渲染需要重启 Vessel 应用程序才能生效。是否立即重启？',
+        positiveText: '立即重启',
+        negativeText: '稍后重启',
+        onPositiveClick: async () => {
+          try {
+            await relaunch()
+          } catch (err) {
+            error(`重启应用程序失败: ${err}`)
+            message.error('自动重启失败，请手动重启应用程序')
+          }
+        },
+        onNegativeClick: () => {
+          message.info('设置已保存，将在下次启动时生效')
+        }
+      })
+    }
   } catch (e) {
     error(`配置保存失败: ${e}`)
     message.error('配置保存失败: ' + e)
@@ -640,6 +671,16 @@ onMounted(async () => {
               </div>
               <div class="row-value-area">
                 <n-switch v-model:value="draft.closeToTray" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="row-label-area">
+                <div class="row-title">GPU 加速</div>
+                <div class="row-desc">使用 GPU 渲染 WebView 界面，关闭后可降低 GPU 占用。</div>
+              </div>
+              <div class="row-value-area">
+                <n-switch v-model:value="draft.gpuAcceleration" />
               </div>
             </div>
 

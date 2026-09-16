@@ -3,11 +3,100 @@ pub mod docker;
 pub mod error;
 pub mod secrets;
 
+use std::path::PathBuf;
 use tauri::{
     Emitter, Manager,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
+
+/// 根据本地持久化配置初始化 GPU 硬件加速模式。
+///
+/// # 设计原理
+/// - 为什么在应用入口处配置环境变量？
+///   Tauri 底层依赖的 WebView2（Windows/Chromium）与 WebKitGTK（Linux）在创建 Webview 窗口
+///   实例时会读取图形驱动与浏览器参数环境。若用户主动关闭了 GPU 加速，必须在构建窗口前
+///   向系统注入 `--disable-gpu --disable-gpu-compositing` 命令行开关，以此彻底降低 GPU 显存与功耗占用。
+/// - 兼容性与优雅降级：
+///   若配置文件不存在或解析异常，默认保持开启 GPU 硬件加速，确保首次使用具备最佳渲染流畅度。
+fn configure_gpu_acceleration() {
+    if check_gpu_disabled_from_settings() {
+        #[cfg(windows)]
+        {
+            // SAFETY: 该函数在应用程序单线程冷启动初期调用，尚未启动任何后台线程与异步任务，
+            // 不存在并发读写环境变量的数据竞争安全风险。
+            unsafe {
+                std::env::set_var(
+                    "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                    "--disable-gpu --disable-gpu-compositing",
+                );
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // SAFETY: 同上，在进程单线程初期安全设置环境变量。
+            unsafe {
+                std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            }
+        }
+    }
+}
+
+/// 检查持久化配置文件中是否显式关闭了 GPU 加速。
+fn check_gpu_disabled_from_settings() -> bool {
+    let Some(path) = get_settings_file_path() else {
+        return false;
+    };
+    if !path.exists() {
+        return false;
+    }
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    val.get("gpuAcceleration")
+        .and_then(|gpu| gpu.as_bool())
+        .map(|enabled| !enabled)
+        .unwrap_or(false)
+}
+
+/// 获取当前操作系统平台下的 settings.json 物理存储路径。
+fn get_settings_file_path() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("APPDATA").map(|appdata| {
+            PathBuf::from(appdata)
+                .join("com.vessel.desktop")
+                .join("settings.json")
+        })
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::env::var_os("HOME").map(|home| {
+            PathBuf::from(home).join("Library/Application Support/com.vessel.desktop/settings.json")
+        })
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+            Some(
+                PathBuf::from(xdg)
+                    .join("com.vessel.desktop")
+                    .join("settings.json"),
+            )
+        } else {
+            std::env::var_os("HOME").map(|home| {
+                PathBuf::from(home).join(".local/share/com.vessel.desktop/settings.json")
+            })
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
 
 /// 修复 P1-11：构建并安装自定义 tokio multi-thread runtime 作为 tauri 全局 runtime。
 /// tauri 2 默认 runtime 是 multi-thread 但 worker 数依赖 tokio 默认启发式（=CPU 核数），
@@ -34,6 +123,7 @@ fn install_async_runtime() -> tokio::runtime::Runtime {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    configure_gpu_acceleration();
     // 修复 P1-11：安装显式配置的 multi-thread runtime 作为全局 async runtime
     let _async_runtime_guard = install_async_runtime();
     tauri::Builder::default()
@@ -73,6 +163,12 @@ pub fn run() {
             let _ = app.emit(docker::events::SINGLE_INSTANCE_DETECTED, ());
         }))
         .setup(|app| {
+            if check_gpu_disabled_from_settings() {
+                log::info!("当前根据用户配置已禁用 GPU 硬件加速渲染");
+            } else {
+                log::info!("当前处于 GPU 硬件加速渲染模式");
+            }
+
             // 设置托盘
             let quit_i = MenuItem::with_id(app, "quit", "退出 Vessel", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;

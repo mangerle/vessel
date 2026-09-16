@@ -43,6 +43,7 @@ const RegistrySchema = z.object({
 export const SettingsFileSchema = z.object({
   theme: ThemeSchema.optional(),
   closeToTray: z.boolean().optional(),
+  gpuAcceleration: z.boolean().optional(),
   refreshInterval: z.number().int().min(1).max(60).optional(),
   visibleMenus: z.array(z.string()).optional(),
   connections: z.array(DockerConnectionSchema).optional(),
@@ -78,6 +79,7 @@ export function safeParseField<T extends z.ZodTypeAny>(
 export const settingsFieldSchemas = {
   theme: ThemeSchema,
   closeToTray: z.boolean(),
+  gpuAcceleration: z.boolean(),
   refreshInterval: z.number().int().min(1).max(60),
   visibleMenus: z.array(z.string()),
   connections: z.array(DockerConnectionSchema),

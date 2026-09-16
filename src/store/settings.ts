@@ -57,6 +57,7 @@ export type { ConnectionConfigPayload }
 export const useSettingsStore = defineStore('settings', () => {
   const autoStart = ref(false)
   const closeToTray = ref(true)
+  const gpuAcceleration = ref(true)
   const theme = ref<'deep-black' | 'zed-gray' | 'light-apple'>('deep-black')
   const refreshInterval = ref(3) // 默认 3 秒
   const visibleMenus = ref<string[]>(['compose', 'containers', 'images', 'networks', 'volumes'])
@@ -151,6 +152,12 @@ export const useSettingsStore = defineStore('settings', () => {
           await store.get<boolean>('closeToTray'),
           true,
           'closeToTray'
+        )
+        gpuAcceleration.value = safeParseField(
+          settingsFieldSchemas.gpuAcceleration,
+          await store.get<boolean>('gpuAcceleration'),
+          true,
+          'gpuAcceleration'
         )
         refreshInterval.value = safeParseField(
           settingsFieldSchemas.refreshInterval,
@@ -360,6 +367,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const snapshot: Record<string, unknown> = {
         autoStart: autoStart.value,
         closeToTray: closeToTray.value,
+        gpuAcceleration: gpuAcceleration.value,
         theme: theme.value,
         refreshInterval: refreshInterval.value,
         visibleMenus: visibleMenus.value,
@@ -400,6 +408,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const store = await getStore()
       await store.clear()
       await store.save()
+      gpuAcceleration.value = true
     } catch (e) {
       logError(`清除 settings.json 失败: ${e}`).catch(() => {})
     }
@@ -454,6 +463,7 @@ export const useSettingsStore = defineStore('settings', () => {
     theme: 'deep-black' | 'zed-gray' | 'light-apple'
     autoStart: boolean
     closeToTray: boolean
+    gpuAcceleration: boolean
     refreshInterval: number
     visibleMenus: string[]
     connections: DockerConnection[]
@@ -463,6 +473,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // 1. 写入 store 状态
     theme.value = draft.theme
     closeToTray.value = draft.closeToTray
+    gpuAcceleration.value = draft.gpuAcceleration
     refreshInterval.value = draft.refreshInterval
     visibleMenus.value = [...draft.visibleMenus]
     connections.value = draft.connections.map(c => ({ ...c }))
@@ -477,6 +488,7 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     autoStart,
     closeToTray,
+    gpuAcceleration,
     theme,
     refreshInterval,
     visibleMenus,
