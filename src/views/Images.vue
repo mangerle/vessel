@@ -698,7 +698,6 @@ onMounted(() => {
                 v-model:value="pullImageName"
                 :options="autoCompleteOptions"
                 placeholder="输入即联想, 回车或点击搜索, 如 mysql..."
-                :loading="imageStore.searching"
                 @input="handleSearchInput"
                 @keyup.enter="handleSearch(pullImageName)"
                 @select="handleSelectPull"
@@ -708,7 +707,6 @@ onMounted(() => {
               <n-button
                 type="primary"
                 secondary
-                :loading="imageStore.searching"
                 :disabled="imageStore.searching"
                 @click="handleSearch(pullImageName)"
               >
