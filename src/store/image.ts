@@ -38,6 +38,8 @@ export const useImageStore = defineStore('image', () => {
   const searchResults = ref<ImageSearchResult[]>([])
   const imageHistory = ref<ImageHistoryInfo[]>([])
   const loading = ref(false)
+  const searching = ref(false)
+  const hasSearched = ref(false)
   const pulling = ref(false)
   const error = ref<string | null>(null)
 
@@ -56,11 +58,18 @@ export const useImageStore = defineStore('image', () => {
 
   const searchImages = (term: string) =>
     runStoreAction(loadingState, '搜索镜像', async () => {
-      searchResults.value = await imageApi.search(term)
+      searching.value = true
+      hasSearched.value = true
+      try {
+        searchResults.value = await imageApi.search(term)
+      } finally {
+        searching.value = false
+      }
     })
 
   const clearSearchResults = () => {
     searchResults.value = []
+    hasSearched.value = false
   }
 
   const inspectImage = (id: string) =>
@@ -354,6 +363,8 @@ export const useImageStore = defineStore('image', () => {
     searchResults,
     imageHistory,
     loading,
+    searching,
+    hasSearched,
     pulling,
     error,
     fetchImages,

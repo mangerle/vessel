@@ -15,7 +15,9 @@ import {
   useMessage,
   NAutoComplete,
   NProgress,
-  NSwitch
+  NSwitch,
+  NSpin,
+  NEmpty
 } from 'naive-ui'
 import {
   StarOutline,
@@ -691,13 +693,20 @@ onMounted(() => {
                 v-model:value="pullImageName"
                 :options="autoCompleteOptions"
                 placeholder="输入即联想, 回车或点击搜索, 如 mysql..."
+                :loading="imageStore.searching"
                 @input="handleSearchInput"
                 @keyup.enter="handleSearch(pullImageName)"
                 @select="handleSelectPull"
                 class="search-autocomplete"
                 :clearable="true"
               />
-              <n-button type="primary" secondary @click="handleSearch(pullImageName)">
+              <n-button
+                type="primary"
+                secondary
+                :loading="imageStore.searching"
+                :disabled="imageStore.searching"
+                @click="handleSearch(pullImageName)"
+              >
                 <template #icon><n-icon :component="SearchOutline" /></template>
                 搜索
               </n-button>
@@ -723,6 +732,12 @@ onMounted(() => {
                 </n-button>
                 <n-button @click="selectedHubImage = null">取消选择</n-button>
               </div>
+            </div>
+
+            <!-- 搜索加载中提示 -->
+            <div v-else-if="imageStore.searching" class="search-loading-card">
+              <n-spin size="small" />
+              <span class="loading-hint-text">正在从 Docker Hub 检索镜像资源，请稍候...</span>
             </div>
 
             <!-- 搜索列表 -->
@@ -751,6 +766,11 @@ onMounted(() => {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <!-- 搜索无结果提示 -->
+            <div v-else-if="imageStore.hasSearched" class="search-empty-card">
+              <n-empty description="未检索到匹配的镜像资源，请尝试更换关键词" size="small" />
             </div>
 
             <!-- 任务进度 -->
@@ -1437,6 +1457,31 @@ onMounted(() => {
 }
 .radar-item:hover {
   background-color: var(--bg-active);
+}
+
+.search-loading-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background-color: var(--bg-card);
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+}
+
+.loading-hint-text {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.search-empty-card {
+  padding: 24px;
+  background-color: var(--bg-card);
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  display: flex;
+  justify-content: center;
 }
 
 .radar-item-left {
